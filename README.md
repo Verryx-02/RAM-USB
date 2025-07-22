@@ -1,5 +1,12 @@
-# R.A.M.-U.S.B. — Remotely Accessible Multi-User Backup Server
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<div align="center">
+
+# R.A.M.-U.S.B.  
+# Remotely Accessible Multi-User Backup Server  
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)  
+
+⚠️ This project is under active development and not ready for production use.
+</div>
+
 
 **R.A.M.-U.S.B.** is a geo-distributed, Remotely Accessible Multi-User Backup Server written in **Go**, designed with **zero-knowledge security principles** in mind. This project was designed and developed by **Francesco Verrengia** and **Riccardo Gottardi** as part of our academic work in the field of IoT and cybersecurity.
 
@@ -34,7 +41,6 @@ All communication between components is secured with **mutual TLS (mTLS)**.
 
 ## Getting Started
 
-> ⚠️ This project is under active development and not ready for production use.
 
 
 ⸻
