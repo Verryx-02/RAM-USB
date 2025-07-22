@@ -1,0 +1,93 @@
+backup-service/
+├── LICENSE
+├── README.md
+├── documentation/
+│   ├── architecture.md
+│   ├── git_commands.md
+│   ├── keys_certificates.md
+│   └── deployment.md
+├── certificates/
+│   ├── certification-authority/
+│   │   ├── ca.crt
+│   │   ├── ca.key
+│   │   └── ca.srl
+│   ├── entry-hub/
+│   │   ├── server.crt
+│   │   ├── server.key
+│   │   ├── client.crt
+│   │   └── client.key
+│   ├── security-switch/
+│   │   ├── server.crt
+│   │   ├── server.key
+│   │   ├── client.crt
+│   │   └── client.key
+│   └── database-vault/
+│       ├── server.crt
+│       ├── server.key
+│       ├── client.crt
+│       └── client.key
+├── entry-hub/
+│   ├── go.mod
+│   ├── go.sum
+│   ├── main.go
+│   ├── config/
+│   │   └── config.go
+│   ├── handlers/
+│   │   ├── health.go
+│   │   └── register.go
+│   ├── interfaces/
+│   │   └── security_switch_client.go
+│   ├── types/
+│   │   └── types.go
+│   └── utils/
+│       ├── errors.go
+│       ├── http.go
+│       ├── json.go
+│       └── validation.go
+├── security-switch/
+│   ├── go.mod
+│   ├── go.sum
+│   ├── main.go
+│   ├── config/
+│   │   └── config.go
+│   ├── handlers/
+│   │   ├── health.go
+│   │   └── register.go
+│   ├── interfaces/
+│   │   └── database_vault_client.go
+│   ├── middleware/
+│   │   └── mtls.go
+│   ├── types/
+│   │   └── types.go
+│   └── utils/
+│       ├── errors.go
+│       ├── http.go
+│       ├── json.go
+│       └── validation.go
+├── database-vault/
+│   ├── go.mod
+│   ├── go.sum
+│   ├── main.go
+│   ├── config/
+│   │   └── config.go
+│   ├── handlers/
+│   │   ├── health.go
+│   │   └── register.go
+│   ├── middleware/
+│   │   └── mtls.go
+│   ├── crypto/
+│   │   ├── aes.go
+│   │   └── password.go
+│   ├── storage/
+│   │   ├── users.go
+│   │   └── database.go
+│   ├── types/
+│   │   └── types.go
+│   └── utils/
+│       ├── errors.go
+│       ├── http.go
+│       ├── json.go
+│       └── validation.go
+└── scripts/
+    ├── generate_certificates.sh
+    └── setup_environment.sh

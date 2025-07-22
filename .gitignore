@@ -1,0 +1,37 @@
+#SO files
+.DS_Store
+
+# Certificates
+certificates/entry-hub/client.crt
+certificates/entry-hub/client.key
+certificates/entry-hub/server.crt
+certificates/entry-hub/server.key
+
+certificates/security-switch/client.crt
+certificates/security-switch/client.key
+certificates/security-switch/server.crt
+certificates/security-switch/server.key
+
+certificates/database-vault/client.crt
+certificates/database-vault/client.key
+certificates/database-vault/server.crt
+certificates/database-vault/server.key
+
+certificates/storage-service/client.crt
+certificates/storage-service/client.key
+certificates/storage-service/server.crt
+certificates/storage-service/server.key
+
+certificates/user-client/client.crt
+certificates/user-client/client.key
+
+certificates/certification-authority/ca.crt
+certificates/certification-authority/ca.key
+certificates/certification-authority/ca.srl
+
+# Will be modified
+user-client/priv/chiave
+user-client/priv/chiave.pub
+
+
+
