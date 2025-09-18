@@ -1,10 +1,4 @@
-<div align="center">
-
-# R.A.M.-U.S.B. Remotely Accessible Multi-User Backup Server  
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)  
-
-
-</div>
+![banner](assets/banner.png)
 
 ---
 
