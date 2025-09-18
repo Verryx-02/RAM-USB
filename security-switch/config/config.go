@@ -55,7 +55,7 @@ func GetConfig() *Config {
 		// MTLS CLIENT SETTINGS
 		// Configuration for secure Database-Vault communication
 		// TO-DO: Replace hardcoded IP with os.Getenv("DATABASE_VAULT_IP")
-		DatabaseVaultIP: "100.93.246.69:8445", // TO-DO: Replace with actual Database-Vault Tailscale IP
+		DatabaseVaultIP: "100.102.186.107:8445", // TO-DO: Replace with actual Database-Vault Tailscale IP
 		ClientCertFile:  "../certificates/security-switch/client.crt",
 		ClientKeyFile:   "../certificates/security-switch/client.key",
 	}

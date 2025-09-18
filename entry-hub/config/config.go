@@ -35,7 +35,7 @@ func GetConfig() *Config {
 		// SECURITY-SWITCH CONNECTION
 		// Use Tailscale private network to prevent external access
 		// TO-DO: Replace hardcoded IP with os.Getenv("SECURITY_SWITCH_IP")
-		SecuritySwitchIP: "100.93.246.69:8444",
+		SecuritySwitchIP: "100.102.186.107:8444",
 
 		// MTLS CERTIFICATE CONFIGURATION
 		// Client credentials for mutual TLS authentication with Security-Switch

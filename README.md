@@ -37,11 +37,12 @@ All communication between components is secured with **mutual TLS (mTLS)**.
 
 > ⚠️ This project is under active development and not ready for production use.  
 
-To test the system locally:
+To test the registration process locally:
 
 ### Prerequisites
 1. Generate certificates: `cd scripts && ./generate_key.sh`
-2. Open 4 terminal tabs
+2. Connect the pc at the Tailscale private network
+3. Open 4 terminal tabs
 
 ### Setup and Start Services (in order)
 
@@ -67,9 +68,7 @@ go run .
 **TAB-4 (Test Client):**
 ```bash
 cd user-client
-curl --insecure -H "Content-Type: application/json" -X POST \
-  -d '{"email":"test@example.com","password":"MyStrongPass123@","ssh_public_key":"'"$(cat priv/chiave.pub)"'"}' \
-  https://localhost:8443/api/register
+curl --insecure -H "Content-Type: application/json" -X POST -d '{"email":"test@example.com","password":"MyStrongPass123@","ssh_public_key":"'"$(cat keys/ssh_public_key.pub)"'"}' https://localhost:8443/api/register
 ```
 
 ### Expected Success Response

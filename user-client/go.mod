@@ -1,5 +1,4 @@
-module main.go
+// user-client/go.mod
+module user-client
 
 go 1.24.1
-
-require github.com/joho/godotenv v1.5.1
