@@ -2,12 +2,14 @@
 
 # Script to generate all necessary certificates for R.A.M.-U.S.B. system
 # Generates CA certificate and separate certificates for each component:
+
 # - Entry-Hub
 # - Security-Switch  
 # - Database-Vault
 # - Storage-Service
+# - User-Client
 
-# I leave here the meaning of the various openssl flags for convenience
+# Below, the meaning of the various openssl flags for convenience
 
 # -in               : Input file
 # -out              : Output file (where to save keys, certificates, etc.)
@@ -384,6 +386,34 @@ openssl x509 \
 
 # Clean up temporary files
 rm -f server.csr client.csr server.conf
+cd ..
+
+# ===========================
+# USER-CLIENT SSH KEYS
+# ===========================
+cd user-client
+
+# Create keys directory if it doesn't exist
+mkdir -p keys
+
+# Generate SSH key pair for user-client
+# Private key for future SFTP connections to Storage-Service
+# Public key for user registration payload
+ssh-keygen -t ed25519 \
+  -f keys/ssh_private_key \
+  -C "user-client@ramusb.local" \
+  -N ""
+
+# Rename public key to match expected naming
+mv keys/ssh_private_key.pub keys/ssh_public_key.pub
+
+# Set correct permissions for SSH keys
+chmod 600 keys/ssh_private_key
+chmod 644 keys/ssh_public_key.pub
+
+echo "SSH keys generated for user-client:"
+echo "  Private: keys/ssh_private_key"
+echo "  Public:  keys/ssh_public_key.pub"
 
 cd ..
 
