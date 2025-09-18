@@ -40,9 +40,45 @@ All communication between components is secured with **mutual TLS (mTLS)**.
 To test the registration process locally:
 
 ### Prerequisites
-1. Generate certificates: `cd scripts && ./generate_key.sh`
-2. Connect the pc at the Tailscale private network
-3. Open 4 terminal tabs
+
+1. **Generate certificates:**
+   ```bash
+   cd scripts && ./generate_key.sh
+   ```
+
+2. **Connect to Tailscale private network:**
+   ```bash
+   # Install and connect to Tailscale
+   tailscale up
+   
+   # Get your Tailscale IP address
+   tailscale ip -4
+   ```
+
+3. **Configure Tailscale IP addresses:**
+   
+   Update the configuration files with your Tailscale IP address:
+   
+   **File: `entry-hub/config/config.go`**
+   ```go
+   // Replace with your Tailscale IP
+   SecuritySwitchIP: "YOUR_TAILSCALE_IP:8444"
+   ```
+   
+   **File: `security-switch/config/config.go`**
+   ```go
+   // Replace with your Tailscale IP  
+   DatabaseVaultIP: "YOUR_TAILSCALE_IP:8445"
+   ```
+   
+   **Example:**
+   ```bash
+   # If your Tailscale IP is 100.64.123.456
+   SecuritySwitchIP: "100.64.123.456:8444"
+   DatabaseVaultIP: "100.64.123.456:8445"
+   ```
+
+4. **Open 4 terminal tabs**
 
 ### Setup and Start Services (in order)
 
@@ -76,8 +112,6 @@ curl --insecure -H "Content-Type: application/json" -X POST -d '{"email":"test@e
 {"success":true,"message":"User successfully registered!"}
 ```
 
-> **Note**: The Go user-client currently has certificate issues. Use curl for testing.
-
 ⸻
 
 Authors
@@ -85,8 +119,6 @@ Authors
 	•	Riccardo Gottardi
 
 ⸻
-
-License
 
 License: [MIT](LICENSE)
 
