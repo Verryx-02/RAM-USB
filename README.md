@@ -41,7 +41,7 @@ See the [documentation](documentation/registration_flow.md) for more
 
 ## Getting Started
 
-> ⚠️ This project is under active development and not ready for production use.  
+> ⚠️ This project is under active development and is not ready for production use. It has only been tested on macOS. It should work on Linux, but it has not been tested yet.
 
 To test the registration process locally:
 
