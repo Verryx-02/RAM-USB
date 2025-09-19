@@ -122,6 +122,9 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// emailHash is used for Zero Knowledge logging
+	emailHash := utils.HashEmail(req.Email)
+
 	// SECURITY-SWITCH CLIENT SETUP
 	// Configure mTLS client for secure service communication
 	config := config.GetConfig()
@@ -155,11 +158,11 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	// SECURE REQUEST FORWARDING
 	// Audit registration attempt and forward to Security-Switch
-	log.Printf("Attempting to forward registration request for user: %s", req.Email)
+	log.Printf("Attempting to forward registration request for user (hash: %s)", emailHash)
 
 	switchResponse, err := securityClient.ForwardRegistration(req)
 	if err != nil {
-		errorMsg := fmt.Sprintf("Failed to contact Security-Switch for %s: %v", req.Email, err)
+		errorMsg := fmt.Sprintf("Failed to contact Security-Switch for user (hash: %s): %v", emailHash, err)
 		log.Printf("Error: %s", errorMsg)
 
 		// NETWORK ERROR CATEGORIZATION
@@ -187,7 +190,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// RESPONSE VALIDATION
 	// Verify Security-Switch successfully processed registration
 	if !switchResponse.Success {
-		log.Printf("Security-Switch rejected registration for %s: %s", req.Email, switchResponse.Message)
+		log.Printf("Security-Switch rejected registration for user (hash: %s): %s", emailHash, switchResponse.Message)
 		utils.SendErrorResponse(w, http.StatusBadRequest,
 			fmt.Sprintf("Registration failed: %s", switchResponse.Message))
 		return
@@ -195,6 +198,6 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	// SUCCESS RESPONSE
 	// Complete Entry-Hub registration flow with audit logging
-	log.Printf("User successfully registered via Security-Switch: %s", req.Email)
+	log.Printf("User successfully registered via Security-Switch (hash: %s)", emailHash)
 	utils.SendSuccessResponse(w, http.StatusCreated, "User successfully registered!")
 }

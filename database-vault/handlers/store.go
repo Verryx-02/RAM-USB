@@ -131,13 +131,14 @@ func StoreUserHandler(w http.ResponseWriter, r *http.Request) {
 
 	// EMAIL HASHING FOR DATABASE INDEXING
 	// Generate SHA-256 hash for fast database lookups and primary key functionality
+	// Also used for Zero Knowledge logging
 	emailHash := crypto.HashEmail(req.Email)
 
 	// EMAIL SECURE ENCRYPTION
 	// Encrypt email with random salt and nonce for secure storage
 	encryptedEmail, emailSalt, err := crypto.EncryptEmailSecure(req.Email, cfg.EncryptionKey)
 	if err != nil {
-		errorMsg := fmt.Sprintf("Failed to encrypt email for %s: %v", req.Email, err)
+		errorMsg := fmt.Sprintf("Failed to encrypt email for user (hash: %s): %v", emailHash, err)
 		log.Printf("Error: %s", errorMsg)
 		utils.SendErrorResponse(w, http.StatusInternalServerError, "Email encryption failed.")
 		return
@@ -153,13 +154,13 @@ func StoreUserHandler(w http.ResponseWriter, r *http.Request) {
 	/*
 		emailHashExists, err := userStorage.EmailHashExists(emailHash)
 		if err != nil {
-			errorMsg := fmt.Sprintf("Failed to check email hash existence for %s: %v", req.Email, err)
+			errorMsg := fmt.Sprintf("Failed to check email hash existence for user (hash: %s): %v", emailHash, err)
 			log.Printf("Error: %s", errorMsg)
 			utils.SendErrorResponse(w, http.StatusInternalServerError, "Database error during duplicate check.")
 			return
 		}
 		if emailHashExists {
-			log.Printf("Registration attempt with existing email hash: %s", emailHash[:16]+"...") // Log partial hash for security
+			log.Printf("Registration attempt with existing email hash: %s", emailHash)
 			utils.SendErrorResponse(w, http.StatusConflict, "Email address already registered.")
 			return
 		}
@@ -219,7 +220,7 @@ func StoreUserHandler(w http.ResponseWriter, r *http.Request) {
 	// TO-DO: Uncomment when storage interface is implemented
 	/*
 		if err := userStorage.StoreUser(user); err != nil {
-			errorMsg := fmt.Sprintf("Failed to store user credentials for %s: %v", req.Email, err)
+			errorMsg := fmt.Sprintf("Failed to store user credentials for user (hash: %s): %v", emailHash, err)
 			log.Printf("Error: %s", errorMsg)
 
 			// STORAGE ERROR CATEGORIZATION
@@ -247,7 +248,7 @@ func StoreUserHandler(w http.ResponseWriter, r *http.Request) {
 
 	// SUCCESS RESPONSE
 	// Log successful registration and send confirmation to Security-Switch
-	log.Printf("User credentials successfully stored: %s (hash: %s)", req.Email, emailHash[:16]+"...")
+	log.Printf("User credentials successfully stored (hash: %s)", emailHash)
 
 	// MEMORY CLEANUP - Force garbage collection after crypto operations
 	// This is critical after Argon2id which uses 32MB per request
@@ -262,6 +263,6 @@ func StoreUserHandler(w http.ResponseWriter, r *http.Request) {
 
 	// AUDIT LOGGING
 	// Record successful storage operation for security monitoring
-	log.Printf("Audit: User registration completed - Email: %s, EmailHash: %s, Timestamp: %s",
-		req.Email, emailHash[:16]+"...", time.Now().Format(time.RFC3339))
+	log.Printf("Audit: User registration completed (hash: %s), Timestamp: %s", emailHash, time.Now().Format(time.RFC3339))
+
 }

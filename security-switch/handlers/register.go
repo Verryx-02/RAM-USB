@@ -111,6 +111,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		utils.SendErrorResponse(w, http.StatusBadRequest, "Invalid SSH public key format.")
 		return
 	}
+	// emailHash is used for Zero Knowledge logging
+	emailHash := utils.HashEmail(req.Email)
 
 	// DATABASE-VAULT CLIENT INITIALIZATION
 	// Create and configure mTLS client for secure Database-Vault communication
@@ -145,12 +147,12 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	// SECURE REQUEST FORWARDING TO DATABASE-VAULT
 	// Log forwarding attempt for audit purposes
-	log.Printf("Forwarding registration request for user: %s", req.Email)
+	log.Printf("Forwarding registration request for user (hash: %s)", emailHash)
 
 	// Forward validated registration request using mTLS authentication
 	dbResponse, err := dbClient.StoreUserCredentials(req)
 	if err != nil {
-		errorMsg := fmt.Sprintf("Failed to store user credentials for %s: %v", req.Email, err)
+		errorMsg := fmt.Sprintf("Failed to store user credentials for user (hash: %s): %v", emailHash, err)
 		log.Printf("Error: %s", errorMsg)
 
 		// NETWORK ERROR CATEGORIZATION
@@ -174,7 +176,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// DATABASE-VAULT RESPONSE VALIDATION
 	// Check if Database-Vault successfully processed registration request
 	if !dbResponse.Success {
-		log.Printf("Database-Vault rejected registration for %s: %s", req.Email, dbResponse.Message)
+		log.Printf("Database-Vault rejected registration for user (hash: %s): %s", emailHash, dbResponse.Message)
 		// Pass through specific error message while preventing information disclosure
 		utils.SendErrorResponse(w, http.StatusBadRequest, dbResponse.Message)
 		return
@@ -182,6 +184,6 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	// SUCCESS RESPONSE
 	// Log successful registration and send confirmation to Entry-Hub
-	log.Printf("User successfully registered: %s", req.Email)
+	log.Printf("User successfully registered (hash: %s)", emailHash)
 	utils.SendSuccessResponse(w, http.StatusCreated, "User successfully registered!")
 }
