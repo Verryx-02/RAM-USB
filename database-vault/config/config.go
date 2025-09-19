@@ -40,19 +40,28 @@ type Config struct {
 	EncryptionKey []byte // 32-byte AES-256 key for authenticated email encryption
 }
 
+// CRITICAL TODO: ENCRYPTION KEY PERSISTENCE ISSUE
+//
+// ⚠️  MAJOR DATA LOSS RISK: If RAMUSB_ENCRYPTION_KEY is lost (server restart,
+//
+//	container restart, environment reset), ALL ENCRYPTED EMAILS become
+//	permanently irrecoverable. There is NO recovery mechanism.
+//
+// Required for production:
+// TO-DO: Implement persistent key storage (HashiCorp Vault, KMS, Bitwarden)
+// TO-DO: Add key backup and recovery procedures
+// TO-DO: Implement key rotation with graceful fallback to previous key
+// TO-DO: Add key versioning for multiple concurrent keys
+//
 // GetConfig returns Database-Vault configuration with mTLS and encryption parameters.
 //
 // Security features:
 // - Hardcoded Tailscale IPs prevent accidental external exposure
-// - Environment variable encryption key loading for secure key management
+// - Environment variable encryption key loading for key management
 // - Mandatory encryption key validation prevents startup with missing keys
 // - Certificate chain validation ensures mTLS authentication integrity
 //
 // Returns pointer to Config struct with all mTLS server and encryption parameters.
-//
-// TO-DO: In production, load all configuration from environment variables
-// TO-DO: Implement secure key rotation mechanism for encryption keys
-// TO-DO: Add database connection pooling and timeout configuration
 func GetConfig() *Config {
 	// ENCRYPTION KEY LOADING
 	// Load AES-256-GCM encryption key from environment variable
