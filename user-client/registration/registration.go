@@ -3,10 +3,13 @@ package registration
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -33,6 +36,12 @@ type RegisterRequest struct {
 type RegisterResponse struct {
 	Success bool   `json:"success"` // Operation success indicator
 	Message string `json:"message"` // Human-readable status or error description
+}
+
+// HashEmail creates SHA-256 hash of email for consistent logging
+func HashEmail(email string) string {
+	hash := sha256.Sum256([]byte(email))
+	return hex.EncodeToString(hash[:])
 }
 
 // Configuration constants for registration client
@@ -136,9 +145,9 @@ func RegisterUser() error {
 		return fmt.Errorf("failed to serialize registration request: %v", err)
 	}
 
-	fmt.Printf("Sending registration request to: %s\n", EntryHubURL)
-	fmt.Printf("Registration data: email=%s, password=*****, ssh_key=%s...\n",
-		registerReq.Email, registerReq.SSHPubKey[:30])
+	emailHash := HashEmail(registerReq.Email)
+	log.Printf("Sending registration request to: %s\n", EntryHubURL)
+	log.Printf("Registration data: email_hash=%s, ssh_key=%s...\n", emailHash, registerReq.SSHPubKey[:30])
 
 	// HTTPS CLIENT SETUP
 	client := createHTTPSClient()
