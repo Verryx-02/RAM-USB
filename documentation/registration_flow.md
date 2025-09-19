@@ -151,7 +151,7 @@
 ## RESPONSE
 
 - **Log operation:** audit trail with timestamp  
-- **Audit logging:** record user email (plaintext in logs only), operation success, timestamp
+- **Audit logging:** record SHA-256 email hash for zero-knowledge identification and operation status
 - **Send response:** HTTP 201 Created + JSON success message to Security-Switch  
 - **Error handling:** HTTP 400 (validation), 401 (auth), 403 (forbidden), 409 (conflict), 500 (internal), 503 (database unavailable)
 - **Error categorization:** detailed storage errors vs sanitized upstream messages
