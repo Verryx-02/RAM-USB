@@ -104,7 +104,7 @@ go run .
 **TAB-4 (Test Client):**
 ```bash
 cd user-client
-curl --insecure -H "Content-Type: application/json" -X POST -d '{"email":"test@example.com","password":"MyStrongPass123@","ssh_public_key":"'"$(cat keys/ssh_public_key.pub)"'"}' https://localhost:8443/api/register
+go run .
 ```
 
 ### Expected Success Response
