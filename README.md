@@ -33,6 +33,8 @@ All communication between components is secured with **mutual TLS (mTLS)**.
 
 ---
 
+See the [documentation](documentation/registration_flow.md) for more
+
 ## Getting Started
 
 > ⚠️ This project is under active development and not ready for production use.  
