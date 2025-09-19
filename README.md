@@ -4,7 +4,7 @@
 
 **R.A.M.-U.S.B.** is a geo-distributed, Remotely Accessible Multi-User Backup Server written in **Go**, designed with **zero-knowledge security principles** in mind. 
 
-This project was designed by **Francesco Verrengia** and [**Riccardo Gottardi**](https://github.com/Riccardo-Gottardi).  
+This project was designed by [**Francesco Verrengia**](https://github.com/Verryx-02) and [**Riccardo Gottardi**](https://github.com/Riccardo-Gottardi).  
 Implemented by [**Francesco Verrengia**](https://github.com/Verryx-02) with **Claude AI** as part of academic work in the field of IoT and cybersecurity.  
 The use of AI assistance was intentional to significantly accelerate development time and provide a case study on the capabilities and limitations of this technology in the sensitive field of cybersecurity.
 
