@@ -121,8 +121,8 @@ go run .
 ⸻
 
 Authors
-	•	Francesco Verrengia
-	•	Riccardo Gottardi
+	•	[**Francesco Verrengia**](https://github.com/Verryx-02)
+	•	[**Riccardo Gottardi**](https://github.com/Riccardo-Gottardi)
 
 ⸻
 
