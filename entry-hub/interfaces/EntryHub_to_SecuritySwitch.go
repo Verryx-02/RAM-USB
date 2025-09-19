@@ -14,8 +14,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"https_server/types"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -58,13 +60,36 @@ func NewEntryHubClient(securitySwitchIP string, clientCertFile, clientKeyFile, c
 		return nil, fmt.Errorf("failed to parse CA certificate")
 	}
 
-	// MTLS CONFIGURATION
-	// Configure mutual TLS with certificate validation and modern security
+	// mTLS CONFIGURATION
+	// Configure mutual TLS with certificate validation
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{clientCert}, // Entry-Hub client certificate
 		RootCAs:      caCertPool,                    // Trusted CAs for server verification
 		ServerName:   "security-switch",             // Expected server certificate CN
 		MinVersion:   tls.VersionTLS13,              // Enforce modern TLS version
+		// CLIENT-SIDE ORGANIZATIONAL AUTHORIZATION
+		// Mirror server-side validation logic for symmetric trust verification
+		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			// CERTIFICATE CHAIN VALIDATION
+			// Ensure Security-Switch provided valid certificate chain
+			if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
+				log.Printf("No verified certificate chain from Security-Switch")
+				return errors.New("no server certificate available")
+			}
+
+			// SERVER CERTIFICATE EXTRACTION
+			// Extract Security-Switch certificate for organization validation
+			serverCert := verifiedChains[0][0]
+
+			// ORGANIZATIONAL VALIDATION
+			// Verify Security-Switch belongs to authorized SecuritySwitch organization
+			if len(serverCert.Subject.Organization) == 0 || serverCert.Subject.Organization[0] != "SecuritySwitch" {
+				log.Printf("Unauthorized Security-Switch organization: %v", serverCert.Subject.Organization)
+				return errors.New("unauthorized server")
+			}
+
+			return nil
+		},
 	}
 
 	// HTTP CLIENT SETUP

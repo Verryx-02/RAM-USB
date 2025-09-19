@@ -15,7 +15,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"security_switch/types"
@@ -78,6 +80,29 @@ func NewDatabaseVaultClient(databaseVaultIP string, clientCertFile, clientKeyFil
 		ServerName:         "database-vault",              // Expected server certificate Common-Name (CN)
 		InsecureSkipVerify: false,                         // Always verify certificates in production
 		MinVersion:         tls.VersionTLS13,              // Enforce modern TLS version
+		// CLIENT-SIDE ORGANIZATIONAL AUTHORIZATION
+		// Mirror server-side validation logic for symmetric trust verification
+		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			// CERTIFICATE CHAIN VALIDATION
+			// Ensure Database-Vault provided valid certificate chain
+			if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
+				log.Printf("No verified certificate chain from Database-Vault")
+				return errors.New("no server certificate available")
+			}
+
+			// SERVER CERTIFICATE EXTRACTION
+			// Extract Database-Vault certificate for organization validation
+			serverCert := verifiedChains[0][0]
+
+			// ORGANIZATIONAL VALIDATION
+			// Verify Database-Vault belongs to authorized DatabaseVault organization
+			if len(serverCert.Subject.Organization) == 0 || serverCert.Subject.Organization[0] != "DatabaseVault" {
+				log.Printf("Unauthorized Database-Vault organization: %v", serverCert.Subject.Organization)
+				return errors.New("unauthorized server")
+			}
+
+			return nil
+		},
 	}
 
 	// HTTP CLIENT SETUP
