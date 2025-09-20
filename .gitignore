@@ -22,9 +22,6 @@ certificates/storage-service/client.key
 certificates/storage-service/server.crt
 certificates/storage-service/server.key
 
-certificates/user-client/client.crt
-certificates/user-client/client.key
-
 certificates/certification-authority/ca.crt
 certificates/certification-authority/ca.key
 certificates/certification-authority/ca.srl

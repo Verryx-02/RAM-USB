@@ -54,8 +54,7 @@ Each component has specific security responsibilities in the authentication and 
 │   ├── entry-hub/                   # Server + Client certificates for Entry-Hub
 │   ├── security-switch/             # Server + Client certificates for Security-Switch  
 │   ├── database-vault/              # Server + Client certificates for Database-Vault
-│   ├── storage-service/             # Server + Client certificates for Storage-Service
-│   └── user-client/                 # Client certificates for user authentication
+│   └── storage-service/             # Server + Client certificates for Storage-Service
 │
 ├── entry-hub/                      # Public HTTPS API Gateway
 │   ├── handlers/                   # REST API endpoints (/api/register, /api/health)
