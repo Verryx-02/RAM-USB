@@ -77,9 +77,17 @@ Each component has specific security responsibilities in the authentication and 
 ├── database-vault/                 # Encrypted Credential Storage
 │   ├── handlers/                   # User storage with AES-256-GCM encryption
 │   ├── config/                     # Service configuration (database URL, encryption keys, mTLS certificates)
+│   ├── database/                   # PostgreSQL Database Layer
+│   │   ├── setup.sh                # Automated database setup script
+│   │   ├── README.md               # Database documentation and setup guide
+│   │   └── schema/                 # SQL Schema definitions
+│   │       ├── 001_create_tables.sql        # Users table with encryption fields
+│   │       ├── 002_create_indexes.sql       # Performance and security indexes
+│   │       ├── 003_create_triggers.sql      # Automatic timestamp management
+│   │       └── 004_create_constraints.sql   # Data validation constraints
 │   ├── utils/                      # Final validation layer, HTTP helpers, JSON parsing, error handling
 │   ├── types/                      # Data structures for storage operations (StoredUser, RegisterRequest, Response)
-│   ├── crypto/                     # Argon2id hashing + AES encryption utilities
+│   ├── crypto/                     # Argon2id hashing + AES-256-GCM encryption utilities
 │   ├── storage/                    # Database interface definitions (PostgreSQL)
 │   ├── middleware/                 # mTLS authentication for Security-Switch
 │   └── main.go                     # mTLS server (port 8445)
