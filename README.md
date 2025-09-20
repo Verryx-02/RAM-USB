@@ -87,7 +87,13 @@ Each component has specific security responsibilities in the authentication and 
 │   ├── utils/                      # Final validation layer, HTTP helpers, JSON parsing, error handling
 │   ├── types/                      # Data structures for storage operations (StoredUser, RegisterRequest, Response)
 │   ├── crypto/                     # Argon2id hashing + AES-256-GCM encryption utilities
-│   ├── storage/                    # Database interface definitions (PostgreSQL)
+│   ├── storage/                    # Database interface definitions and implementations
+│   │   ├── interface.go            # Storage interface definitions with security contracts
+│   │   └── postgresql/             # PostgreSQL implementation
+│   │       ├── postgresql.go       # Main implementation of UserStorage interface
+│   │       ├── connection.go       # Connection pooling and database management  
+│   │       ├── queries.go          # SQL query constants and prepared statements
+│   │       └── errors.go           # PostgreSQL error mapping and categorization
 │   ├── middleware/                 # mTLS authentication for Security-Switch
 │   └── main.go                     # mTLS server (port 8445)
 │
@@ -102,6 +108,8 @@ Each component has specific security responsibilities in the authentication and 
 └── scripts/                        # Setup & Deployment
     └── generate_key.sh             # Automated certificate generation script
 ```
+
+
 
 ### Architecture Overview
 
