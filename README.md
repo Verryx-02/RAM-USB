@@ -60,17 +60,25 @@ Each component has specific security responsibilities in the authentication and 
 ├── entry-hub/                      # Public HTTPS API Gateway
 │   ├── handlers/                   # REST API endpoints (/api/register, /api/health)
 │   ├── interfaces/                 # mTLS client for Security-Switch communication (entry-hub->security-switch)
-│   ├── config/ & utils/            # Configuration, input validation and utility
+│   ├── config/                     # Service configuration (Security-Switch IP, mTLS certificates)
+│   ├── utils/                      # Input validation, HTTP helpers, JSON parsing, error handling
+│   ├── types/                      # Data structures for API requests/responses (RegisterRequest, Response)
 │   └── main.go                     # HTTPS server (port 8443)
 │
 ├── security-switch/                # mTLS Security Gateway  
 │   ├── handlers/                   # REST API endpoints (/api/register, /api/health) using defense-in-depth validation
 │   ├── interfaces/                 # mTLS client for Database-Vault communication (security-switch->database-vault)
+│   ├── config/                     # Service configuration (Database-Vault IP, mTLS certificates)
+│   ├── utils/                      # Defense-in-depth validation, HTTP helpers, JSON parsing, error handling
+│   ├── types/                      # Data structures for API requests/responses (RegisterRequest, Response)
 │   ├── middleware/                 # mTLS authentication enforcement
 │   └── main.go                     # mTLS server (port 8444)
 │
 ├── database-vault/                 # Encrypted Credential Storage
 │   ├── handlers/                   # User storage with AES-256-GCM encryption
+│   ├── config/                     # Service configuration (database URL, encryption keys, mTLS certificates)
+│   ├── utils/                      # Final validation layer, HTTP helpers, JSON parsing, error handling
+│   ├── types/                      # Data structures for storage operations (StoredUser, RegisterRequest, Response)
 │   ├── crypto/                     # Argon2id hashing + AES encryption utilities
 │   ├── storage/                    # Database interface definitions (PostgreSQL)
 │   ├── middleware/                 # mTLS authentication for Security-Switch
@@ -79,11 +87,10 @@ Each component has specific security responsibilities in the authentication and 
 ├── user-client/                    # Client
 │   ├── registration/               # HTTPS client for registration flow
 │   └── keys/                       # SSH keypair
+│   └── main.go                     # Registration test client
 │
 ├── documentation/                  # Technical Documentation
-│   ├── registration_flow.md        # Complete system flow and security model
-│   └── keys_certificates.md        # Certificate generation procedures
-│   
+│   └── registration_flow.md        # Complete system flow and security model
 │
 └── scripts/                        # Setup & Deployment
     └── generate_key.sh             # Automated certificate generation script
