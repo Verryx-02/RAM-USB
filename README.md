@@ -35,9 +35,86 @@ The system is composed of several distributed components:
 
 All communication between components is secured with **mutual TLS (mTLS)**.
 
----
-
 See the [documentation](documentation/registration_flow.md) for more
+
+--- 
+
+## Project Structure
+
+R.A.M.-U.S.B. implements a **distributed zero-trust architecture** with four main microservices communicating via mutual TLS (mTLS).  
+Each component has specific security responsibilities in the authentication and storage pipeline.
+
+```
+.
+├── LICENSE & README.md              # Project documentation
+├── assets/                          # Project assets (banner, diagrams)
+│
+├── certificates/                    # PKI Infrastructure for mTLS
+│   ├── certification-authority/     # Root CA for the entire system
+│   ├── entry-hub/                   # Server + Client certificates for Entry-Hub
+│   ├── security-switch/             # Server + Client certificates for Security-Switch  
+│   ├── database-vault/              # Server + Client certificates for Database-Vault
+│   ├── storage-service/             # Server + Client certificates for Storage-Service
+│   └── user-client/                 # Client certificates for user authentication
+│
+├── entry-hub/                      # Public HTTPS API Gateway
+│   ├── handlers/                   # REST API endpoints (/api/register, /api/health)
+│   ├── interfaces/                 # mTLS client for Security-Switch communication (entry-hub->security-switch)
+│   ├── config/ & utils/            # Configuration, input validation and utility
+│   └── main.go                     # HTTPS server (port 8443)
+│
+├── security-switch/                # mTLS Security Gateway  
+│   ├── handlers/                   # REST API endpoints (/api/register, /api/health) using defense-in-depth validation
+│   ├── interfaces/                 # mTLS client for Database-Vault communication (security-switch->database-vault)
+│   ├── middleware/                 # mTLS authentication enforcement
+│   └── main.go                     # mTLS server (port 8444)
+│
+├── database-vault/                 # Encrypted Credential Storage
+│   ├── handlers/                   # User storage with AES-256-GCM encryption
+│   ├── crypto/                     # Argon2id hashing + AES encryption utilities
+│   ├── storage/                    # Database interface definitions (PostgreSQL)
+│   ├── middleware/                 # mTLS authentication for Security-Switch
+│   └── main.go                     # mTLS server (port 8445)
+│
+├── user-client/                    # Client
+│   ├── registration/               # HTTPS client for registration flow
+│   └── keys/                       # SSH keypair
+│
+├── documentation/                  # Technical Documentation
+│   ├── registration_flow.md        # Complete system flow and security model
+│   └── keys_certificates.md        # Certificate generation procedures
+│   
+│
+└── scripts/                        # Setup & Deployment
+    └── generate_key.sh             # Automated certificate generation script
+```
+
+### Architecture Overview
+
+**Request Flow**: `Client → Entry-Hub → Security-Switch → Database-Vault`
+
+1. **Entry-Hub**: Exposes public HTTPS API, performs initial validation, forwards via mTLS
+2. **Security-Switch**: Acts as security checkpoint with defense-in-depth validation  
+3. **Database-Vault**: Final storage layer with email encryption and password hashing
+4. **Certificate Infrastructure**: Every service authenticates via mTLS using dedicated certificates
+
+### Key Security Features
+
+- **Zero-Trust Network**: All inter-service communication requires mutual TLS authentication
+- **Defense-in-Depth**: Each layer re-validates input data independently  
+- **Email Encryption**: AES-256-GCM with random salt prevents deterministic encryption
+- **Password Security**: Argon2id hashing with cryptographic salt generation
+- **Certificate-Based Authentication**: Each service validates client organization certificates
+
+### Where to Start
+
+- **Overall Architecture**: `documentation/registration_flow.md`
+- **Certificate Setup**: `scripts/generate_key.sh` 
+- **API Gateway**: `entry-hub/main.go` and `entry-hub/handlers/`
+- **Security Model**: `security-switch/middleware/mtls.go`
+- **Encryption Implementation**: `database-vault/crypto/`
+- **Test the System**: `user-client/main.go`
+
 
 ## Getting Started
 
