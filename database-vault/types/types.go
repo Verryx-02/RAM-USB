@@ -43,14 +43,15 @@ type RegisterRequest struct {
 //
 // Persisted in database with email-level encryption using AES-256-GCM authenticated encryption with random nonce.
 type StoredUser struct {
-	EmailHash      string    `json:"email_hash"`      // Primary key - SHA-256 hash of email for fast indexing
-	EncryptedEmail string    `json:"encrypted_email"` // AES-256-GCM encrypted email with random nonce and salt
-	EmailSalt      string    `json:"email_salt"`      // Cryptographically secure random salt for email encryption
-	PasswordHash   string    `json:"password_hash"`   // Argon2id hash of password with salt
-	PasswordSalt   string    `json:"password_salt"`   // Cryptographically secure random salt for Argon2id
-	SSHPubKey      string    `json:"ssh_public_key"`  // SSH public key for Storage-Service authentication
-	CreatedAt      time.Time `json:"created_at"`      // Account creation timestamp for auditing
-	UpdatedAt      time.Time `json:"updated_at"`      // Last modification timestamp for security monitoring
+	EmailHash      string     `json:"email_hash"`               // Primary key - SHA-256 hash of email for fast indexing (without salt)
+	EncryptedEmail string     `json:"encrypted_email"`          // AES-256-GCM encrypted email with random nonce and salt
+	EmailSalt      string     `json:"email_salt"`               // Cryptographically secure random salt for email encryption (salt+Master key = derivated key)
+	PasswordHash   string     `json:"password_hash"`            // Argon2id hash of password with salt
+	PasswordSalt   string     `json:"password_salt"`            // Cryptographically secure random salt for Argon2id
+	SSHPubKey      string     `json:"ssh_public_key"`           // SSH public key for Storage-Service authentication
+	CreatedAt      time.Time  `json:"created_at"`               // Account creation timestamp for auditing
+	UpdatedAt      time.Time  `json:"updated_at"`               // Last modification timestamp for security monitoring
+	LastAccessAt   *time.Time `json:"last_access_at,omitempty"` // Last login timestamp for security monitoring
 }
 
 // Response provides standardized API response format for Security-Switch communication.

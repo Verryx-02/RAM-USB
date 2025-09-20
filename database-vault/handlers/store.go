@@ -210,6 +210,7 @@ func StoreUserHandler(w http.ResponseWriter, r *http.Request) {
 		SSHPubKey:      req.SSHPubKey,  // SSH public key for Storage-Service authentication
 		CreatedAt:      now,            // Account creation timestamp
 		UpdatedAt:      now,            // Last modification timestamp
+		LastAccessAt:   nil,            // nil for new registrations
 	}
 
 	// TO-DO: Remove this blank identifier when storage interface is implemented

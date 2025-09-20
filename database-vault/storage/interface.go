@@ -134,6 +134,16 @@ type UserStorage interface {
 	//
 	// Returns plaintext email or error if decryption fails.
 	DecryptUserEmail(encryptedEmail, emailSalt string) (string, error)
+
+	// UpdateLastAccess updates the last access timestamp for security monitoring and audit trail.
+	//
+	// Security features:
+	// - Timestamp tracking for inactive account detection
+	// - Audit trail for security incident analysis
+	// - Performance optimized single-field update
+	//
+	// Returns error if user not found or update operation fails.
+	UpdateLastAccess(emailHash string) error
 }
 
 // UserUpdateRequest defines fields that can be modified for existing users.
@@ -147,11 +157,12 @@ type UserStorage interface {
 //
 // Used by UpdateUser for secure credential modification operations.
 type UserUpdateRequest struct {
-	NewPasswordHash   *string `json:"new_password_hash,omitempty"`   // Updated Argon2id hash with new salt
-	NewPasswordSalt   *string `json:"new_password_salt,omitempty"`   // Fresh cryptographic salt for new password
-	NewSSHPubKey      *string `json:"new_ssh_key,omitempty"`         // Updated SSH public key for storage access
-	NewEncryptedEmail *string `json:"new_encrypted_email,omitempty"` // Updated encrypted email with new salt
-	NewEmailSalt      *string `json:"new_email_salt,omitempty"`      // Fresh salt for email encryption
+	NewPasswordHash   *string    `json:"new_password_hash,omitempty"`   // Updated Argon2id hash with new salt
+	NewPasswordSalt   *string    `json:"new_password_salt,omitempty"`   // Fresh cryptographic salt for new password
+	NewSSHPubKey      *string    `json:"new_ssh_key,omitempty"`         // Updated SSH public key for storage access
+	NewEncryptedEmail *string    `json:"new_encrypted_email,omitempty"` // Updated encrypted email with new salt
+	NewEmailSalt      *string    `json:"new_email_salt,omitempty"`      // Fresh salt for email encryption
+	NewLastAccessAt   *time.Time `json:"new_last_access_at,omitempty"`  // Updated last access timestamp
 }
 
 // UserStats provides anonymous usage statistics for operational monitoring.
