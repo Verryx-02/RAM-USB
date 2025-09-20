@@ -15,16 +15,55 @@ package handlers
 import (
 	"database-vault/config"
 	"database-vault/crypto"
+	"database-vault/storage"
+	"database-vault/storage/postgresql"
 	"database-vault/types"
 	"database-vault/utils"
 	"fmt"
 	"log"
 	"net/http"
-	"runtime"       // memory cleenup
-	"runtime/debug" // memory cleenup
+	"runtime"       // memory cleanup
+	"runtime/debug" // memory cleanup
 	"strings"
+	"sync"
 	"time"
 )
+
+// Global storage instance for database operations
+var (
+	userStorage     storage.UserStorage
+	storageInitOnce sync.Once
+	storageInitErr  error
+)
+
+// InitializeStorage creates the PostgreSQL storage instance.
+//
+// Security features:
+// - Single initialization using sync.Once for thread safety
+// - Encryption key validation before storage creation
+// - Connection pool initialization with security parameters
+// - Database connectivity verification
+//
+// Called once during server startup to establish database connection.
+func InitializeStorage(cfg *config.Config) error {
+	storageInitOnce.Do(func() {
+		// STORAGE INITIALIZATION
+		// Create PostgreSQL storage with encryption key
+		userStorage, storageInitErr = postgresql.NewPostgreSQLStorage(
+			cfg.DatabaseURL,
+			cfg.EncryptionKey,
+		)
+
+		if storageInitErr != nil {
+			log.Printf("Failed to initialize PostgreSQL storage: %v", storageInitErr)
+			return
+		}
+
+		log.Printf("PostgreSQL storage initialized successfully")
+	})
+
+	return storageInitErr
+}
 
 // StoreUserHandler processes user credential storage requests with comprehensive security validation.
 //
@@ -120,6 +159,14 @@ func StoreUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// STORAGE AVAILABILITY CHECK
+	// Ensure storage is initialized before processing
+	if userStorage == nil {
+		log.Printf("Storage not initialized when handling request")
+		utils.SendErrorResponse(w, http.StatusInternalServerError, "Storage service unavailable.")
+		return
+	}
+
 	// CONFIGURATION AND ENCRYPTION KEY LOADING
 	// Load encryption key for AES-256-GCM email encryption
 	cfg := config.GetConfig()
@@ -144,45 +191,35 @@ func StoreUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TO-DO: Initialize storage interface when PostgreSQL implementation is available
-	// var userStorage storage.UserStorage
-	// userStorage = postgresql.NewUserStorage(cfg.DatabaseURL)
-
 	// DUPLICATE EMAIL HASH DETECTION
 	// Check if email hash already exists in database (prevents duplicate registrations)
-	// TO-DO: Uncomment when storage interface is implemented
-	/*
-		emailHashExists, err := userStorage.EmailHashExists(emailHash)
-		if err != nil {
-			errorMsg := fmt.Sprintf("Failed to check email hash existence for user (hash: %s): %v", emailHash, err)
-			log.Printf("Error: %s", errorMsg)
-			utils.SendErrorResponse(w, http.StatusInternalServerError, "Database error during duplicate check.")
-			return
-		}
-		if emailHashExists {
-			log.Printf("Registration attempt with existing email hash: %s", emailHash)
-			utils.SendErrorResponse(w, http.StatusConflict, "Email address already registered.")
-			return
-		}
-	*/
+	emailHashExists, err := userStorage.EmailHashExists(emailHash)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Failed to check email hash existence for user (hash: %s): %v", emailHash, err)
+		log.Printf("Error: %s", errorMsg)
+		utils.SendErrorResponse(w, http.StatusInternalServerError, "Database error during duplicate check.")
+		return
+	}
+	if emailHashExists {
+		log.Printf("Registration attempt with existing email hash: %s", emailHash)
+		utils.SendErrorResponse(w, http.StatusConflict, "Email address already registered.")
+		return
+	}
 
 	// DUPLICATE SSH KEY DETECTION
 	// Check if SSH public key already exists in database
-	// TO-DO: Uncomment when storage interface is implemented
-	/*
-		sshKeyExists, err := userStorage.SSHKeyExists(req.SSHPubKey)
-		if err != nil {
-			errorMsg := fmt.Sprintf("Failed to check SSH key existence: %v", err)
-			log.Printf("Error: %s", errorMsg)
-			utils.SendErrorResponse(w, http.StatusInternalServerError, "Database error during SSH key check.")
-			return
-		}
-		if sshKeyExists {
-			log.Printf("Registration attempt with existing SSH key")
-			utils.SendErrorResponse(w, http.StatusConflict, "SSH public key already in use.")
-			return
-		}
-	*/
+	sshKeyExists, err := userStorage.SSHKeyExists(req.SSHPubKey)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Failed to check SSH key existence: %v", err)
+		log.Printf("Error: %s", errorMsg)
+		utils.SendErrorResponse(w, http.StatusInternalServerError, "Database error during SSH key check.")
+		return
+	}
+	if sshKeyExists {
+		log.Printf("Registration attempt with existing SSH key")
+		utils.SendErrorResponse(w, http.StatusConflict, "SSH public key already in use.")
+		return
+	}
 
 	// PASSWORD SALT GENERATION
 	// Generate cryptographically secure salt for Argon2id hashing
@@ -213,39 +250,33 @@ func StoreUserHandler(w http.ResponseWriter, r *http.Request) {
 		LastAccessAt:   nil,            // nil for new registrations
 	}
 
-	// TO-DO: Remove this blank identifier when storage interface is implemented
-	_ = user // Suppress unused variable warning until PostgreSQL implementation is available
-
 	// DATABASE STORAGE
 	// Store user credentials in secure database
-	// TO-DO: Uncomment when storage interface is implemented
-	/*
-		if err := userStorage.StoreUser(user); err != nil {
-			errorMsg := fmt.Sprintf("Failed to store user credentials for user (hash: %s): %v", emailHash, err)
-			log.Printf("Error: %s", errorMsg)
+	if err := userStorage.StoreUser(user); err != nil {
+		errorMsg := fmt.Sprintf("Failed to store user credentials for user (hash: %s): %v", emailHash, err)
+		log.Printf("Error: %s", errorMsg)
 
-			// STORAGE ERROR CATEGORIZATION
-			// Provide specific guidance based on storage failure type
-			if storageErr, ok := err.(*storage.StorageError); ok {
-				switch storageErr.Type {
-				case storage.ErrorUserExists:
-					utils.SendErrorResponse(w, http.StatusConflict, storageErr.UserMessage)
-				case storage.ErrorSSHKeyExists:
-					utils.SendErrorResponse(w, http.StatusConflict, storageErr.UserMessage)
-				case storage.ErrorDatabaseConnection:
-					utils.SendErrorResponse(w, http.StatusServiceUnavailable, "Database service unavailable.")
-				case storage.ErrorValidationFailed:
-					utils.SendErrorResponse(w, http.StatusBadRequest, storageErr.UserMessage)
-				default:
-					utils.SendErrorResponse(w, http.StatusInternalServerError, "Storage operation failed.")
-				}
-			} else {
-				// Generic storage error - system issue
-				utils.SendErrorResponse(w, http.StatusInternalServerError, "Unable to store user credentials.")
+		// STORAGE ERROR CATEGORIZATION
+		// Provide specific guidance based on storage failure type
+		if storageErr, ok := err.(*storage.StorageError); ok {
+			switch storageErr.Type {
+			case storage.ErrorUserExists, storage.ErrorEmailHashExists:
+				utils.SendErrorResponse(w, http.StatusConflict, storageErr.UserMessage)
+			case storage.ErrorSSHKeyExists:
+				utils.SendErrorResponse(w, http.StatusConflict, storageErr.UserMessage)
+			case storage.ErrorDatabaseConnection:
+				utils.SendErrorResponse(w, http.StatusServiceUnavailable, "Database service unavailable.")
+			case storage.ErrorValidationFailed:
+				utils.SendErrorResponse(w, http.StatusBadRequest, storageErr.UserMessage)
+			default:
+				utils.SendErrorResponse(w, http.StatusInternalServerError, "Storage operation failed.")
 			}
-			return
+		} else {
+			// Generic storage error - system issue
+			utils.SendErrorResponse(w, http.StatusInternalServerError, "Unable to store user credentials.")
 		}
-	*/
+		return
+	}
 
 	// SUCCESS RESPONSE
 	// Log successful registration and send confirmation to Security-Switch
@@ -265,5 +296,4 @@ func StoreUserHandler(w http.ResponseWriter, r *http.Request) {
 	// AUDIT LOGGING
 	// Record successful storage operation for security monitoring
 	log.Printf("Audit: User registration completed (hash: %s), Timestamp: %s", emailHash, time.Now().Format(time.RFC3339))
-
 }

@@ -27,6 +27,7 @@ import (
 // main initializes and starts the Database-Vault mTLS server.
 //
 // Security features:
+// - PostgreSQL storage initialization with connection pooling
 // - Mutual TLS authentication for Security-Switch client verification
 // - Certificate Authority validation prevents unauthorized certificates
 // - TLS 1.3 enforcement for maximum cryptographic security
@@ -44,6 +45,14 @@ func main() {
 	if err := cfg.ValidateConfig(); err != nil {
 		log.Fatalf("Configuration validation failed: %v", err)
 	}
+
+	// POSTGRESQL STORAGE INITIALIZATION
+	// Initialize database connection pool and storage interface
+	log.Println("Initializing PostgreSQL storage...")
+	if err := handlers.InitializeStorage(cfg); err != nil {
+		log.Fatalf("Failed to initialize storage: %v", err)
+	}
+	log.Println("PostgreSQL storage initialized successfully")
 
 	// SERVICE STARTUP LOGGING
 	// Log configuration without sensitive encryption key or database credentials
