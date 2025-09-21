@@ -29,6 +29,3 @@ certificates/certification-authority/ca.srl
 # Will be modified
 user-client/keys/ssh_private_key
 user-client/keys/ssh_public_key.pub
-
-
-Understanding_RAM-USB.md
