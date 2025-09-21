@@ -35,8 +35,10 @@ The system is composed of several distributed components:
 
 All communication between components is secured with **mutual TLS (mTLS)**.
 
-See the [documentation](documentation/registration_flow.md) for more
-If you are Professor Scagnetto, read [this guide](Understanding_RAM-USB.md)
+See the [documentation](documentation/registration_flow.md) for more 
+
+If you are Professor Scagnetto, read [this guide](Understanding_RAM-USB.md) 
+
 --- 
 
 ## Project Structure
