@@ -21,7 +21,7 @@ import (
 // Returns true if request method is POST, false with error response otherwise.
 func EnforcePOST(w http.ResponseWriter, r *http.Request) bool {
 	// METHOD VALIDATION
-	// Reject non-POST requests to prevent CSRF and method confusion attacks
+	// Reject non-POST requests to prevent client errors
 	if r.Method != http.MethodPost {
 		LogAndSendError(w, http.StatusMethodNotAllowed,
 			"invalid method: "+r.Method+"; only POST is allowed",

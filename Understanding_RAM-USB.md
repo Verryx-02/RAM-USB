@@ -24,7 +24,7 @@ Iniziate da qui per comprendere il design del sistema e i principi di sicurezza 
 - Nessun componente si fida dei dati passatigli dagli altri componenti (principio **zero-trust**)
 - Ogni componente valida i dati passatigli in modo rigoroso (principio di **defense-in-depth**)
 
-## Livello 2: Modello di Sicurezza (30 minuti)
+## Livello 2: Architettura di Medio Livello (30 minuti)
 
 Esaminate i meccanismi di sicurezza che proteggono i dati degli utenti e prevengono accessi non autorizzati:
 
@@ -87,9 +87,9 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
     - **Anti-Rainbow Table**: Viene usato un salt crittograficamente sicuro (16 bytes) per ogni password. Anche se la password è debole, viene "rinforzata" dal salt
     - **Anti Timing Attack**: Comparazione constant-time in VerifyPassword (righe 81-90) impedisce ad un attaccante di sapere quanti caratteri della hash sono corretti. Va migliorata
 
-- **Gestione Chiavi Master**: [database-vault/crypto/keys.go](database-vault/crypto/keys.go)
+- **Gestione delle chiavi**: [database-vault/crypto/keys.go](database-vault/crypto/keys.go)
   - **Derivazione HKDF-SHA256**: Context separato per operazioni diverse (`"email-encryption-secure-v1"`)
-  - **Validazione Robusta**: Controllo dell'entropia, ricerca di pattern, verifica della lunghezza (Sono controlli basilari, vanno migliorati)
+  - **Validazione robusta**: Controllo dell'entropia, ricerca di pattern, verifica della lunghezza (Sono controlli basilari, vanno migliorati)
   - **Pulizia della memoria**: SecureKeyCleanup() sovrascrive chiavi in memoria con pattern multipli per prevenire furti della chiave dalla memoria
   - **Opzioni di fallback per ottenere la chiave**: Variabile di Ambiente -> File system -> Development generation (righe 74-106)
 
@@ -98,6 +98,50 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
   - **Chiavi derivate**: Mai salvate
   - **Hashing dell'email**: SHA-256 per le query SQL senza usare email in chiaro
 
+## Livello 3: Architettura di Basso Livello (50 minuti)
+
+Seguite una richiesta di registrazione utente attraverso l'intero sistema per comprendere l'implementazione nel dettaglio.
+
+**User-Client -> Entry-Hub:**
+- **Implementazione**: [entry-hub/handlers/register.go](entry-hub/handlers/register.go)
+- **Scopo**: Punto di ingresso pubblico che riceve richieste HTTPS dai client e le inoltra via mTLS al Security-Switch
+- **Flusso di Esecuzione**:
+  1. **Controllo delle Richieste** (righe 41-43): logging dell'IP e metodo HTTP
+  2. **Controllo Metodo HTTP** (righe 49-53): Accetta solo richieste POST
+  3. **Elaborazione JSON** (righe 55-67): Lettura della richiesta e parsing del JSON
+  4. **Validazione dei dati ricevuti** (righe 69-123): Validazione completa dell'input utente
+  5. **Registrazione Zero-Knowledge** (riga 126): `emailHash := utils.HashEmail(req.Email)` per log senza esporre le email in chiaro
+  6. **Configurazione Client mTLS** (righe 128-157): Inizializzazione client con certificati per Security-Switch
+  7. **Inoltro della richiesta verso il Security-Switch** (righe 159-188): `securityClient.ForwardRegistration(req)`
+
+
+
+
+
+
+
+
+**Entry-Hub -> Security-Switch:**
+- **Implementazione**: [security-switch/handlers/register.go](security-switch/handlers/register.go)
+- **Scopo**: Punto di controllo sicurezza che implementa difesa in profondità e zero-trust verso Database-Vault
+- **Implementazione Difesa in Profondità**:
+  1. **Ri-controllo Metodo** (riga 37): Ri-verifica POST nonostante fiducia mTLS
+  2. **Ri-elaborazione JSON** (righe 42-50): Riprocessa tutto da zero, non si fida dell'Entry-Hub
+  3. **Ri-validazione Completa** (righe 52-90): Validazione identica all'Entry-Hub (deliberatamente ridondante)
+  4. **Configurazione Client Database-Vault** (righe 94-115): Nuovo client mTLS per salto successivo
+  5. **Inoltro Sicuro** (righe 119-135): `dbClient.StoreUserCredentials(req)` verso layer di archiviazione
+  6. **Validazione Risposta** (righe 137-155): Verifica risposta Database-Vault + inoltro errori
+
+- **Garanzie di Sicurezza**:
+  - **Architettura Senza Fiducia**: Assume che Entry-Hub potrebbe essere compromesso
+  - **Validazione Identica**: Stessi controlli del livello precedente per coerenza
+  - **Catena Certificati**: Verifica organization="SecuritySwitch" per Database-Vault
+  - **Isolamento Errori**: Categorizza errori senza esporre dettagli interni
+
+- **Ruolo nell'Architettura**:
+  - **Perimetro di Sicurezza**: Ultimo controllo prima del layer di archiviazione
+  - **Filtro Traffico**: Solo richieste validate raggiungono il database
+  - **Punto di Controllo**: Registrazione centralizzata per monitoraggio sicurezza
 
 
 
@@ -109,4 +153,11 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
 
 
 
-## Livello 3: Percorso di Implementazione Core (40 minuti)
+**Security-Switch -> Database-Vault:**
+- **Implementazione**: [database-vault/handlers/store.go](database-vault/handlers/store.go)
+- **Scopo**: Layer finale di archiviazione con crittografia email e hashing password prima della persistenza
+- **Processo di Archiviazione Crittografica**:
+  1. **Validazione Finale** (righe 68-177): Terza validazione identica (ultimo controllo)
+
+
+  
