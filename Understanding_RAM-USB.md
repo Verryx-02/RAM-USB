@@ -1,21 +1,21 @@
-## Comprendere il Progetto: Una Guida Strutturata
+# Comprendere il Progetto RAM-USB
 
 Questa sezione fornisce un approccio a 3 livelli per la comprensione di R.A.M.-U.S.B.  
 Spazia dalla comprensione di alto livello ai dettagli implementativi, garantendo una comprensione completa sia dell'architettura di sicurezza che della sua implementazione pratica. Più precisamente:  
-- Il primo livello fornisce ona overview generale e approssimativa
+- Il primo livello fornisce un'overview generale e approssimativa
 - Il secondo livello scende più nei dettagli ed è già sufficiente a comprendere a pieno il progetto. 
 - Il terzo livello approfondisce l'implementazione   
 
-### Livello 1: Architettura di Alto Livello (5 minuti)
+## Livello 1: Architettura di Alto Livello (5 minuti)
 
 Iniziate da qui per comprendere il design del sistema e i principi di sicurezza su cui si fonda.
 
-1. **Diagramma di Flusso di Sistema**: Iniziate con il file `documentation/registration_flow.md` per visualizzare il flusso completo delle richieste. 
+1. **Diagramma di Flusso di Sistema**: Iniziate con il file [documentation/registration_flow.md](documentation/registration_flow.md) per visualizzare il flusso completo delle richieste. 
 2. **Panoramica dell'Architettura**: La natura distribuita del sistema con 4 microservizi
 3. **Concetto Fondamentale**: Architettura zero-trust dove ogni servizio autentica ogni altro servizio
 
 **Punti Chiave da Comprendere:**
-- Il sistema implementa una pipeline: Client → Entry-Hub → Security-Switch → Database-Vault
+- Il sistema implementa una pipeline: Client -> Entry-Hub -> Security-Switch -> Database-Vault
 - Ogni servizio gira su una porta diversa (8443, 8444, 8445) e comunica tramite mTLS
 - Per il momento gira tutto sullo stesso pc, senza container nè altro. Vengono usati 4 terminali. Poi ogni servizio girerà su un container/VM separato.
 - Le email degli utenti sono crittografate prima di essere salvate nel database con AES-256-GCM in modo da poter essere recuperate quando necessario, e sono salvate anche come hash.
@@ -24,12 +24,12 @@ Iniziate da qui per comprendere il design del sistema e i principi di sicurezza 
 - Nessun componente si fida dei dati passatigli dagli altri componenti (principio **zero-trust**)
 - Ogni componente valida i dati passatigli in modo rigoroso (principio di **defense-in-depth**)
 
-### Livello 2: Modello di Sicurezza (30 minuti)
+## Livello 2: Modello di Sicurezza (30 minuti)
 
 Esaminate i meccanismi di sicurezza che proteggono i dati degli utenti e prevengono accessi non autorizzati:
 
 **Autenticazione Mutual TLS:**
-- **Implementazione**: `security-switch/middleware/mtls.go`
+- **Implementazione**: [security-switch/middleware/mtls.go](security-switch/middleware/mtls.go)
 - **Scopo**: Gateway di sicurezza che implementa zero-trust tra Entry-Hub e Security-Switch
 - **Funzionamento Step-by-Step**:
   1. **Verifica TLS**: Controlla che la connessione sia crittografata (righe 36-43)
@@ -40,7 +40,7 @@ Esaminate i meccanismi di sicurezza che proteggono i dati degli utenti e preveng
 
 - **Caratteristiche di Sicurezza**:
   - **Fail-Secure**: Nega l'accesso per default
-  - **Prevenzione del Man-in-the-Middle**: Solo certificati firmati dalla CA interna sono accettati. Questo controllo viene fatto durante l'handshake TLS in `security-switch/main.go`, (riga 73). Se il middleware è stato chiamato allora sicuramente il certificato era valido. 
+  - **Prevenzione del Man-in-the-Middle**: Solo certificati firmati dalla CA interna sono accettati. Questo controllo viene fatto durante l'handshake TLS in [security-switch/main.go](security-switch/main.go), (riga 73). Se il middleware è stato chiamato allora sicuramente il certificato era valido. 
   - **Verifica ulteriore dell'identità**: Anche con certificato valido, deve appartenere all'organizzazione corretta
   - **Comprehensive Logging**: Ogni tentativo (successo/fallimento) viene tracciato senza esporre dati sensibili
   - **Blocco a livello di rete**: Anche se un utente malintenzionato riuscisse a superare queste misure, non potrebbe nemmeno a mandare un ping ai container interni perché l'accesso è bloccato dal file ACL di Tailscale.
@@ -51,16 +51,16 @@ Esaminate i meccanismi di sicurezza che proteggono i dati degli utenti e preveng
   - Parte del design defense-in-depth: anche se l'Entry-Hub fosse compromesso, deve ancora presentare certificati validi
 
 **Validazione Defense-in-Depth:**
-- **Livello 1**: `entry-hub/utils/validation.go` - Sanitizzazione iniziale dell'input
-- **Livello 2**: `security-switch/utils/validation.go` - Ri-validazione nonostante la fiducia mTLS
-- **Livello 3**: `database-vault/utils/validation.go` - Validazione finale prima dello storage
+- **Livello 1**: [entry-hub/utils/validation.go](entry-hub/utils/validation.go) - Sanitizzazione iniziale dell'input
+- **Livello 2**: [security-switch/utils/validation.go](security-switch/utils/validation.go) - Ri-validazione nonostante la fiducia mTLS
+- **Livello 3**: [database-vault/utils/validation.go](database-vault/utils/validation.go): Validazione finale prima dello storage
 - **Motivazione**: Anche se un livello è compromesso, gli altri mantengono la sicurezza. È sufficiente cambiare i certificati dei componenti non compromessi, isolare il componente compromesso e avviarne una nuova istanza su una nuova macchina virtuale grazie a ProxmoxVE.  
 
 Le email vengono salvate in due modi: crittografate con AES e in forma di hash con Argon2id
 
 **Implementazione Crittografica:**
 
-- **Crittografia Email Non-Deterministica**: `database-vault/crypto/aes.go`
+- **Crittografia Email Non-Deterministica**: [database-vault/crypto/aes.go](database-vault/crypto/aes.go)
   - **Processo Step-by-Step**:
     1. **Salt Generation** (righe 83-88): 16 bytes crittograficamente sicuri per ogni utente
     2. **Key Derivation** (righe 90-100): HKDF-SHA256(MasterKey + Salt + Context) -> chiave AES-256 unica
@@ -74,7 +74,7 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
     - **Integrity Protection**: GCM mode previene manomissioni del ciphertext
     - **Indicizzazione Zero-Knowledge**: SHA-256 hash delle email per query veloci senza esporre nulla in chiaro
 
-- **Sicurezza hashing Password Memory-Hard**: `database-vault/crypto/password.go`
+- **Sicurezza hashing Password Memory-Hard**: [database-vault/crypto/password.go](database-vault/crypto/password.go)
   - **Algoritmo**: Argon2id con parametri resistance-tuned
     - **Costo in termini di memoria**: 32MB (lo standard è 64MB, ne vengono usati 32 per facilitare il testing)
     - **Costo in termini di tempo**: 1 iterazione (lo standard è 2 o 3. Ne viene usato 1 per motivi di testing)
@@ -87,7 +87,7 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
     - **Anti-Rainbow Table**: Viene usato un salt crittograficamente sicuro (16 bytes) per ogni password. Anche se la password è debole, viene "rinforzata" dal salt
     - **Timing Attack Protection**: Comparazione constant-time in VerifyPassword (righe 81-90) impedisce ad un attaccante di sapere quanti caratteri della hash sono corretti. Va migliorata
 
-- **Gestione Chiavi Master**: `database-vault/crypto/keys.go`
+- **Gestione Chiavi Master**: [database-vault/crypto/keys.go](database-vault/crypto/keys.go)
   - **Derivazione HKDF-SHA256**: Context separato per operazioni diverse (`"email-encryption-secure-v1"`)
   - **Validazione Robusta**: Controllo dell'entropia, ricerca di pattern, verifica della lunghezza (Sono controlli basilari, vanno migliorati)
   - **Pulizia della memoria**: SecureKeyCleanup() sovrascrive chiavi in memoria con pattern multipli per prevenire furti della chiave dalla memoria
@@ -109,4 +109,4 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
 
 
 
-### Livello 3: Percorso di Implementazione Core (40 minuti)
+## Livello 3: Percorso di Implementazione Core (40 minuti)
