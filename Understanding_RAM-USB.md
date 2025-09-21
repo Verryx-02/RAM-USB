@@ -43,7 +43,7 @@ Esaminate i meccanismi di sicurezza che proteggono i dati degli utenti e preveng
   - **Prevenzione del Man-in-the-Middle**: Solo certificati firmati dalla CA interna sono accettati. Questo controllo viene fatto durante l'handshake TLS in [security-switch/main.go](security-switch/main.go), (riga 73). Se il middleware è stato chiamato allora sicuramente il certificato era valido. 
   - **Verifica ulteriore dell'identità**: Anche con certificato valido, deve appartenere all'organizzazione corretta
   - **Comprehensive Logging**: Ogni tentativo (successo/fallimento) viene tracciato senza esporre dati sensibili
-  - **Blocco a livello di rete**: Anche se un utente malintenzionato riuscisse a superare queste misure, non potrebbe nemmeno a mandare un ping ai container interni perché l'accesso è bloccato dal file ACL di Tailscale.
+  - **Blocco a livello di rete**: Anche se un utente malintenzionato riuscisse a superare queste misure, non potrebbe nemmeno mandare un ping ai container interni perché l'accesso è bloccato dal file ACL di Tailscale.
 
 - **Ruolo nell'Architettura**: 
   - Implementa il "checkpoint" critico dove Entry-Hub deve dimostrare la sua identità
@@ -56,22 +56,22 @@ Esaminate i meccanismi di sicurezza che proteggono i dati degli utenti e preveng
 - **Livello 3**: [database-vault/utils/validation.go](database-vault/utils/validation.go): Validazione finale prima dello storage
 - **Motivazione**: Anche se un livello è compromesso, gli altri mantengono la sicurezza. È sufficiente cambiare i certificati dei componenti non compromessi, isolare il componente compromesso e avviarne una nuova istanza su una nuova macchina virtuale grazie a ProxmoxVE.  
 
-Le email vengono salvate in due modi: crittografate con AES e in forma di hash con Argon2id
+Le email vengono salvate in due modi: crittografate con AES e in forma di hash con SHA256. Le password invece vengono salvate sotto forma di hash calcolata con Argon2ID
 
 **Implementazione Crittografica:**
 
 - **Crittografia Email Non-Deterministica**: [database-vault/crypto/aes.go](database-vault/crypto/aes.go)
   - **Processo Step-by-Step**:
-    1. **Salt Generation** (righe 83-88): 16 bytes crittograficamente sicuri per ogni utente
-    2. **Key Derivation** (righe 90-100): HKDF-SHA256(MasterKey + Salt + Context) -> chiave AES-256 unica
-    3. **Nonce Generation** (righe 102-107): 12 bytes random per ogni operazione di crittografia
-    4. **AES-256-GCM Encryption** (righe 120-122): Crittografia autenticata con integrity check
-    5. **Storage Format**: nonce + ciphertext + auth_tag -> base64 per database
+    1. **Generazione del salt** (righe 83-88): 16 bytes crittograficamente sicuri per ogni utente
+    2. **Derivazione della chiave** (righe 90-100): HKDF-SHA256(MasterKey + Salt + Context) -> chiave AES-256 unica
+    3. **Generatione del nonce** (righe 102-107): 12 bytes random per ogni operazione di crittografia
+    4. **Crittazione con AES-256-GCM** (righe 120-122): Crittografia autenticata con integrity check
+    5. **Formato di Storage**: nonce + ciphertext + auth_tag -> base64 per database
   
   - **Garanzie di Sicurezza**:
     - **Non-Deterministica**: Stessa email produce cifratura diversa ogni volta (salt + nonce random)
     - **Derivazione della chiave**: La chiave viene derivata su richiesta, non viene mai salvata ed è diversa per ogni email
-    - **Integrity Protection**: GCM mode previene manomissioni del ciphertext
+    - **Protezione di integrità**: GCM mode previene manomissioni del ciphertext
     - **Indicizzazione Zero-Knowledge**: SHA-256 hash delle email per query veloci senza esporre nulla in chiaro
 
 - **Sicurezza hashing Password Memory-Hard**: [database-vault/crypto/password.go](database-vault/crypto/password.go)
@@ -85,7 +85,7 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
     - **Anti-GPU**: Memory-hard design rende gli attacchi GPU economicamente svantaggiosi
     - **Anti-ASIC**: Argon2id è resistente anche ad hardware specializzato
     - **Anti-Rainbow Table**: Viene usato un salt crittograficamente sicuro (16 bytes) per ogni password. Anche se la password è debole, viene "rinforzata" dal salt
-    - **Timing Attack Protection**: Comparazione constant-time in VerifyPassword (righe 81-90) impedisce ad un attaccante di sapere quanti caratteri della hash sono corretti. Va migliorata
+    - **Anti Timing Attack**: Comparazione constant-time in VerifyPassword (righe 81-90) impedisce ad un attaccante di sapere quanti caratteri della hash sono corretti. Va migliorata
 
 - **Gestione Chiavi Master**: [database-vault/crypto/keys.go](database-vault/crypto/keys.go)
   - **Derivazione HKDF-SHA256**: Context separato per operazioni diverse (`"email-encryption-secure-v1"`)
