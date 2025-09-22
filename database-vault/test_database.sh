@@ -90,12 +90,12 @@ if [ "$SSL_STATUS" = "on" ]; then
     echo -e "${GREEN}SSL is enabled in PostgreSQL${NC}"
     
     # Check if current connection is using SSL
-    SSL_IN_USE=$(psql "$DATABASE_URL" -t -c "SELECT ssl_is_used();" 2>/dev/null | tr -d ' ')
+    SSL_IN_USE=$(psql "$DATABASE_URL" -t -c "SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid();" 2>/dev/null | tr -d ' ')
     if [ "$SSL_IN_USE" = "t" ]; then
         echo -e "${GREEN}Current connection is using SSL${NC}"
         
         # Show SSL version
-        SSL_VERSION=$(psql "$DATABASE_URL" -t -c "SELECT ssl_version();" 2>/dev/null | tr -d ' ')
+        SSL_VERSION=$(psql "$DATABASE_URL" -t -c "SELECT version FROM pg_stat_ssl WHERE pid = pg_backend_pid();" 2>/dev/null | tr -d ' ')
         echo "SSL Version: $SSL_VERSION"
     else
         echo -e "${YELLOW}SSL is enabled but current connection is not using it${NC}"
