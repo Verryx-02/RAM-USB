@@ -72,8 +72,9 @@ func GetConfig() *Config {
 	// TO-DO: Add connection pooling, timeouts, and SSL configuration
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		// Default development database URL: replace with environment variable
-		databaseURL = "postgres://ramusb:password@localhost:5432/ramusb_vault?sslmode=require"
+		// Default with SSL enabled (sslmode=require)
+		// For development without SSL, set DATABASE_URL with sslmode=disable
+		databaseURL = "postgres://ramusb_user:ramusb_secure_2024@localhost:5432/ramusb_vault?sslmode=require"
 	}
 
 	return &Config{

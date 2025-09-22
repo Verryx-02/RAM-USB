@@ -33,7 +33,7 @@ fi
 
 # Test database connectivity
 echo -e "\n${YELLOW}Step 3: Testing database connectivity...${NC}"
-export DATABASE_URL="postgres://ramusb_user:ramusb_secure_2024@localhost:5432/ramusb_vault?sslmode=disable"
+export DATABASE_URL="postgres://ramusb_user:ramusb_secure_2024@localhost:5432/ramusb_vault?sslmode=require"
 
 if psql "$DATABASE_URL" -c "SELECT 1" >/dev/null 2>&1; then
     echo -e "${GREEN}Database connection successful${NC}"
@@ -83,12 +83,41 @@ else
     echo -e "${YELLOW}Could not measure query performance${NC}"
 fi
 
+# Test SSL connection
+echo -e "\n${YELLOW}Step 3.5: Testing SSL configuration...${NC}"
+SSL_STATUS=$(psql "$DATABASE_URL" -t -c "SHOW ssl;" 2>/dev/null | tr -d ' ')
+if [ "$SSL_STATUS" = "on" ]; then
+    echo -e "${GREEN}SSL is enabled in PostgreSQL${NC}"
+    
+    # Check if current connection is using SSL
+    SSL_IN_USE=$(psql "$DATABASE_URL" -t -c "SELECT ssl_is_used();" 2>/dev/null | tr -d ' ')
+    if [ "$SSL_IN_USE" = "t" ]; then
+        echo -e "${GREEN}Current connection is using SSL${NC}"
+        
+        # Show SSL version
+        SSL_VERSION=$(psql "$DATABASE_URL" -t -c "SELECT ssl_version();" 2>/dev/null | tr -d ' ')
+        echo "SSL Version: $SSL_VERSION"
+    else
+        echo -e "${YELLOW}SSL is enabled but current connection is not using it${NC}"
+        echo "Connection string may have sslmode=disable"
+    fi
+else
+    echo -e "${YELLOW}SSL is not enabled in PostgreSQL${NC}"
+    echo "This is OK for development. Run database/setup.sh to enable SSL"
+fi
+
 echo -e "\n${GREEN}============================================${NC}"
 echo -e "${GREEN}Database testing completed successfully!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
 echo "Environment variables for Database-Vault:"
-echo "export DATABASE_URL='$DATABASE_URL'"
+echo ""
+echo "# With SSL (recommended):"
+echo "export DATABASE_URL='postgres://ramusb_user:ramusb_secure_2024@localhost:5432/ramusb_vault?sslmode=require'"
+echo ""
+echo "# Without SSL (development only):"
+echo "export DATABASE_URL='postgres://ramusb_user:ramusb_secure_2024@localhost:5432/ramusb_vault?sslmode=disable'"
+echo ""
 echo "export RAMUSB_ENCRYPTION_KEY=$(openssl rand -hex 32)"
 echo ""
 echo "Ready to start Database-Vault server!"

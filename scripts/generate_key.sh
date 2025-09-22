@@ -38,7 +38,7 @@ echo ""
 
 # Create the certificates directory structure
 echo "Creating certificate directory structure..."
-mkdir -p ../certificates/{certification-authority,entry-hub,security-switch,database-vault,storage-service}
+mkdir -p ../certificates/{certification-authority,entry-hub,security-switch,database-vault,storage-service,postgresql}
 
 # Change to certificates directory
 cd ../certificates
@@ -389,6 +389,75 @@ rm -f server.csr client.csr server.conf
 cd ..
 
 # ===========================
+# POSTGRESQL CERTIFICATES
+# ===========================
+cd postgresql
+
+# Generate PostgreSQL server private key
+# Used by PostgreSQL server for SSL/TLS connections
+openssl genrsa \
+  -out server.key 4096
+
+# Generate PostgreSQL server CSR
+openssl req \
+  -new \
+  -key server.key \
+  -out server.csr \
+  -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=PostgreSQL/CN=postgresql-server"
+
+# Create configuration file for PostgreSQL server certificate
+cat > server.conf << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = IT
+ST = Friuli-Venezia Giulia
+L = Udine
+O = PostgreSQL
+CN = postgresql-server
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = postgresql-server
+DNS.2 = localhost
+DNS.3 = postgres
+IP.1 = 127.0.0.1
+IP.2 = ::1
+EOF
+
+# Generate PostgreSQL server certificate signed by CA
+openssl x509 \
+  -req \
+  -in server.csr \
+  -CA ../certification-authority/ca.crt \
+  -CAkey ../certification-authority/ca.key \
+  -CAcreateserial \
+  -out server.crt \
+  -days 365 \
+  -extensions v3_req \
+  -extfile server.conf
+
+# Clean up temporary files
+rm -f server.csr server.conf
+
+# PostgreSQL requires specific permissions for SSL files
+chmod 600 server.key
+chmod 644 server.crt
+
+echo "PostgreSQL SSL certificates generated:"
+echo "  Server cert: server.crt"
+echo "  Server key:  server.key (permissions: 600)"
+
+cd ../..
+
+# ===========================
 # USER-CLIENT SSH KEYS
 # ===========================
 cd user-client
@@ -428,6 +497,7 @@ find . -name "*.key" -exec chmod 600 {} \;
 find . -name "*.crt" -exec chmod 644 {} \;
 
 # Set readable permissions on CA serial file
+cd certificates/
 chmod 644 certification-authority/ca.srl
 
 # ===========================

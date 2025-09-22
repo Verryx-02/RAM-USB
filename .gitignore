@@ -22,6 +22,9 @@ certificates/storage-service/client.key
 certificates/storage-service/server.crt
 certificates/storage-service/server.key
 
+certificates/postgresql/server.crt
+certificates/postgresql/server.key
+
 certificates/certification-authority/ca.crt
 certificates/certification-authority/ca.key
 certificates/certification-authority/ca.srl
