@@ -111,6 +111,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		utils.SendErrorResponse(w, http.StatusBadRequest, "Invalid SSH public key format.")
 		return
 	}
+
 	// emailHash is used for Zero Knowledge logging
 	emailHash := utils.HashEmail(req.Email)
 

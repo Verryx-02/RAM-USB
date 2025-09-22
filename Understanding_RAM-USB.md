@@ -24,6 +24,8 @@ Iniziate da qui per comprendere il design del sistema e i principi di sicurezza 
 - Nessun componente si fida dei dati passatigli dagli altri componenti (principio **zero-trust**)
 - Ogni componente valida i dati passatigli in modo rigoroso (principio di **defense-in-depth**)
 
+
+
 ## Livello 2: Architettura di Medio Livello (30 minuti)
 
 Esaminate i meccanismi di sicurezza che proteggono i dati degli utenti e prevengono accessi non autorizzati:
@@ -98,11 +100,12 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
   - **Chiavi derivate**: Mai salvate
   - **Hashing dell'email**: SHA-256 per le query SQL senza usare email in chiaro
 
+
 ## Livello 3: Architettura di Basso Livello (50 minuti)
 
 Seguite una richiesta di registrazione utente attraverso l'intero sistema per comprendere l'implementazione nel dettaglio.
 
-**User-Client -> Entry-Hub:**
+### **User-Client -> Entry-Hub:**
 - **Implementazione**: [entry-hub/handlers/register.go](entry-hub/handlers/register.go)
 - **Scopo**: Punto di ingresso pubblico che riceve richieste HTTPS dai client e le inoltra via mTLS al Security-Switch
 - **Flusso di Esecuzione**:
@@ -114,50 +117,42 @@ Seguite una richiesta di registrazione utente attraverso l'intero sistema per co
   6. **Configurazione Client mTLS** (righe 128-157): Inizializzazione client con certificati per Security-Switch
   7. **Inoltro della richiesta verso il Security-Switch** (righe 159-188): `securityClient.ForwardRegistration(req)`
 
-
-
-
-
-
-
-
-**Entry-Hub -> Security-Switch:**
+### **Entry-Hub -> Security-Switch:**
 - **Implementazione**: [security-switch/handlers/register.go](security-switch/handlers/register.go)
-- **Scopo**: Punto di controllo sicurezza che implementa difesa in profondità e zero-trust verso Database-Vault
+- **Scopo**: Il Security-Switch fa da centro di controllo. Implementa defense-in-depth e zero-trust ed inoltra la richiesta verso il Database-Vault
 - **Implementazione Difesa in Profondità**:
-  1. **Ri-controllo Metodo** (riga 37): Ri-verifica POST nonostante fiducia mTLS
-  2. **Ri-elaborazione JSON** (righe 42-50): Riprocessa tutto da zero, non si fida dell'Entry-Hub
-  3. **Ri-validazione Completa** (righe 52-90): Validazione identica all'Entry-Hub (deliberatamente ridondante)
-  4. **Configurazione Client Database-Vault** (righe 94-115): Nuovo client mTLS per salto successivo
-  5. **Inoltro Sicuro** (righe 119-135): `dbClient.StoreUserCredentials(req)` verso layer di archiviazione
-  6. **Validazione Risposta** (righe 137-155): Verifica risposta Database-Vault + inoltro errori
+  1. **Ri-controllo Metodo** (righe 41-43): Ri-verifica POST nonostante il mTLS
+  2. **Ri-elaborazione JSON** (righe 45-57): Riprocessa tutto da zero, non si fida dell'Entry-Hub
+  3. **Ri-validazione Completa** (righe 59-113): Validazione identica all'Entry-Hub 
+  4. **Configurazione Client Database-Vault** (righe 118-147): Inizializzazione client con certificati per Database-Vault
+  5. **Inoltro Sicuro** (righe 149-175): `dbClient.StoreUserCredentials(req)` verso Database-Vault
+  6. **Validazione Risposta** (righe 177-184): Verifica risposta Database-Vault + inoltro errori
 
 - **Garanzie di Sicurezza**:
-  - **Architettura Senza Fiducia**: Assume che Entry-Hub potrebbe essere compromesso
+  - **Architettura Zero-Trust**: Assume che l'Entry-Hub potrebbe essere compromesso
   - **Validazione Identica**: Stessi controlli del livello precedente per coerenza
-  - **Catena Certificati**: Verifica organization="SecuritySwitch" per Database-Vault
-  - **Isolamento Errori**: Categorizza errori senza esporre dettagli interni
+  - **Catena Certificati**: Verifica `organization="SecuritySwitch"` per Database-Vault
+  - **Isolamento Errori**: Categorizza errori senza esporre dati degli utenti e dettagli interni
 
 - **Ruolo nell'Architettura**:
-  - **Perimetro di Sicurezza**: Ultimo controllo prima del layer di archiviazione
-  - **Filtro Traffico**: Solo richieste validate raggiungono il database
-  - **Punto di Controllo**: Registrazione centralizzata per monitoraggio sicurezza
+  - **Perimetro di Sicurezza**: Il Security-Switch separa il Database-Vault dal punto di ingresso per gli utenti, fungendo da barriera aggiuntiva nel caso in cui l'Entry-Hub dovesse essere compromesso. L'idea è di tenere il database più lontano possibile dagli utenti. Infatti gira su una macchina virtuale separata, non direttamente raggiungibile dall'Entry-Hub
 
-
-
-
-
-
-
-
-
-
-
-**Security-Switch -> Database-Vault:**
+### **Security-Switch -> Database-Vault:**
 - **Implementazione**: [database-vault/handlers/store.go](database-vault/handlers/store.go)
 - **Scopo**: Layer finale di archiviazione con crittografia email e hashing password prima della persistenza
 - **Processo di Archiviazione Crittografica**:
-  1. **Validazione Finale** (righe 68-177): Terza validazione identica (ultimo controllo)
+  1. **Validazione Finale** (righe 68-160): Terza validazione identica (ultimo controllo)
+  2. **Verifica disponibilità del Database-Vault** (righe 162-168): Verifica che userStorage sia inizializzato correttamente. 
+  3. **Caricamento Chiave Crittografia** (righe 170-177): Carica la chiave AES-256 per crittografare l'email
+  4. **Elaborazione Crittografica Email** (righe 184-192):
+     - `emailHash := crypto.HashEmail(req.Email)` (SHA-256 per indicizzazione veloce)
+     - `encryptedEmail, emailSalt, err := crypto.EncryptEmailSecure(req.Email, cfg.EncryptionKey)` (AES-256-GCM non-deterministico)
+  5. **Prevenzione Duplicati** (righe 194-222): Controllo hash email e chiave SSH per unicità
+  6. **Elaborazione Sicurezza Password** (righe 224-236): Generazione salt + hashing Argon2id
+  7. **Transazione Database** (righe 238-279): Archiviazione in PostgreSQL
 
 
-  
+
+
+
+
