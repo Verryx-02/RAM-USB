@@ -166,7 +166,7 @@ Seguite una richiesta di registrazione utente attraverso l'intero sistema per co
   - Il **Pooling delle connessioni** permette di gestire in maniera efficiente le transazioni riducendo il rischio di crash del database dovuto ad un numero elevato di transazioni.
 
 - [Design Schema-ER](database-vault/database/ER-diagram.png)
-  - **Struttura delle tabelle:** [001_create_tables.sql](database-vault/database/schema/001_create_tables.sql) 
+  - [Struttura delle tabelle:](database-vault/database/schema/001_create_tables.sql) 
   - [Indici per prestazioni](database-vault/database/schema/002_create_indexes.sql): Indice su email_hash (PK) e ssh_public_key (unique)
   - [Validazione Dati](database-vault/database/schema/004_create_constraints.sql): Vincoli a livello database per formato hash email, hash password, chiave SSH
   - [Trigger Automatici](database-vault/database/schema/003_create_triggers.sql): Aggiornamento automatico timestamp updated_at
