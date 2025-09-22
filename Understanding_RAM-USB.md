@@ -151,8 +151,22 @@ Seguite una richiesta di registrazione utente attraverso l'intero sistema per co
   6. **Elaborazione Sicurezza Password** (righe 224-236): Generazione salt + hashing Argon2id
   7. **Transazione Database** (righe 238-279): Archiviazione in PostgreSQL
 
+### **Database PostgreSQL:**
+- **Implementazione**: [database-vault/storage/postgresql/postgresql.go](database-vault/storage/postgresql/postgresql.go)
+- **Scopo**: Persistenza sicura con prepared statement e pooling connessioni
+- **Flusso Transazione** (metodo `StoreUser`):
+  2. Controlla se la hash dell'email è già presente usando i prepared statement (righe 112-127): 
+  3. Controlla se la chiave SSH è già presente (righe 129-144): 
+  4. Inserimento con prepared statement dell'utente con i suoi attributi (righe 146-160): 
+  5. Commit della transazione solo se tutti i controlli passano (righe 162-166):
+  6. Log del successo dell'inserimento con timestamp senza dati sensibili (righe 168-174): 
 
+- **Caratteristiche Sicurezza Database**:
+  - I **Prepared Statement** impediscono attacchi basati su SQL-injection via [database-vault/storage/postgresql/queries.go](database-vault/storage/postgresql/queries.go)
+  - Il **Pooling delle connessioni** permette di gestire in maniera efficiente le transazioni riducendo il rischio di crash del database dovuto ad un numero elevato di transazioni.
 
-
-
-
+- [Design Schema-ER](database-vault/database/ER-diagram.png)
+  - **Struttura delle tabelle:** [001_create_tables.sql](database-vault/database/schema/001_create_tables.sql) 
+  - [Indici per prestazioni](database-vault/database/schema/002_create_indexes.sql): Indice su email_hash (PK) e ssh_public_key (unique)
+  - [Validazione Dati](database-vault/database/schema/004_create_constraints.sql): Vincoli a livello database per formato hash email, hash password, chiave SSH
+  - [Trigger Automatici](database-vault/database/schema/003_create_triggers.sql): Aggiornamento automatico timestamp updated_at
