@@ -165,21 +165,24 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		config.CACertFile,
 	)
 	if err != nil {
+		// METRICS: Track Security-Switch client initialization failures
+		metrics.IncrementError("security_switch_client_init_failed")
+
 		errorMsg := fmt.Sprintf("Failed to initialize Security-Switch client: %v", err)
 		log.Printf("Error: %s", errorMsg)
 
 		// MTLS CONFIGURATION ERRORS
-		// Distinguish between certificate and network issues
+		// Different error types
 		if strings.Contains(err.Error(), "certificate") {
-			// Certificate validation failure - configuration issue
+			metrics.IncrementError("certificate_error")
 			utils.SendErrorResponse(w, http.StatusInternalServerError,
 				"Certificate configuration error. Please contact administrator.")
 		} else if strings.Contains(err.Error(), "file") {
-			// Certificate files missing - deployment issue
+			metrics.IncrementError("certificate_file_missing")
 			utils.SendErrorResponse(w, http.StatusInternalServerError,
 				"Certificate files not found. Please contact administrator.")
 		} else {
-			// Generic client initialization failure - system issue
+			metrics.IncrementError("security_switch_init_generic")
 			utils.SendErrorResponse(w, http.StatusInternalServerError,
 				"Security-Switch client initialization failed. Please contact administrator.")
 		}
@@ -192,34 +195,51 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	switchResponse, err := securityClient.ForwardRegistration(req)
 	if err != nil {
+		// METRICS: Track forwarding failures
+		metrics.IncrementError("security_switch_forward_failed")
+
 		errorMsg := fmt.Sprintf("Failed to contact Security-Switch for user (hash: %s): %v", emailHash, err)
 		log.Printf("Error: %s", errorMsg)
 
 		// NETWORK ERROR CATEGORIZATION
 		// Provide specific guidance based on failure type
 		if strings.Contains(err.Error(), "connection refused") {
+			metrics.IncrementError("security_switch_connection_refused")
 			// Service unavailable - temporary outage
 			utils.SendErrorResponse(w, http.StatusServiceUnavailable,
 				"Security-Switch service is unavailable. Please try again later.")
+
 		} else if strings.Contains(err.Error(), "timeout") {
+			metrics.IncrementError("security_switch_timeout")
 			// Service overloaded - retry recommended
 			utils.SendErrorResponse(w, http.StatusGatewayTimeout,
 				"Security-Switch service timeout. Please try again later.")
+
 		} else if strings.Contains(err.Error(), "certificate") || strings.Contains(err.Error(), "tls") {
+			metrics.IncrementError("security_switch_tls_error")
 			// TLS/certificate error - configuration issue
 			utils.SendErrorResponse(w, http.StatusInternalServerError,
 				"Security certificate validation failed. Please contact administrator.")
+
 		} else {
+			metrics.IncrementError("security_switch_generic_error")
 			// Generic network error - service issue
 			utils.SendErrorResponse(w, http.StatusBadGateway,
 				"Unable to reach Security-Switch service. Please try again later.")
 		}
+
+		// METRICS: Registration failed
+		metrics.IncrementRegistration(false)
 		return
 	}
 
 	// RESPONSE VALIDATION
 	// Verify Security-Switch successfully processed registration
 	if !switchResponse.Success {
+		// METRICS: Track registration rejection by Security-Switch
+		metrics.IncrementRegistration(false)
+		metrics.IncrementError("registration_rejected_by_security_switch")
+
 		log.Printf("Security-Switch rejected registration for user (hash: %s): %s", emailHash, switchResponse.Message)
 		utils.SendErrorResponse(w, http.StatusBadRequest,
 			fmt.Sprintf("Registration failed: %s", switchResponse.Message))
@@ -227,6 +247,9 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// SUCCESS RESPONSE
+	// METRICS: Track successful registration
+	metrics.IncrementRegistration(true)
+
 	// Complete Entry-Hub registration flow with audit logging
 	log.Printf("User successfully registered via Security-Switch (hash: %s)", emailHash)
 	utils.SendSuccessResponse(w, http.StatusCreated, "User successfully registered!")

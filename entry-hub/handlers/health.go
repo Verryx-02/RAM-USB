@@ -10,6 +10,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"https_server/metrics"
 	"https_server/types"
 	"net/http"
 )
@@ -23,6 +24,9 @@ import (
 //
 // Returns HTTP 200 with success status indicating Entry-Hub availability.
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
+	// METRICS: Track health check requests
+	metrics.IncrementRequest(r.Method, "/api/health", http.StatusOK)
+
 	// JSON RESPONSE SETUP
 	// Ensure consistent content type for monitoring tools
 	w.Header().Set("Content-Type", "application/json")
