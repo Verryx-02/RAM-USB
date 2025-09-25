@@ -1,0 +1,237 @@
+# Prometheus Alerting Rules for R.A.M.-U.S.B. Monitoring
+# Defines alerts for service health, performance, and security issues
+
+groups:
+  # ===========================
+  # SERVICE AVAILABILITY ALERTS
+  # ===========================
+  - name: service_availability
+    interval: 30s
+    rules:
+      
+      # Alert if Entry-Hub is down
+      - alert: EntryHubDown
+        expr: up{job="metrics-collector", service="entry-hub"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: entry-hub
+          component: api
+        annotations:
+          summary: "Entry-Hub service is down"
+          description: "Entry-Hub has not reported metrics for more than 2 minutes"
+      
+      # Alert if Security-Switch is down
+      - alert: SecuritySwitchDown
+        expr: up{job="metrics-collector", service="security-switch"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: security-switch
+          component: gateway
+        annotations:
+          summary: "Security-Switch service is down"
+          description: "Security-Switch has not reported metrics for more than 2 minutes"
+      
+      # Alert if Database-Vault is down
+      - alert: DatabaseVaultDown
+        expr: up{job="metrics-collector", service="database-vault"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: database-vault
+          component: storage
+        annotations:
+          summary: "Database-Vault service is down"
+          description: "Database-Vault has not reported metrics for more than 2 minutes"
+      
+      # Alert if Metrics-Collector is down
+      - alert: MetricsCollectorDown
+        expr: up{job="metrics-collector"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: metrics-collector
+          component: monitoring
+        annotations:
+          summary: "Metrics-Collector is down"
+          description: "Cannot scrape metrics from Metrics-Collector endpoint"
+
+  # ===========================
+  # PERFORMANCE ALERTS
+  # ===========================
+  - name: performance
+    interval: 30s
+    rules:
+      
+      # High request latency
+      - alert: HighRequestLatency
+        expr: ramusb_request_duration_milliseconds{quantile="0.95"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High request latency detected"
+          description: "95th percentile request latency is above 1 second for {{ $labels.service }}"
+      
+      # Very high request latency
+      - alert: VeryHighRequestLatency
+        expr: ramusb_request_duration_milliseconds{quantile="0.99"} > 5000
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Very high request latency detected"
+          description: "99th percentile request latency is above 5 seconds for {{ $labels.service }}"
+      
+      # High error rate
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(ramusb_requests_total{status="5xx"}[5m])) by (service)
+            /
+            sum(rate(ramusb_requests_total[5m])) by (service)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is above 5% for {{ $labels.service }}"
+
+  # ===========================
+  # SECURITY ALERTS
+  # ===========================
+  - name: security
+    interval: 30s
+    rules:
+      
+      # High metrics rejection rate (possible data leak attempt)
+      - alert: HighMetricsRejectionRate
+        expr: ramusb_metrics_rejection_rate_percent > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+          security: true
+        annotations:
+          summary: "High metrics rejection rate"
+          description: "More than 10% of metrics are being rejected for containing sensitive data"
+      
+      # Registration failures spike
+      - alert: RegistrationFailureSpike
+        expr: |
+          (
+            sum(rate(ramusb_registrations_total{result="failed"}[5m]))
+            /
+            sum(rate(ramusb_registrations_total[5m]))
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: registration
+          security: true
+        annotations:
+          summary: "High registration failure rate"
+          description: "More than 50% of registrations are failing"
+      
+      # mTLS authentication failures
+      - alert: MTLSAuthFailures
+        expr: rate(ramusb_mtls_auth_total{result="failed"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: security
+          security: true
+        annotations:
+          summary: "mTLS authentication failures detected"
+          description: "Detecting {{ $value }} mTLS auth failures per second"
+      
+      # Validation failures spike (possible attack)
+      - alert: ValidationFailureSpike
+        expr: rate(ramusb_validation_failures_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: validation
+          security: true
+        annotations:
+          summary: "High validation failure rate"
+          description: "Validation failures for {{ $labels.reason }} exceeding 1 per second"
+
+  # ===========================
+  # RESOURCE ALERTS
+  # ===========================
+  - name: resources
+    interval: 30s
+    rules:
+      
+      # Database connection pool exhaustion
+      - alert: DatabaseConnectionPoolExhausted
+        expr: ramusb_connection_pool_size{state="active"} / ramusb_connection_pool_size{state="max"} > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "{{ $labels.service }} using more than 90% of connection pool"
+      
+      # High active connections
+      - alert: HighActiveConnections
+        expr: ramusb_connections_active > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "High number of active connections"
+          description: "{{ $labels.service }} has {{ $value }} active connections"
+      
+      # Storage growth rate
+      - alert: HighStorageGrowthRate
+        expr: rate(ramusb_users_count[1h]) > 100
+        for: 1h
+        labels:
+          severity: info
+          component: storage
+        annotations:
+          summary: "High user registration rate"
+          description: "More than 100 new users per hour"
+
+  # ===========================
+  # DATA QUALITY ALERTS
+  # ===========================
+  - name: data_quality
+    interval: 1m
+    rules:
+      
+      # No metrics received
+      - alert: NoMetricsReceived
+        expr: increase(ramusb_metrics_received_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "No metrics being received"
+          description: "Metrics-Collector has not received any metrics in 5 minutes"
+      
+      # All metrics being rejected
+      - alert: AllMetricsRejected
+        expr: |
+          (
+            increase(ramusb_metrics_rejected_total[5m]) > 0
+            and
+            increase(ramusb_metrics_stored_total[5m]) == 0
+          )
+        for: 5m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: "All metrics being rejected"
+          description: "All received metrics are being rejected by validation"

@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"https_server/config"
 	"https_server/handlers"
+	"https_server/metrics"
+	"https_server/mqtt"
 	"log"
 	"net/http"
 )
@@ -32,6 +34,22 @@ func main() {
 	// DISTRIBUTED SERVICE CONFIGURATION
 	// Load mTLS parameters for secure inter-service communication
 	cfg := config.GetConfig()
+
+	// METRICS INITIALIZATION
+	// Initialize metrics collector for monitoring
+	metrics.Initialize()
+	log.Println("Metrics collector initialized")
+
+	// MQTT PUBLISHER INITIALIZATION
+	// Initialize MQTT publisher for metrics transmission
+	if err := mqtt.InitializePublisher(cfg); err != nil {
+		log.Printf("Warning: MQTT publisher initialization failed: %v", err)
+		log.Println("Service will continue without metrics publishing")
+		// Non-fatal: service can run without metrics
+	} else {
+		log.Println("MQTT metrics publisher initialized")
+		defer mqtt.Shutdown() // Ensure clean shutdown
+	}
 
 	// ZERO-TRUST ARCHITECTURE LOGGING
 	// Confirm mTLS client setup for distributed service mesh

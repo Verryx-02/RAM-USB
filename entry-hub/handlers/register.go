@@ -18,11 +18,13 @@ import (
 	"fmt"
 	"https_server/config"
 	"https_server/interfaces"
+	"https_server/metrics"
 	"https_server/types"
 	"https_server/utils"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // RegisterHandler processes user registration requests with multi-layer validation.
@@ -37,6 +39,18 @@ import (
 //
 // TO-DO: Implement rate limiting to prevent brute force attacks (e.g., 5 attempts per IP per minute)
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
+	// METRICS: Track request start time
+	startTime := time.Now()
+	defer func() {
+		// METRICS: Record request duration at the end
+		duration := time.Since(startTime).Milliseconds()
+		metrics.RecordRequestDuration(float64(duration))
+
+		// METRICS: Increment request counter
+		// Need to capture the status code somehow
+		metrics.IncrementRequest(r.Method, r.URL.Path, http.StatusOK) // Will need to be updated with actual status
+	}()
+
 	// TO-DO: Add rate limiting check here before processing request
 	// REQUEST LOGGING
 	// Audit trail for security monitoring and debugging
@@ -69,6 +83,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// REQUIRED FIELDS VALIDATION
 	// Ensure essential registration data is present
 	if req.Email == "" || req.Password == "" {
+		// METRICS: Track missing required fields
+		metrics.IncrementValidationFailure("missing_required_fields")
 		utils.SendErrorResponse(w, http.StatusBadRequest, "Email and password are required.")
 		return
 	}
@@ -76,6 +92,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// EMAIL FORMAT VALIDATION
 	// Prevent malformed emails and injection attacks
 	if !utils.IsValidEmail(req.Email) {
+		// METRICS: Track invalid email format
+		metrics.IncrementValidationFailure("invalid_email")
 		utils.SendErrorResponse(w, http.StatusBadRequest, "Invalid email format.")
 		return
 	}
@@ -83,6 +101,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// EMAIL SECURITY VALIDATION
 	// Detect header injection attempts via multiple @ symbols
 	if strings.Count(req.Email, "@") != 1 {
+		// METRICS: Track email injection attempts
+		metrics.IncrementValidationFailure("email_injection_attempt")
 		utils.SendErrorResponse(w, http.StatusBadRequest, "Invalid email format.")
 		return
 	}
@@ -90,6 +110,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// PASSWORD LENGTH VALIDATION
 	// Enforce minimum security threshold
 	if len(req.Password) < 8 {
+		// METRICS: Track weak password - too short
+		metrics.IncrementValidationFailure("password_too_short")
 		utils.SendErrorResponse(w, http.StatusBadRequest, "Password must be at least 8 characters.")
 		return
 	}
@@ -97,6 +119,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// WEAK PASSWORD DETECTION
 	// Prevent dictionary and credential stuffing attacks
 	if utils.IsWeakPassword(req.Password) {
+		// METRICS: Track common/weak passwords
+		metrics.IncrementValidationFailure("weak_password")
 		utils.SendErrorResponse(w, http.StatusBadRequest, "Password is too common, please choose a stronger password.")
 		return
 	}
@@ -104,6 +128,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// PASSWORD COMPLEXITY VALIDATION
 	// Enforce character diversity for resistance to brute force
 	if !utils.HasPasswordComplexity(req.Password) {
+		// METRICS: Track password complexity failures
+		metrics.IncrementValidationFailure("password_complexity")
 		utils.SendErrorResponse(w, http.StatusBadRequest, "Password must contain at least 3 of: uppercase, lowercase, numbers, special characters.")
 		return
 	}
@@ -111,6 +137,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// SSH KEY FORMAT VALIDATION
 	// Verify algorithm, encoding, and internal structure
 	if !utils.IsValidSSHKey(req.SSHPubKey) {
+		// METRICS: Track invalid SSH key format
+		metrics.IncrementValidationFailure("invalid_ssh_key")
 		utils.SendErrorResponse(w, http.StatusBadRequest, "Invalid SSH public key format.")
 		return
 	}
@@ -118,6 +146,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// SSH KEY PREFIX VALIDATION
 	// Detect corrupted or manually modified keys
 	if !strings.HasPrefix(req.SSHPubKey, "ssh-") {
+		// METRICS: Track malformed SSH key
+		metrics.IncrementValidationFailure("malformed_ssh_key")
 		utils.SendErrorResponse(w, http.StatusBadRequest, "Invalid SSH public key format.")
 		return
 	}

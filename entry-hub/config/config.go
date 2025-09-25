@@ -44,3 +44,15 @@ func GetConfig() *Config {
 		CACertFile:     "../certificates/certification-authority/ca.crt",
 	}
 }
+
+// GetMQTTCertificatePaths returns paths for MQTT publisher certificates.
+//
+// Security features:
+// - Separate certificates for MQTT publishing
+// - Maintains isolation between service roles
+//
+// Returns paths to MQTT publisher certificate and key.
+func GetMQTTCertificatePaths() (certFile, keyFile string) {
+	return "../certificates/entry-hub/mqtt-publisher.crt",
+		"../certificates/entry-hub/mqtt-publisher.key"
+}

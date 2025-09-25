@@ -39,6 +39,8 @@ echo ""
 # Create the certificates directory structure
 echo "Creating certificate directory structure..."
 mkdir -p ../certificates/{certification-authority,entry-hub,security-switch,database-vault,storage-service,postgresql}
+mkdir -p ../certificates/{metrics-collector,mqtt-broker,prometheus,grafana,timescaledb}
+
 
 # Change to certificates directory
 cd ../certificates
@@ -456,6 +458,96 @@ echo "  Server cert: server.crt"
 echo "  Server key:  server.key (permissions: 600)"
 
 cd ../..
+
+# ===========================
+# MQTT PUBLISHER CERTIFICATES 
+# ===========================
+echo "Generating MQTT Publisher certificates for all services..."
+
+# Entry-Hub MQTT Publisher
+cd ../certificates/entry-hub
+openssl genrsa -out mqtt-publisher.key 4096
+openssl req -new -key mqtt-publisher.key -out mqtt-publisher.csr \
+  -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=EntryHubPublisher/CN=entry-hub-mqtt-publisher"
+openssl x509 -req -in mqtt-publisher.csr \
+  -CA ../certification-authority/ca.crt \
+  -CAkey ../certification-authority/ca.key \
+  -CAcreateserial -out mqtt-publisher.crt -days 365
+rm mqtt-publisher.csr
+
+# Security-Switch MQTT Publisher  
+cd ../security-switch
+openssl genrsa -out mqtt-publisher.key 4096
+openssl req -new -key mqtt-publisher.key -out mqtt-publisher.csr \
+  -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=SecuritySwitchPublisher/CN=security-switch-mqtt-publisher"
+openssl x509 -req -in mqtt-publisher.csr \
+  -CA ../certification-authority/ca.crt \
+  -CAkey ../certification-authority/ca.key \
+  -CAcreateserial -out mqtt-publisher.crt -days 365
+rm mqtt-publisher.csr
+
+# Database-Vault MQTT Publisher
+cd ../database-vault
+openssl genrsa -out mqtt-publisher.key 4096
+openssl req -new -key mqtt-publisher.key -out mqtt-publisher.csr \
+  -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=DatabaseVaultPublisher/CN=database-vault-mqtt-publisher"
+openssl x509 -req -in mqtt-publisher.csr \
+  -CA ../certification-authority/ca.crt \
+  -CAkey ../certification-authority/ca.key \
+  -CAcreateserial -out mqtt-publisher.crt -days 365
+rm mqtt-publisher.csr
+
+# ===========================
+# METRICS-COLLECTOR CERTIFICATES
+# ===========================
+cd ../metrics-collector
+
+# Server certificates (per accettare connessioni mTLS)
+openssl genrsa -out server.key 4096
+openssl req -new -key server.key -out server.csr \
+  -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=MetricsCollector/CN=metrics-collector"
+# [usa stesso pattern dei server esistenti con server.conf e SAN]
+openssl x509 -req -in server.csr \
+  -CA ../certification-authority/ca.crt \
+  -CAkey ../certification-authority/ca.key \
+  -CAcreateserial -out server.crt -days 365
+  
+# Client certificate per sottoscriversi a MQTT
+openssl genrsa -out mqtt-subscriber.key 4096
+openssl req -new -key mqtt-subscriber.key -out mqtt-subscriber.csr \
+  -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=MetricsCollectorSubscriber/CN=metrics-collector-subscriber"
+openssl x509 -req -in mqtt-subscriber.csr \
+  -CA ../certification-authority/ca.crt \
+  -CAkey ../certification-authority/ca.key \
+  -CAcreateserial -out mqtt-subscriber.crt -days 365
+rm *.csr
+
+# ===========================
+# MQTT-BROKER CERTIFICATES
+# ===========================
+cd ../mqtt-broker
+openssl genrsa -out server.key 4096
+openssl req -new -key server.key -out server.csr \
+  -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=MQTTBroker/CN=mqtt-broker"
+openssl x509 -req -in server.csr \
+  -CA ../certification-authority/ca.crt \
+  -CAkey ../certification-authority/ca.key \
+  -CAcreateserial -out server.crt -days 365
+rm server.csr
+
+# ===========================
+# PROMETHEUS CERTIFICATES
+# ===========================
+cd ../prometheus
+openssl genrsa -out scraper.key 4096
+openssl req -new -key scraper.key -out scraper.csr \
+  -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=PrometheusScraper/CN=prometheus-scraper"
+openssl x509 -req -in scraper.csr \
+  -CA ../certification-authority/ca.crt \
+  -CAkey ../certification-authority/ca.key \
+  -CAcreateserial -out scraper.crt -days 365
+rm scraper.csr
+
 
 # ===========================
 # USER-CLIENT SSH KEYS
