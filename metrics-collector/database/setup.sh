@@ -309,6 +309,52 @@ EOF
 echo ""
 echo "Step 9: Testing the setup..."
 
+# Step 10: Configure SSL for TimescaleDB instance
+echo ""
+echo "Step 10: Configuring TimescaleDB SSL..."
+
+# Check for TimescaleDB data directory (separate from main PostgreSQL)
+TIMESCALE_PGDATA=$(psql -U metrics_user -d metrics_db -t -c "SHOW data_directory;" 2>/dev/null | tr -d ' ')
+
+if [ ! -z "$TIMESCALE_PGDATA" ] && [ -d "$TIMESCALE_PGDATA" ]; then
+    echo "   TimescaleDB data directory: $TIMESCALE_PGDATA"
+    
+    # Check if TimescaleDB certificates exist  
+    CERT_DIR="../../certificates/timescaledb"
+    if [ -f "$CERT_DIR/server.crt" ] && [ -f "$CERT_DIR/server.key" ]; then
+        echo "   Found TimescaleDB SSL certificates, configuring..."
+        
+        # Copy certificates to TimescaleDB data directory
+        cp "$CERT_DIR/server.crt" "$TIMESCALE_PGDATA/server.crt" 2>/dev/null || sudo cp "$CERT_DIR/server.crt" "$TIMESCALE_PGDATA/server.crt"
+        cp "$CERT_DIR/server.key" "$TIMESCALE_PGDATA/server.key" 2>/dev/null || sudo cp "$CERT_DIR/server.key" "$TIMESCALE_PGDATA/server.key"
+        
+        # Set correct permissions
+        chmod 600 "$TIMESCALE_PGDATA/server.key" 2>/dev/null || sudo chmod 600 "$TIMESCALE_PGDATA/server.key"  
+        chmod 644 "$TIMESCALE_PGDATA/server.crt" 2>/dev/null || sudo chmod 644 "$TIMESCALE_PGDATA/server.crt"
+        
+        # Enable SSL in postgresql.conf for TimescaleDB instance
+        if [ -f "$TIMESCALE_PGDATA/postgresql.conf" ]; then
+            if grep -q "^ssl = " "$TIMESCALE_PGDATA/postgresql.conf"; then
+                sed -i.bak 's/^ssl = .*/ssl = on/' "$TIMESCALE_PGDATA/postgresql.conf" 2>/dev/null || \
+                sudo sed -i.bak 's/^ssl = .*/ssl = on/' "$TIMESCALE_PGDATA/postgresql.conf"
+            else
+                echo "ssl = on" >> "$TIMESCALE_PGDATA/postgresql.conf" 2>/dev/null || \
+                echo "ssl = on" | sudo tee -a "$TIMESCALE_PGDATA/postgresql.conf" > /dev/null
+            fi
+            echo "   SSL enabled in TimescaleDB postgresql.conf"
+        fi
+        
+        echo "   TimescaleDB SSL configuration completed"
+    else
+        echo "   TimescaleDB SSL certificates not found in $CERT_DIR"
+        echo "   Run 'cd ../../scripts && ./generate_key.sh' to generate certificates"
+        echo "   Continuing without SSL..."
+    fi
+else
+    echo "   Using same PostgreSQL instance as main database"
+    echo "   Will configure dedicated port and SSL separately"
+fi
+
 # Test connection as metrics_user
 export PGPASSWORD='metrics_secure_2024'
 if psql -U metrics_user -d metrics_db -c "SELECT 1" >/dev/null 2>&1; then
@@ -358,11 +404,11 @@ echo "export METRICS_DATABASE_URL='postgres://metrics_user:metrics_secure_2024@l
 echo "export MQTT_BROKER_URL='ssl://YOUR_TAILSCALE_IP:8883'"
 echo ""
 echo "Features enabled:"
-echo "  ✓ Hypertables for time-series optimization"
-echo "  ✓ Continuous aggregates (hourly and daily)"
-echo "  ✓ Data retention (30 days for raw data)"
-echo "  ✓ Compression for data older than 7 days"
-echo "  ✓ Indexes for fast queries"
+echo "Hypertables for time-series optimization"
+echo "Continuous aggregates (hourly and daily)"
+echo "Data retention (30 days for raw data)"
+echo "Compression for data older than 7 days"
+echo "Indexes for fast queries"
 echo ""
 echo "Next steps:"
 echo "  1. Configure MQTT broker (Mosquitto)"
