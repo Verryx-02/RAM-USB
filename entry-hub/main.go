@@ -57,11 +57,6 @@ func main() {
 	fmt.Printf("Security-Switch IP: %s\n", cfg.SecuritySwitchIP)
 	fmt.Println("mTLS certificates configured for distributed service communication")
 
-	// ROUTE CONFIGURATION
-	// Setup REST API endpoints with secure handlers
-	http.HandleFunc("/api/register", handlers.RegisterHandler)
-	http.HandleFunc("/api/health", handlers.HealthHandler)
-
 	// SERVICE INFORMATION DISPLAY
 	// Provide endpoint documentation and usage examples
 	fmt.Println("Available endpoints:")
@@ -71,11 +66,10 @@ func main() {
 	fmt.Println("\tcurl https://IP TAILSCALE DEL CONTAINER:8443/api/register --insecure --header \"Content-Type: application/json\" --request \"POST\" --data '{\"email\":\"your.email@example.com\",\"password\":\"password123\",\"ssh_public_key\":\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... your-ssh-key\"}'")
 	fmt.Println("To stop the server press Ctrl+C")
 
-	// METRICS: Middleware to track active connections
+	// ROUTE CONFIGURATION
+	// Setup REST API endpoints with metrics to track active connections
 	http.HandleFunc("/api/register", middleware.MetricsMiddleware(handlers.RegisterHandler))
 	http.HandleFunc("/api/health", middleware.MetricsMiddleware(handlers.HealthHandler))
-	//http.HandleFunc("/api/register", connectionTracker(handlers.RegisterHandler))
-	//http.HandleFunc("/api/health", connectionTracker(handlers.HealthHandler))
 
 	// HTTPS SERVER STARTUP
 	// Start TLS-encrypted server on all interfaces with certificate authentication
@@ -87,17 +81,4 @@ func main() {
 	// TO-DO STEP 2: Setup Tailscale serve: `tailscale serve https / http://localhost:8443`
 	// TO-DO STEP 3: Add firewall rules to block non-Tailscale traffic as backup
 	log.Fatal(http.ListenAndServeTLS("0.0.0.0:8443", "../certificates/entry-hub/server.crt", "../certificates/entry-hub/server.key", nil))
-}
-
-// Connection tracking middleware
-func connectionTracker(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// METRICS: Increment active connections
-		metrics.UpdateActiveConnections(1) // Increment
-		defer func() {
-			// METRICS: Decrement when done
-			metrics.UpdateActiveConnections(-1) // Decrement
-		}()
-		next(w, r)
-	}
 }

@@ -195,14 +195,15 @@ func IncrementValidationFailure(reason string) {
 	collector.validationFailures[sanitizedReason]++
 }
 
-// UpdateActiveConnections updates the active connection count.
+// UpdateActiveConnections increments/decrements the active connection count.
 //
 // Security features:
 // - Simple gauge, no connection details
 // - Helps monitor service load
+// - Thread-safe increment/decrement operations
 //
-// Thread-safe gauge update.
-func UpdateActiveConnections(count int64) {
+// Thread-safe gauge update with delta values (+1 for new connections, -1 for closed).
+func UpdateActiveConnections(delta int64) {
 	if collector == nil {
 		return
 	}
@@ -210,7 +211,12 @@ func UpdateActiveConnections(count int64) {
 	collector.mu.Lock()
 	defer collector.mu.Unlock()
 
-	collector.activeConnections = count
+	collector.activeConnections += delta
+
+	// Prevent negative connection counts in case of race conditions
+	if collector.activeConnections < 0 {
+		collector.activeConnections = 0
+	}
 }
 
 // IncrementError records an error occurrence.
