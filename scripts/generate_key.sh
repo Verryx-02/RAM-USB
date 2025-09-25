@@ -457,7 +457,7 @@ echo "PostgreSQL SSL certificates generated:"
 echo "  Server cert: server.crt"
 echo "  Server key:  server.key (permissions: 600)"
 
-cd ../..
+cd ..
 
 # ===========================
 # MQTT PUBLISHER CERTIFICATES 
@@ -465,7 +465,8 @@ cd ../..
 echo "Generating MQTT Publisher certificates for all services..."
 
 # Entry-Hub MQTT Publisher
-cd ../certificates/entry-hub
+cd entry-hub
+
 openssl genrsa -out mqtt-publisher.key 4096
 openssl req -new -key mqtt-publisher.key -out mqtt-publisher.csr \
   -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=EntryHubPublisher/CN=entry-hub-mqtt-publisher"
@@ -502,17 +503,47 @@ rm mqtt-publisher.csr
 # ===========================
 cd ../metrics-collector
 
-# Server certificates (per accettare connessioni mTLS)
+# Server certificates for accepting mTLS connections
 openssl genrsa -out server.key 4096
 openssl req -new -key server.key -out server.csr \
   -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=MetricsCollector/CN=metrics-collector"
-# [usa stesso pattern dei server esistenti con server.conf e SAN]
+
+# Create configuration file for Metrics-Collector server certificate
+cat > server.conf << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = IT
+ST = Friuli-Venezia Giulia
+L = Udine
+O = MetricsCollector
+CN = metrics-collector
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = metrics-collector
+DNS.2 = localhost
+IP.1 = 127.0.0.1
+IP.2 = ::1
+EOF
+
+# Generate Metrics-Collector server certificate signed by CA
 openssl x509 -req -in server.csr \
   -CA ../certification-authority/ca.crt \
   -CAkey ../certification-authority/ca.key \
-  -CAcreateserial -out server.crt -days 365
-  
-# Client certificate per sottoscriversi a MQTT
+  -CAcreateserial -out server.crt \
+  -days 365 \
+  -extensions v3_req \
+  -extfile server.conf
+
+# Client certificate for subscribing to MQTT
 openssl genrsa -out mqtt-subscriber.key 4096
 openssl req -new -key mqtt-subscriber.key -out mqtt-subscriber.csr \
   -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=MetricsCollectorSubscriber/CN=metrics-collector-subscriber"
@@ -520,7 +551,9 @@ openssl x509 -req -in mqtt-subscriber.csr \
   -CA ../certification-authority/ca.crt \
   -CAkey ../certification-authority/ca.key \
   -CAcreateserial -out mqtt-subscriber.crt -days 365
-rm *.csr
+
+# Clean up temporary files
+rm -f server.csr mqtt-subscriber.csr server.conf
 
 # ===========================
 # MQTT-BROKER CERTIFICATES
@@ -552,7 +585,7 @@ rm scraper.csr
 # ===========================
 # USER-CLIENT SSH KEYS
 # ===========================
-cd user-client
+cd ../../user-client
 
 # Create keys directory if it doesn't exist
 mkdir -p keys
