@@ -45,3 +45,15 @@ certificates/prometheus/scraper.key
 # Will be modified
 user-client/keys/ssh_private_key
 user-client/keys/ssh_public_key.pub
+
+# Binary files
+entry-hub/https_server
+
+
+
+
+# to add properly
+certificates/database-vault/mqtt-publisher.crt
+certificates/database-vault/mqtt-publisher.key
+certificates/security-switch/mqtt-publisher.crt
+certificates/security-switch/mqtt-publisher.key
