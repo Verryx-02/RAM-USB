@@ -6,6 +6,8 @@ certificates/entry-hub/client.crt
 certificates/entry-hub/client.key
 certificates/entry-hub/server.crt
 certificates/entry-hub/server.key
+certificates/entry-hub/mqtt-publisher.crt
+certificates/entry-hub/mqtt-publisher.key
 
 certificates/security-switch/client.crt
 certificates/security-switch/client.key
@@ -28,6 +30,17 @@ certificates/postgresql/server.key
 certificates/certification-authority/ca.crt
 certificates/certification-authority/ca.key
 certificates/certification-authority/ca.srl
+
+certificates/metrics-collector/mqtt-subscriber.crt
+certificates/metrics-collector/mqtt-subscriber.key
+certificates/metrics-collector/server.crt
+certificates/metrics-collector/server.key
+
+certificates/mqtt-broker/server.crt
+certificates/mqtt-broker/server.key
+
+certificates/prometheus/scraper.crt
+certificates/prometheus/scraper.key
 
 # Will be modified
 user-client/keys/ssh_private_key
