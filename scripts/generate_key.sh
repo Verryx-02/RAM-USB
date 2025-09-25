@@ -581,6 +581,62 @@ openssl x509 -req -in scraper.csr \
   -CAcreateserial -out scraper.crt -days 365
 rm scraper.csr
 
+# ===========================
+# TIMESCALEDB CERTIFICATES
+# ===========================
+cd ../timescaledb
+
+# Server certificates for SSL connections to TimescaleDB instance
+openssl genrsa -out server.key 4096
+openssl req -new -key server.key -out server.csr \
+  -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=TimescaleDB/CN=timescaledb-server"
+
+# Create configuration file for TimescaleDB server certificate  
+cat > server.conf << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = IT
+ST = Friuli-Venezia Giulia  
+L = Udine
+O = TimescaleDB
+CN = timescaledb-server
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = timescaledb-server
+DNS.2 = localhost
+DNS.3 = postgres
+IP.1 = 127.0.0.1
+IP.2 = ::1
+EOF
+
+# Generate TimescaleDB server certificate signed by CA
+openssl x509 -req -in server.csr \
+  -CA ../certification-authority/ca.crt \
+  -CAkey ../certification-authority/ca.key \
+  -CAcreateserial -out server.crt \
+  -days 365 \
+  -extensions v3_req \
+  -extfile server.conf
+
+# Clean up temporary files
+rm -f server.csr server.conf
+
+# Set correct permissions for PostgreSQL/TimescaleDB
+chmod 600 server.key
+chmod 644 server.crt
+
+echo "TimescaleDB SSL certificates generated:"
+echo "  Server cert: server.crt"  
+echo "  Server key:  server.key (permissions: 600)"
 
 # ===========================
 # USER-CLIENT SSH KEYS
