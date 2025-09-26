@@ -9,6 +9,8 @@ and implements retention policies for automatic data lifecycle management.
 package storage
 
 import (
+	"fmt"
+	"log"
 	"metrics-collector/types"
 	"time"
 )
@@ -129,17 +131,16 @@ type MetricData struct {
 //
 // Returns error if initialization fails.
 func InitializeTimescaleDB(databaseURL string) error {
-	// TO-DO: Implement actual TimescaleDB initialization
-	// For now, this is a placeholder
+	// Create TimescaleDB storage instance with connection pooling
+	tsStorage, err := NewTimescaleDBStorage(databaseURL)
+	if err != nil {
+		return fmt.Errorf("failed to create TimescaleDB storage: %v", err)
+	}
 
-	// The actual implementation would:
-	// 1. Parse and validate database URL
-	// 2. Create connection pool with SSL
-	// 3. Create tables if not exist
-	// 4. Set up hypertables for time-series
-	// 5. Configure retention policies
-	// 6. Create continuous aggregates
+	// Assign to global storage instance for use by all operations
+	storageInstance = tsStorage
 
+	log.Println("✓ TimescaleDB storage initialized and connected successfully")
 	return nil
 }
 
@@ -153,9 +154,8 @@ func InitializeTimescaleDB(databaseURL string) error {
 // Returns error if storage not initialized or store fails.
 func StoreMetric(metric types.Metric) error {
 	if storageInstance == nil {
-		// Storage not initialized, silently ignore
-		// This allows the service to run without database
-		return nil
+		log.Printf("ERROR: Storage instance is nil - metric from %s will be lost!", metric.Service)
+		return fmt.Errorf("storage not initialized")
 	}
 
 	return storageInstance.StoreMetric(metric)

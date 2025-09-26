@@ -76,7 +76,7 @@ func GetConfig() *Config {
 	if databaseURL == "" {
 		// Default connection for local TimescaleDB
 		// Uses different port (5433) to avoid conflict with main PostgreSQL
-		databaseURL = "postgres://metrics_user:metrics_secure_2024@localhost:5433/metrics_db?sslmode=require"
+		databaseURL = "postgres://metrics_user:metrics_secure_2024@localhost:5432/metrics_db?sslmode=require"
 		log.Printf("Using default TimescaleDB URL (development mode)")
 	}
 
