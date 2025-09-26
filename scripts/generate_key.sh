@@ -559,14 +559,65 @@ rm -f server.csr mqtt-subscriber.csr server.conf
 # MQTT-BROKER CERTIFICATES
 # ===========================
 cd ../mqtt-broker
+
+# Detect Tailscale IP automatically
+TAILSCALE_IP=""
+if command -v tailscale >/dev/null 2>&1; then
+    TAILSCALE_IP=$(tailscale ip -4 2>/dev/null)
+    if [ $? -eq 0 ] && [ ! -z "$TAILSCALE_IP" ]; then
+        echo "Detected Tailscale IP: $TAILSCALE_IP"
+    else
+        echo "Warning: Could not detect Tailscale IP automatically"
+        TAILSCALE_IP=""
+    fi
+else
+    echo "Warning: Tailscale not found, MQTT broker will only work on localhost"
+fi
+
 openssl genrsa -out server.key 4096
 openssl req -new -key server.key -out server.csr \
   -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=MQTTBroker/CN=mqtt-broker"
+
+# Create configuration file for MQTT Broker server certificate with SAN
+cat > server.conf << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = IT
+ST = Friuli-Venezia Giulia
+L = Udine
+O = MQTTBroker
+CN = mqtt-broker
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = mqtt-broker
+DNS.2 = localhost
+IP.1 = 127.0.0.1
+IP.2 = ::1
+EOF
+
+# Add Tailscale IP to SAN if detected
+if [ ! -z "$TAILSCALE_IP" ]; then
+    echo "IP.3 = $TAILSCALE_IP" >> server.conf
+fi
+
+# Generate MQTT Broker server certificate signed by CA
 openssl x509 -req -in server.csr \
   -CA ../certification-authority/ca.crt \
   -CAkey ../certification-authority/ca.key \
-  -CAcreateserial -out server.crt -days 365
-rm server.csr
+  -CAcreateserial -out server.crt -days 365 \
+  -extensions v3_req -extfile server.conf
+
+# Clean up temporary files
+rm -f server.csr server.conf
 
 # ===========================
 # PROMETHEUS CERTIFICATES
