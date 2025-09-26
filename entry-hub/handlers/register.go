@@ -24,7 +24,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // RegisterHandler processes user registration requests with multi-layer validation.
@@ -39,18 +38,6 @@ import (
 //
 // TO-DO: Implement rate limiting to prevent brute force attacks (e.g., 5 attempts per IP per minute)
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
-	// METRICS: Track request start time
-	startTime := time.Now()
-	defer func() {
-		// METRICS: Record request duration at the end
-		duration := time.Since(startTime).Milliseconds()
-		metrics.RecordRequestDuration(float64(duration))
-
-		// METRICS: Increment request counter
-		// Need to capture the status code somehow
-		metrics.IncrementRequest(r.Method, r.URL.Path, http.StatusOK) // Will need to be updated with actual status
-	}()
-
 	// TO-DO: Add rate limiting check here before processing request
 	// REQUEST LOGGING
 	// Audit trail for security monitoring and debugging

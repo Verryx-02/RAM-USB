@@ -1,4 +1,3 @@
-// user-client/registration.go
 package registration
 
 import (
@@ -47,7 +46,7 @@ func HashEmail(email string) string {
 // Configuration constants for registration client
 const (
 	EntryHubURL    = "https://localhost:8443/api/register" // Entry-Hub registration endpoint
-	TestEmail      = "test@example.com"                    // Test user email address
+	TestEmail      = "test2@example.com"                   // Test user email address
 	TestPassword   = "MyStrongPass123@"                    // Test user password
 	SSHKeyPath     = "keys/ssh_public_key.pub"             // Path to SSH public key file
 	RequestTimeout = 30 * time.Second                      // HTTP request timeout

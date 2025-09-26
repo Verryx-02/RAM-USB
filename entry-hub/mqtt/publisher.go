@@ -214,7 +214,7 @@ func startPeriodicPublication() {
 		publishMetrics()
 
 		// Setup periodic ticker
-		ticker = time.NewTicker(5 * time.Minute)
+		ticker = time.NewTicker(2 * time.Minute)
 		defer ticker.Stop()
 
 		// PUBLICATION LOOP

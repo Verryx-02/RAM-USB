@@ -5,14 +5,14 @@ echo "RAM-USB Environment Variables Setup"
 echo "==============================================="
 
 # Database-Vault Configuration
-export DATABASE_URL='postgres://ramusb_user:ramusb_secure_2024@localhost:5432/ramusb_vault?sslmode=require'
+export DATABASE_URL='postgres://ramusb_user:ramusb_secure_2024@localhost:5432/ramusb_vault?sslmode=disable'
 export RAMUSB_ENCRYPTION_KEY=$(openssl rand -hex 32)
 
 # MQTT Configuration for ALL services
 export MQTT_BROKER_URL='ssl://localhost:8883'
 
 # Metrics-Collector Configuration  
-export METRICS_DATABASE_URL='postgres://metrics_user:metrics_secure_2024@localhost:5432/metrics_db?sslmode=require'
+export METRICS_DATABASE_URL='postgres://metrics_user:metrics_secure_2024@localhost:5432/metrics_db?sslmode=disable'
 export MQTT_CLIENT_ID='metrics-collector-subscriber'
 
 # PostgreSQL Path (for psql commands)
