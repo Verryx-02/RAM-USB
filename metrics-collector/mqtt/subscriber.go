@@ -65,7 +65,6 @@ func InitializeSubscriber(cfg *config.Config) error {
 
 	// CONNECTION CALLBACKS
 	// Set up connection lifecycle handlers
-	opts.SetDefaultPublishHandler(messageHandler)
 	opts.SetOnConnectHandler(onConnectHandler)
 	opts.SetConnectionLostHandler(onConnectionLostHandler)
 
@@ -153,7 +152,7 @@ func onConnectHandler(client mqtt.Client) {
 	topic := "metrics/+"
 	qos := byte(1)
 
-	if token := client.Subscribe(topic, qos, nil); token.Wait() && token.Error() != nil {
+	if token := client.Subscribe(topic, qos, messageHandler); token.Wait() && token.Error() != nil {
 		log.Printf("Failed to subscribe to %s: %v", topic, token.Error())
 	} else {
 		log.Printf("Subscribed to topic: %s", topic)
