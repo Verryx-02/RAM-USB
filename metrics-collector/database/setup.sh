@@ -8,7 +8,7 @@ echo ""
 # Check if PostgreSQL is running
 if ! pg_isready >/dev/null 2>&1; then
     echo "Error: PostgreSQL is not running"
-    echo "Start with: brew services start postgresql (macOS)"
+    echo "Start with: brew services start postgresql@17 (macOS)"
     echo "           sudo systemctl start postgresql (Linux)"
     exit 1
 fi
@@ -24,8 +24,8 @@ if ! psql -c "SELECT 1 FROM pg_available_extensions WHERE name='timescaledb'" po
     echo "TimescaleDB extension not found!"
     echo ""
     echo "To install TimescaleDB:"
-    echo "  macOS:  brew install timescaledb"
-    echo "  Ubuntu: sudo apt install postgresql-14-timescaledb"
+    echo "  macOS:  brew tap timescale/tap && brew install timescaledb && sudo timescaledb-tune --quiet --yes"
+    echo "  Ubuntu: sudo apt install postgresql-17-timescaledb"
     echo "  Then run: timescaledb-tune --quiet --yes"
     echo ""
     echo "After installation, restart PostgreSQL and run this script again."
@@ -134,13 +134,32 @@ CREATE TABLE IF NOT EXISTS service_health (
 
 -- Validation errors tracking
 CREATE TABLE IF NOT EXISTS validation_errors (
-    id           SERIAL PRIMARY KEY,
+    id           SERIAL,
     timestamp    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     service      TEXT NOT NULL,
     reason       TEXT NOT NULL,
     metric_name  TEXT,
-    raw_data     JSONB
+    raw_data     JSONB,
+    PRIMARY KEY (timestamp, id)  -- Composite key including timestamp
 );
+
+-- Convert validation_errors to hypertable for time-series optimization
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM timescaledb_information.hypertables 
+        WHERE hypertable_name = 'validation_errors'
+    ) THEN
+        PERFORM create_hypertable('validation_errors', 'timestamp', 
+            chunk_time_interval => INTERVAL '7 days',
+            if_not_exists => TRUE
+        );
+        RAISE NOTICE 'Created hypertable for validation_errors';
+    ELSE
+        RAISE NOTICE 'validation_errors table is already a hypertable';
+    END IF;
+END
+$$;
 
 -- Grant permissions to metrics_user
 GRANT ALL ON ALL TABLES IN SCHEMA public TO metrics_user;
@@ -224,10 +243,22 @@ SELECT add_retention_policy('validation_errors',
 );
 
 -- Compression policy for old data (compress after 7 days)
-SELECT add_compression_policy('metrics', 
+-- Enable columnstore and add compression policy
+ALTER TABLE metrics SET (timescaledb.compress = true);
+-- Enable compression on metrics hypertable
+ALTER TABLE metrics SET (timescaledb.compress = true);
+
+-- Add compression policy (compress data older than 7 days)
+SELECT add_compression_policy('metrics',
     compress_after => INTERVAL '7 days',
     if_not_exists => TRUE
 );
+
+-- Create indexes for validation_errors performance
+CREATE INDEX IF NOT EXISTS idx_validation_errors_service_time 
+    ON validation_errors (service, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_validation_errors_timestamp 
+    ON validation_errors (timestamp DESC);
 EOF
 
 # Step 8: Create helper functions
@@ -241,7 +272,7 @@ CREATE OR REPLACE FUNCTION get_recent_metrics(
     p_interval INTERVAL DEFAULT INTERVAL '5 minutes'
 )
 RETURNS TABLE(
-    time TIMESTAMPTZ,
+    p_time TIMESTAMPTZ,
     metric_name TEXT,
     value DOUBLE PRECISION,
     labels JSONB
@@ -386,7 +417,7 @@ fi
 
 unset PGPASSWORD
 
-# Step 10: Display connection information
+# Step 11: Display connection information
 echo ""
 echo "============================================"
 echo "TimescaleDB Setup Complete!"

@@ -7,7 +7,7 @@ echo "============================================"
 # Check if PostgreSQL is running
 if ! pg_isready >/dev/null 2>&1; then
     echo "Error: PostgreSQL is not running"
-    echo "Start with: brew services start postgresql"
+    echo "Start with: brew services start postgresql@17"
     exit 1
 fi
 
@@ -61,11 +61,11 @@ echo "6 Configuring PostgreSQL SSL..."
 # Detect PostgreSQL data directory based on OS
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS with Homebrew
-    PGDATA=$(brew --prefix)/var/postgresql@14
-    PG_CTL="brew services restart postgresql"
+    PGDATA=$(brew --prefix)/var/postgresql@17
+    PG_CTL="brew services restart postgresql@17"
 elif [[ -d "/var/lib/postgresql" ]]; then
     # Linux typical location
-    PGDATA="/var/lib/postgresql/14/main"
+    PGDATA="/var/lib/postgresql/17/main"
     PG_CTL="sudo systemctl restart postgresql"
 else
     echo "   Warning: Could not detect PostgreSQL data directory"

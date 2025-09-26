@@ -17,7 +17,7 @@ if pg_isready >/dev/null 2>&1; then
     echo -e "${GREEN}PostgreSQL is running${NC}"
 else
     echo -e "${RED}PostgreSQL is not running${NC}"
-    echo "Start with: brew services start postgresql (macOS)"
+    echo "Start with: brew services start postgresql@17 (macOS)"
     exit 1
 fi
 
