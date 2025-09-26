@@ -106,9 +106,9 @@ func (s *TimescaleDBStorage) StoreMetric(metric types.Metric) error {
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		err := s.executeInsert(storedMetric)
 		if err == nil {
-			s.incrementStoredCount()
 			log.Printf("DEBUG: Metric stored successfully! Service=%s, Metric=%s, Value=%.2f",
 				metric.Service, metric.Name, metric.Value)
+			s.incrementStoredCount()
 			return nil
 		}
 
@@ -146,12 +146,18 @@ func (s *TimescaleDBStorage) executeInsert(metric types.StoredMetric) error {
 		return fmt.Errorf("failed to marshal labels: %v", err)
 	}
 
-	// EXECUTE WITH TIMEOUT
+	// BEGIN TRANSACTION
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback(ctx) // Will be no-op if committed
+
 	// EXECUTE INSERT
-	_, err = s.pool.Exec(ctx, query,
+	_, err = tx.Exec(ctx, query,
 		metric.Time,
 		metric.Service,
 		metric.MetricName,
@@ -163,6 +169,11 @@ func (s *TimescaleDBStorage) executeInsert(metric types.StoredMetric) error {
 
 	if err != nil {
 		return fmt.Errorf("insert failed: %v", err)
+	}
+
+	// COMMIT TRANSACTION
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
 	}
 
 	return nil
@@ -294,6 +305,13 @@ func (s *TimescaleDBStorage) incrementFailureCount() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.metricsFailures++
+}
+
+// GetStoredCount returns the number of successfully stored metrics.
+func (s *TimescaleDBStorage) GetStoredCount() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.metricsStored
 }
 
 // isRetryableError determines if an error should trigger a retry.

@@ -238,7 +238,7 @@ func messageHandler(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
-	incrementCounter(&metricsStored)
+	// Note: metricsStored counter is now incremented inside TimescaleDB storage after commit
 }
 
 // validateMetric checks metric for sensitive data and format compliance.
@@ -365,7 +365,14 @@ func Disconnect() {
 func GetStatistics() (received, rejected, stored uint64) {
 	counterMutex.RLock()
 	defer counterMutex.RUnlock()
-	return metricsReceived, metricsRejected, metricsStored
+
+	// Get stored count from TimescaleDB storage instance
+	var storedFromDB uint64
+	if storageInstance, ok := storage.GetStorageInstance().(*storage.TimescaleDBStorage); ok {
+		storedFromDB = storageInstance.GetStoredCount()
+	}
+
+	return metricsReceived, metricsRejected, storedFromDB
 }
 
 // incrementCounter safely increments a counter with mutex protection.

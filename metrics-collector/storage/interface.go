@@ -267,6 +267,11 @@ func Close() error {
 	return nil
 }
 
+// GetStorageInstance returns the global storage instance for metrics access.
+func GetStorageInstance() MetricsStorage {
+	return storageInstance
+}
+
 // RunRetentionPolicy executes data retention cleanup.
 //
 // Security features:
