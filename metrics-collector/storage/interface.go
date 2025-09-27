@@ -111,16 +111,6 @@ type MetricsStorage interface {
 	Close() error
 }
 
-// MetricData represents a metric for internal processing.
-//
-// Used for Prometheus endpoint exposition.
-type MetricData struct {
-	Name   string
-	Value  float64
-	Type   string
-	Labels map[string]string
-}
-
 // InitializeTimescaleDB creates and configures the TimescaleDB storage instance.
 //
 // Security features:
@@ -175,47 +165,6 @@ func StoreBatch(metrics []types.Metric) error {
 	}
 
 	return storageInstance.StoreBatch(metrics)
-}
-
-// GetRecentMetrics retrieves metrics from a time range.
-//
-// Security features:
-// - Time range validation
-// - Result limiting
-// - No user-specific queries
-//
-// Returns metrics within time range or empty slice if storage unavailable.
-func GetRecentMetrics(start, end time.Time) ([]MetricData, error) {
-	if storageInstance == nil {
-		// Return empty slice if storage not available
-		return []MetricData{}, nil
-	}
-
-	// Build query for recent metrics
-	query := types.MetricQuery{
-		StartTime: start,
-		EndTime:   end,
-		Limit:     1000, // Reasonable limit for Prometheus endpoint
-	}
-
-	// Get metrics from storage
-	storedMetrics, err := storageInstance.GetMetrics(query)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to internal format
-	var result []MetricData
-	for _, sm := range storedMetrics {
-		result = append(result, MetricData{
-			Name:   sm.MetricName,
-			Value:  sm.Value,
-			Type:   sm.MetricType,
-			Labels: sm.Labels,
-		})
-	}
-
-	return result, nil
 }
 
 // GetServiceHealth retrieves health status for all services.

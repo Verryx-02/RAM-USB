@@ -39,7 +39,7 @@ echo ""
 # Create the certificates directory structure
 echo "Creating certificate directory structure..."
 mkdir -p ../certificates/{certification-authority,entry-hub,security-switch,database-vault,storage-service,postgresql}
-mkdir -p ../certificates/{metrics-collector,mqtt-broker,prometheus,grafana,timescaledb}
+mkdir -p ../certificates/{metrics-collector,mqtt-broker,grafana,timescaledb}
 
 
 # Change to certificates directory
@@ -618,19 +618,6 @@ openssl x509 -req -in server.csr \
 
 # Clean up temporary files
 rm -f server.csr server.conf
-
-# ===========================
-# PROMETHEUS CERTIFICATES
-# ===========================
-cd ../prometheus
-openssl genrsa -out scraper.key 4096
-openssl req -new -key scraper.key -out scraper.csr \
-  -subj "/C=IT/ST=Friuli-Venezia Giulia/L=Udine/O=PrometheusScraper/CN=prometheus-scraper"
-openssl x509 -req -in scraper.csr \
-  -CA ../certification-authority/ca.crt \
-  -CAkey ../certification-authority/ca.key \
-  -CAcreateserial -out scraper.crt -days 365
-rm scraper.csr
 
 # ===========================
 # TIMESCALEDB CERTIFICATES

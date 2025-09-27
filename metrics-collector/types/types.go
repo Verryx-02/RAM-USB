@@ -2,9 +2,10 @@
 Type definitions for Metrics-Collector monitoring service.
 
 Provides structured data models for metrics collection, storage, and exposition
-across the R.A.M.-U.S.B. distributed monitoring system. Ensures consistent
-metric format between MQTT publishers, TimescaleDB storage, and Prometheus
-scraping while maintaining zero-knowledge principles by excluding sensitive data.
+across the R.A.M.-U.S.B. distributed monitoring system.
+Ensures consistent metric format between MQTT publishers, TimescaleDB storage
+
+	while maintaining zero-knowledge principles by excluding sensitive data.
 */
 package types
 
@@ -66,7 +67,7 @@ const (
 type StoredMetric struct {
 	Time       time.Time         `db:"time"`        // Timestamp as TimescaleDB primary key
 	Service    string            `db:"service"`     // Service that generated the metric
-	MetricName string            `db:"metric_name"` // Prometheus-compatible metric name
+	MetricName string            `db:"metric_name"` // Prometheus-compatible metric name (Compatible with Grafana)
 	MetricType string            `db:"metric_type"` // Type for aggregation rules
 	Value      float64           `db:"value"`       // Numeric metric value
 	Labels     map[string]string `db:"labels"`      // JSONB column for label storage
@@ -80,7 +81,7 @@ type StoredMetric struct {
 // - Service filtering for access control
 // - No ability to query by user or sensitive fields
 //
-// Used for Prometheus scraping and administrative queries.
+// Used for Grafana queries.
 type MetricQuery struct {
 	Service    string            `json:"service,omitempty"`     // Filter by service name
 	MetricName string            `json:"metric_name,omitempty"` // Filter by metric name
@@ -161,7 +162,7 @@ const (
 	ForbiddenLabelUsername  = "username"
 )
 
-// PrometheusMetric represents a metric in Prometheus exposition format.
+// PrometheusMetric represents a metric in Prometheus exposition format, compatible with Grafana.
 //
 // Security features:
 // - Text-based format prevents binary injection
@@ -172,7 +173,7 @@ const (
 type PrometheusMetric struct {
 	Name   string            `json:"name"`   // Metric name with prefix
 	Help   string            `json:"help"`   // Metric description
-	Type   string            `json:"type"`   // Prometheus type (counter, gauge, etc.)
+	Type   string            `json:"type"`   // Grafana compatible type (counter, gauge, etc.)
 	Value  float64           `json:"value"`  // Current metric value
 	Labels map[string]string `json:"labels"` // Label key-value pairs
 }

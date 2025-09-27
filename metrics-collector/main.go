@@ -53,7 +53,7 @@ func main() {
 	fmt.Println("Metrics-Collector Service Starting")
 	fmt.Println("============================================")
 	fmt.Printf("Admin API Port: %s (mTLS)\n", cfg.ServerPort)
-	fmt.Printf("Prometheus Port: %s (HTTP)\n", cfg.PrometheusPort)
+	fmt.Printf("Prometheus Port: %s (HTTP)\n", cfg.MetricsPort)
 	fmt.Printf("MQTT Broker: %s\n", maskCredentials(cfg.MQTTBrokerURL))
 	fmt.Printf("TimescaleDB: %s\n", maskDatabaseURL(cfg.DatabaseURL))
 
@@ -89,39 +89,6 @@ func main() {
 	} else {
 		log.Println("MQTT subscriber connected and listening on metrics/*")
 	}
-
-	// PROMETHEUS ENDPOINT SETUP
-	// Start HTTP server for Prometheus scraping on separate port
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		mux := http.NewServeMux()
-		mux.HandleFunc("/metrics", handlers.PrometheusHandler)
-		mux.HandleFunc("/health", handlers.HealthHandler)
-
-		server := &http.Server{
-			Addr:         ":" + cfg.PrometheusPort,
-			Handler:      mux,
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 10 * time.Second,
-		}
-
-		// GRACEFUL SHUTDOWN HANDLER
-		go func() {
-			<-ctx.Done()
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer shutdownCancel()
-			if err := server.Shutdown(shutdownCtx); err != nil {
-				log.Printf("Prometheus server shutdown error: %v", err)
-			}
-		}()
-
-		log.Printf("Prometheus endpoint ready on :%s/metrics", cfg.PrometheusPort)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Prometheus server error: %v", err)
-		}
-	}()
 
 	// ADMIN API SETUP (mTLS)
 	// Start mTLS server for administrative operations

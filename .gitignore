@@ -39,9 +39,6 @@ certificates/metrics-collector/server.key
 certificates/mqtt-broker/server.crt
 certificates/mqtt-broker/server.key
 
-certificates/prometheus/scraper.crt
-certificates/prometheus/scraper.key
-
 certificates/timescaledb/server.crt
 certificates/timescaledb/server.key
 

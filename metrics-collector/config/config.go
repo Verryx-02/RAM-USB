@@ -34,7 +34,7 @@ type Config struct {
 	CACertFile     string // CA certificate for client validation
 
 	// PROMETHEUS ENDPOINT CONFIGURATION - for metrics exposure
-	PrometheusPort string // Port for Prometheus scraping (8447)
+	MetricsPort string // Port for Prometheus scraping (8447)
 
 	// MQTT SUBSCRIBER CONFIGURATION - for metrics collection
 	MQTTBrokerURL  string // MQTT broker address with TLS (ssl://host:8883)
@@ -97,7 +97,7 @@ func GetConfig() *Config {
 
 		// PROMETHEUS SETTINGS
 		// HTTP endpoint for metrics scraping
-		PrometheusPort: "8447",
+		MetricsPort: "8447",
 
 		// MQTT SUBSCRIBER SETTINGS
 		// Configuration for receiving metrics from services

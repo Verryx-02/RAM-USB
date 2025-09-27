@@ -29,13 +29,6 @@ else
     echo "✗ Metrics-Collector is not responding"
 fi
 
-# Check Prometheus
-if curl -s http://localhost:9090/-/healthy > /dev/null 2>&1; then
-    echo "✓ Prometheus is running"
-else
-    echo "✗ Prometheus is not running"
-fi
-
 # Send test metric via MQTT
 echo ""
 echo "Sending test metric..."
