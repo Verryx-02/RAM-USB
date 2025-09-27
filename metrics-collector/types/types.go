@@ -161,19 +161,3 @@ const (
 	ForbiddenLabelUserID    = "user_id"
 	ForbiddenLabelUsername  = "username"
 )
-
-// PrometheusMetric represents a metric in Prometheus exposition format, compatible with Grafana.
-//
-// Security features:
-// - Text-based format prevents binary injection
-// - No capability for sensitive data inclusion
-// - Standard format for monitoring ecosystem compatibility
-//
-// Used for /metrics endpoint exposition.
-type PrometheusMetric struct {
-	Name   string            `json:"name"`   // Metric name with prefix
-	Help   string            `json:"help"`   // Metric description
-	Type   string            `json:"type"`   // Grafana compatible type (counter, gauge, etc.)
-	Value  float64           `json:"value"`  // Current metric value
-	Labels map[string]string `json:"labels"` // Label key-value pairs
-}

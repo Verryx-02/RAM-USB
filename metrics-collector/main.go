@@ -3,13 +3,12 @@ Main application entry point for Metrics-Collector monitoring service.
 
 Implements a secure metrics collection system that receives performance data from
 all R.A.M.-U.S.B. services via MQTT, stores them in TimescaleDB for time-series
-analysis, and exposes a Prometheus-compatible endpoint for monitoring. Maintains
-zero-knowledge principles by rejecting any metrics containing sensitive data
+analysis
+Maintains zero-knowledge principles by rejecting any metrics containing sensitive data
 like email addresses, passwords, or SSH keys.
 
 The service operates on two ports:
 - 8446: mTLS admin API for health checks and management
-- 8447: HTTP endpoint for Prometheus scraping (/metrics)
 
 TO-DO: Implement mTLS authentication for admin API
 TO-DO: Add Tailscale IP restrictions for network isolation
@@ -38,10 +37,9 @@ import (
 // - MQTT subscriber with TLS authentication for secure metrics reception
 // - TimescaleDB connection for efficient time-series storage
 // - Zero-knowledge validation rejecting sensitive data
-// - Prometheus endpoint for monitoring integration
 // - Graceful shutdown handling for data consistency
 //
-// Starts metrics collection on ports 8446 (admin) and 8447 (Prometheus).
+// Starts metrics collection on ports 8446 (admin).
 func main() {
 	// CONFIGURATION LOADING
 	// Load service configuration including certificates and database settings
@@ -53,7 +51,6 @@ func main() {
 	fmt.Println("Metrics-Collector Service Starting")
 	fmt.Println("============================================")
 	fmt.Printf("Admin API Port: %s (mTLS)\n", cfg.ServerPort)
-	fmt.Printf("Prometheus Port: %s (HTTP)\n", cfg.MetricsPort)
 	fmt.Printf("MQTT Broker: %s\n", maskCredentials(cfg.MQTTBrokerURL))
 	fmt.Printf("TimescaleDB: %s\n", maskDatabaseURL(cfg.DatabaseURL))
 
@@ -85,7 +82,7 @@ func main() {
 	if err := mqtt.InitializeSubscriber(cfg); err != nil {
 		log.Printf("Warning: Failed to initialize MQTT subscriber: %v", err)
 		log.Println("Continuing without MQTT (no metrics will be collected)")
-		// Non-fatal: allows testing Prometheus endpoint independently
+		// Non-fatal: allows testing database storage independently
 	} else {
 		log.Println("MQTT subscriber connected and listening on metrics/*")
 	}

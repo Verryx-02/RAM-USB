@@ -2,7 +2,7 @@
 Configuration management for Metrics-Collector monitoring service.
 
 Provides centralized configuration for mTLS server operations, MQTT subscriber
-settings, TimescaleDB connection parameters, and Prometheus endpoint configuration.
+settings, TimescaleDB connection parameters.
 Uses environment variables for sensitive data with hardcoded certificate paths
 following the R.A.M.-U.S.B. pattern for development environments.
 
@@ -22,19 +22,15 @@ import (
 // - mTLS server certificates for authenticated admin access
 // - MQTT TLS certificates for secure metrics reception
 // - TimescaleDB credentials isolated from main database
-// - Separate ports for admin API and Prometheus scraping
 // - Certificate-based authentication for all external connections
 //
-// Supports dual server roles: mTLS admin API and HTTP Prometheus endpoint.
+// Supports mTLS admin API.
 type Config struct {
 	// MTLS SERVER CONFIGURATION - for admin API operations
 	ServerPort     string // Port for mTLS admin server (8446)
 	ServerCertFile string // Server certificate for admin authentication
 	ServerKeyFile  string // Server private key for TLS handshake
 	CACertFile     string // CA certificate for client validation
-
-	// PROMETHEUS ENDPOINT CONFIGURATION - for metrics exposure
-	MetricsPort string // Port for Prometheus scraping (8447)
 
 	// MQTT SUBSCRIBER CONFIGURATION - for metrics collection
 	MQTTBrokerURL  string // MQTT broker address with TLS (ssl://host:8883)
@@ -94,10 +90,6 @@ func GetConfig() *Config {
 		ServerCertFile: "../certificates/metrics-collector/server.crt",
 		ServerKeyFile:  "../certificates/metrics-collector/server.key",
 		CACertFile:     "../certificates/certification-authority/ca.crt",
-
-		// PROMETHEUS SETTINGS
-		// HTTP endpoint for metrics scraping
-		MetricsPort: "8447",
 
 		// MQTT SUBSCRIBER SETTINGS
 		// Configuration for receiving metrics from services
