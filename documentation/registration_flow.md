@@ -1,5 +1,5 @@
 # Complete System Flow  
-**Client → Entry-Hub → Security-Switch → Database-Vault**
+**User → Entry-Hub → Security-Switch → Database-Vault**
 ![GeneralArchitectureFlow](Images/GeneralArchitectureFlow.jpg)
 1. Client sends HTTPS request to Entry-Hub  
 2. Entry-Hub validates and forwards request via mTLS to Security-Switch  
