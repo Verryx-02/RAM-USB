@@ -16,13 +16,18 @@ Iniziate da qui per comprendere il design del sistema e i principi di sicurezza 
 
 **Punti Chiave da Comprendere:**
 - Il sistema implementa una pipeline: Client -> Entry-Hub -> Security-Switch -> Database-Vault
+- **In parallelo**, ogni servizio pubblica metriche: Servizi -> MQTT Broker -> Metrics-Collector -> TimescaleDB
 - Ogni servizio gira su una porta diversa (8443, 8444, 8445) e comunica tramite mTLS
-- Per il momento gira tutto sullo stesso pc, senza container nè altro. Vengono usati 4 terminali. Poi ogni servizio girerà su un container/VM separato.
+- Per il momento gira tutto sullo stesso pc, senza container nè altro. Vengono usati 5 terminali. Idealmente ogni servizio dovrebbe girare su un container/VM separato.
 - Le email degli utenti sono crittografate prima di essere salvate nel database con AES-256-GCM in modo da poter essere recuperate quando necessario, e sono salvate anche come hash.
 - Le password sono salvate come hash calcolata con Argon2id, un algoritmo di hashing lento resistente agli attacchi brute force di GPU parallele. 
 - Nessun componente singolo ha informazioni complete e le email non vengono mai loggate in chiaro, viene loggata la hash (principio **zero-knowledge**)
 - Nessun componente si fida dei dati passatigli dagli altri componenti (principio **zero-trust**)
 - Ogni componente valida i dati passatigli in modo rigoroso (principio di **defense-in-depth**)
+- Il sistema include un'architettura di **monitoraggio** che raccoglie metriche operative da tutti i servizi
+- Le metriche vengono trasmesse via **MQTT broker** e salvate in **TimescaleDB** per analisi time-series. Vengono poi visualizzate grazie a Grafana.
+- Il sistema di metriche segue gli stessi principi **zero-knowledge**: nessun dato utente nelle metriche, solo statistiche aggregate
+- **Metrics-Collector** riceve e valida le metriche.
 
 
 
@@ -100,6 +105,71 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
   - **Chiavi derivate**: Mai salvate
   - **Hashing dell'email**: SHA-256 per le query SQL senza usare email in chiaro
 
+**Sistema di Monitoraggio MQTT:**
+
+Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT per raccogliere metriche operative da tutti i servizi mantenendo i principi zero-knowledge.
+
+
+
+
+
+
+
+- **MQTT Broker**: [mqtt-broker/mosquitto.conf](/mqtt-broker/mosquitto.conf) e [mqtt-broker/acl.conf](../mqtt-broker/acl.conf)
+
+
+
+
+
+  - **Scopo**: Message broker centrale per distribuzione sicura delle metriche
+  - **Autenticazione**: mTLS obbligatorio per tutti i client (publisher e subscriber)
+  - **Controllo Accessi Topic-Based**:
+    - Ogni servizio può pubblicare **solo** sul proprio topic (`metrics/entry-hub`, `metrics/security-switch`, `metrics/database-vault`)
+    - Metrics-Collector può leggere da `metrics/*` ma **non** pubblicare
+    - Isolamento completo: nessun servizio può leggere o scrivere sui topic altrui
+  - **Configurazione**:
+    - TLS 1.3 enforced (mosquitto.conf righe 8-14)
+    - Certificate-based authentication con validazione CA (mosquitto.conf righe 16-18)
+    - ACL rules per publisher/subscriber isolation (acl.conf righe 16-33 e 38-48)
+
+- **Metrics Collection nei Servizi**: Ogni servizio (Entry-Hub, Security-Switch, Database-Vault) implementa:
+  - **Collector interno**: [entry-hub/metrics/collector.go](entry-hub/metrics/collector.go)
+    - Raccoglie metriche in-memory: requests, latency, errors, registrations
+    - **Zero-Knowledge**: nessun campo per user data, solo statistiche aggregate
+    - Thread-safe per concorrenza (mutex RWLock)
+    - Calcola percentili (p50, p95, p99) per analisi latency
+  - **MQTT Publisher**: [entry-hub/mqtt/publisher.go](entry-hub/mqtt/publisher.go)
+    - Pubblica metriche ogni 2 minuti verso MQTT broker
+    - Staggered start (0-60 secondi random) per evitare thundering herd
+    - Automatic reconnection con exponential backoff
+    - QoS 1 per at-least-once delivery
+
+- **Metrics-Collector**: [metrics-collector/main.go](metrics-collector/main.go)
+  - **MQTT Subscriber**: [metrics-collector/mqtt/subscriber.go](metrics-collector/mqtt/subscriber.go)
+    - Sottoscritto a `metrics/*` per ricevere metriche da tutti i servizi
+    - **Zero-Knowledge Validation** (righe 76-97): rifiuta metriche con label keys proibite (`email`, `password`, `ssh_key`, `user_id`)
+    - Verifica service name consistency (topic vs metric.Service)
+    - Timestamp validation per prevenire metriche future o troppo vecchie
+  - **TimescaleDB Storage**: [metrics-collector/storage/timescaledb.go](metrics-collector/storage/timescaledb.go)
+    - Hypertable per ottimizzazione time-series
+    - Continuous aggregates (hourly/daily) per performance
+    - Retention policy automatica (30 giorni)
+    - Compression per dati > 7 giorni
+  - **Admin API** (port 8446): endpoints per health check e statistiche
+
+**Caratteristiche di Sicurezza del Sistema di Metriche**:
+- **Topic Isolation**: ACL prevents metric spoofing and unauthorized access
+- **Zero-Knowledge Enforcement**: automatic rejection of any metrics containing sensitive fields
+- **mTLS Everywhere**: broker, publishers, and subscriber all use certificate authentication
+- **Service Authentication**: metrics are validated against the publishing service's topic
+- **Immutable Storage**: time-series data cannot be modified after insertion
+- **Audit Trail**: all MQTT connections and metric rejections are logged
+
+**Ruolo nell'Architettura**:
+- **Operational Visibility**: monitoring without compromising user privacy
+- **Performance Analysis**: request latency, error rates, throughput metrics
+- **Security Monitoring**: validation failures, authentication attempts, error patterns
+- **Capacity Planning**: connection counts, database load, resource utilization
 
 ## Livello 3: Architettura di Basso Livello (50 minuti)
 
