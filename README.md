@@ -56,7 +56,11 @@ Each component has specific security responsibilities in the authentication and 
 │   ├── entry-hub/                   # Server + Client certificates for Entry-Hub
 │   ├── security-switch/             # Server + Client certificates for Security-Switch  
 │   ├── database-vault/              # Server + Client certificates for Database-Vault
-│   └── storage-service/             # Server + Client certificates for Storage-Service
+│   ├── metrics-collector/           # Server + MQTT Subscriber certificates for Metrics-Collector
+│   ├── mqtt-broker/                 # Server certificates for MQTT Broker (port 8883)
+│   ├── postgresql/                  # Server certificates for PostgreSQL database
+│   ├── timescaledb/                 # Server certificates for TimescaleDB (metrics database)
+│   ├── storage-service/             # Server + Client certificates for Storage-Service
 │
 ├── entry-hub/                      # Public HTTPS API Gateway
 │   ├── handlers/                   # REST API endpoints (/api/register, /api/health)
@@ -64,6 +68,9 @@ Each component has specific security responsibilities in the authentication and 
 │   ├── config/                     # Service configuration (Security-Switch IP, mTLS certificates)
 │   ├── utils/                      # Input validation, HTTP helpers, JSON parsing, error handling
 │   ├── types/                      # Data structures for API requests/responses (RegisterRequest, Response)
+│   ├── metrics/                    # Internal metrics collection (requests, latency, registrations)
+│   ├── mqtt/                       # MQTT publisher for metrics transmission to broker
+│   ├── middleware/                 # Metrics middleware for HTTP request instrumentation
 │   └── main.go                     # HTTPS server (port 8443)
 │
 ├── security-switch/                # mTLS Security Gateway  
@@ -72,6 +79,8 @@ Each component has specific security responsibilities in the authentication and 
 │   ├── config/                     # Service configuration (Database-Vault IP, mTLS certificates)
 │   ├── utils/                      # Defense-in-depth validation, HTTP helpers, JSON parsing, error handling
 │   ├── types/                      # Data structures for API requests/responses (RegisterRequest, Response)
+│   ├── metrics/                    # Internal metrics collection (requests, validation failures, errors)
+│   ├── mqtt/                       # MQTT publisher for metrics transmission to broker
 │   ├── middleware/                 # mTLS authentication enforcement
 │   └── main.go                     # mTLS server (port 8444)
 │
@@ -96,8 +105,24 @@ Each component has specific security responsibilities in the authentication and 
 │   │       ├── connection.go       # Connection pooling and database management  
 │   │       ├── queries.go          # SQL query constants and prepared statements
 │   │       └── errors.go           # PostgreSQL error mapping and categorization
+│   ├── metrics/                    # Internal metrics collection (storage operations, encryption stats)
+│   ├── mqtt/                       # MQTT publisher for metrics transmission to broker
 │   ├── middleware/                 # mTLS authentication for Security-Switch
 │   └── main.go                     # mTLS server (port 8445)
+│ 
+├── mqtt-broker/                    # MQTT Message Broker for Metrics Distribution
+│   ├── mosquitto.conf              # TLS configuration and listener settings
+│   ├── acl.conf                    # Topic-based access control (publisher/subscriber isolation)
+│   └── setup.sh                    # Automated broker configuration script
+│
+├── metrics-collector/              # Metrics Collection and TimescaleDB Storage
+│   ├── handlers/                   # Admin API endpoints (/api/health, /api/stats)
+│   ├── mqtt/                       # MQTT subscriber for metrics reception from all services
+│   ├── storage/                    # TimescaleDB interface and time-series operations
+│   ├── config/                     # Service configuration (MQTT broker, TimescaleDB connection)
+│   ├── types/                      # Metric data structures (Metric, StoredMetric, MetricQuery)
+│   ├── database/                   # TimescaleDB schema and setup scripts
+│   └── main.go                     # Admin mTLS server (port 8446)
 │
 ├── user-client/                    # Client
 │   ├── registration/               # HTTPS client for registration flow
@@ -107,8 +132,9 @@ Each component has specific security responsibilities in the authentication and 
 ├── documentation/                  # Technical Documentation
 │   └── registration_flow.md        # Complete system flow and security model
 │
-└── scripts/                        # Setup & Deployment
-    └── generate_key.sh             # Automated certificate generation script
+│── scripts/                        # Setup & Deployment
+│   └── generate_key.sh             # Automated certificate generation script
+└── env_setup.sh                    # Environment variables configuration for all services
 ```
 
 
