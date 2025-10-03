@@ -37,7 +37,7 @@ All communication between components is secured with **mutual TLS (mTLS)**.
 
 See the [documentation](documentation/registration_flow.md) for more 
 
-If you are Professor Scagnetto, read [this guide](Understanding_RAM-USB.md) 
+If you are Professor Scagnetto, read [this guide](https://github.com/Verryx-02/RAM-USB/blob/main/documentation/Understanding_RAM-USB.md) 
 
 --- 
 
@@ -60,7 +60,7 @@ Each component has specific security responsibilities in the authentication and 
 │   ├── mqtt-broker/                 # Server certificates for MQTT Broker (port 8883)
 │   ├── postgresql/                  # Server certificates for PostgreSQL database
 │   ├── timescaledb/                 # Server certificates for TimescaleDB (metrics database)
-│   ├── storage-service/             # Server + Client certificates for Storage-Service
+│   └── storage-service/             # Server + Client certificates for Storage-Service
 │
 ├── entry-hub/                      # Public HTTPS API Gateway
 │   ├── handlers/                   # REST API endpoints (/api/register, /api/health)
