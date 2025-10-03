@@ -39,7 +39,7 @@ echo ""
 # Create the certificates directory structure
 echo "Creating certificate directory structure..."
 mkdir -p ../certificates/{certification-authority,entry-hub,security-switch,database-vault,storage-service,postgresql}
-mkdir -p ../certificates/{metrics-collector,mqtt-broker,grafana,timescaledb}
+mkdir -p ../certificates/{metrics-collector,mqtt-broker,timescaledb}
 
 
 # Change to certificates directory
