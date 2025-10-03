@@ -187,7 +187,7 @@ func onConnectionLostHandler(client mqtt.Client, err error) {
 //
 // Security features:
 // - Staggered start to prevent thundering herd
-// - Fixed interval publication (5 minutes)
+// - Fixed interval publication (2 minutes)
 // - Graceful shutdown handling
 // - Non-blocking publication
 //

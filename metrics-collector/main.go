@@ -39,7 +39,7 @@ import (
 // - Zero-knowledge validation rejecting sensitive data
 // - Graceful shutdown handling for data consistency
 //
-// Starts metrics collection on ports 8446 (admin).
+// Starts metrics collection on configured port (default: 8446)
 func main() {
 	// CONFIGURATION LOADING
 	// Load service configuration including certificates and database settings

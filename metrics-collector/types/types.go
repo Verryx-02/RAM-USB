@@ -4,8 +4,7 @@ Type definitions for Metrics-Collector monitoring service.
 Provides structured data models for metrics collection, storage, and exposition
 across the R.A.M.-U.S.B. distributed monitoring system.
 Ensures consistent metric format between MQTT publishers, TimescaleDB storage
-
-	while maintaining zero-knowledge principles by excluding sensitive data.
+while maintaining zero-knowledge principles by excluding sensitive data.
 */
 package types
 
