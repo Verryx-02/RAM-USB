@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "============================================"
-echo "Mosquitto MQTT Broker Setup for R.A.M.-U.S.B."
+echo "Mosquitto MQTT Broker Setup for RAM-USB"
 echo "============================================"
 echo ""
 
@@ -78,11 +78,17 @@ sudo mkdir -p $CONFIG_DIR
 sudo mkdir -p /var/log/mosquitto
 sudo mkdir -p /var/lib/mosquitto
 
-# Set permissions
+# Set permissions on non MacOs systems
 if [ "$OS" != "macos" ]; then
     sudo useradd -r -s /bin/false mosquitto 2>/dev/null || true
     sudo chown -R mosquitto:mosquitto /var/log/mosquitto
     sudo chown -R mosquitto:mosquitto /var/lib/mosquitto
+fi
+
+# Set correct permissions on macOS
+if [ "$OS" = "macos" ]; then
+    sudo chown -R $(whoami):staff /usr/local/var/lib/mosquitto/
+    sudo chown -R $(whoami):staff /usr/local/var/log/mosquitto/
 fi
 
 # Step 3: Check certificates
