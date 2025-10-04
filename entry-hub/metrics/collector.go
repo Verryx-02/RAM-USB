@@ -473,7 +473,8 @@ func calculatePercentile(values []float64, percentile float64) float64 {
 		return 0
 	}
 
-	// Simple implementation - in production use a proper algorithm
+	// Simple implementation.
+	// TO-DO: In production use a proper algorithm
 	// This is simplified for demonstration
 	index := int(float64(len(values)) * percentile / 100)
 	if index >= len(values) {
