@@ -109,18 +109,7 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
 
 Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT per raccogliere metriche operative da tutti i servizi mantenendo i principi zero-knowledge.
 
-
-
-
-
-
-
 - **MQTT Broker**: [mqtt-broker/mosquitto.conf](/mqtt-broker/mosquitto.conf) e [mqtt-broker/acl.conf](../mqtt-broker/acl.conf)
-
-
-
-
-
   - **Scopo**: Message broker centrale per distribuzione sicura delle metriche
   - **Autenticazione**: mTLS obbligatorio per tutti i client (publisher e subscriber)
   - **Controllo Accessi Topic-Based**:
@@ -128,21 +117,65 @@ Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT
     - Metrics-Collector può leggere da `metrics/*` ma **non** pubblicare
     - Isolamento completo: nessun servizio può leggere o scrivere sui topic altrui
   - **Configurazione**:
-    - TLS 1.3 enforced (mosquitto.conf righe 8-14)
-    - Certificate-based authentication con validazione CA (mosquitto.conf righe 16-18)
-    - ACL rules per publisher/subscriber isolation (acl.conf righe 16-33 e 38-48)
+    - TLS 1.3 enforced (mosquitto.conf righe 25-27)
+    - Certificate-based authentication con validazione CA (mosquitto.conf righe 29-46)
+    - ACL rules per publisher/subscriber isolation (acl.conf righe 52-59)
 
-- **Metrics Collection nei Servizi**: Ogni servizio (Entry-Hub, Security-Switch, Database-Vault) implementa:
-  - **Collector interno**: [entry-hub/metrics/collector.go](entry-hub/metrics/collector.go)
+- **Metrics Collection nei Servizi**: Ogni servizio (Per ora solo Entry-Hub, ma idealmente anche gli altri) implementa:
+  - **Collector interno**: [entry-hub/metrics/collector.go](../entry-hub/metrics/collector.go)
     - Raccoglie metriche in-memory: requests, latency, errors, registrations
     - **Zero-Knowledge**: nessun campo per user data, solo statistiche aggregate
-    - Thread-safe per concorrenza (mutex RWLock)
-    - Calcola percentili (p50, p95, p99) per analisi latency
+    - **Thread-Safety con Mutex RWLock**:
+      - Visto che più richieste HTTP simultanee chiamano `IncrementRequest()` contemporaneamente, viene utilizzato `sync.RWMutex`. In questo modo:
+        - Sono permesse multiple letture concorrenti (RLock) quando si esportano metriche verso MQTT
+        - Viene imposta la scrittura esclusiva (Lock) quando si incrementano contatori
+    
+    - **Analisi della latenza con percentili**:
+      - **p50 (mediana)**: 50% delle richieste sono più veloci di questo valore → "latenza tipica"
+      - **p95**: 95% delle richieste sono più veloci → identifica problemi di performance
+      - **p99**: 99% delle richieste sono più veloci → rileva outliers e casi peggiori possibili
+      - **Esempio pratico**: Se p50=20ms, p95=80ms, p99=300ms → il 99% degli utenti ha risposta entro 300ms, ma c'è un 1% che sperimenta rallentamenti da investigare
+      - **Utilizzo**: Questi dati vengono graficati sulla dashboard Grafana per il monitoraggio real-time e alerting
   - **MQTT Publisher**: [entry-hub/mqtt/publisher.go](entry-hub/mqtt/publisher.go)
-    - Pubblica metriche ogni 2 minuti verso MQTT broker
-    - Staggered start (0-60 secondi random) per evitare thundering herd
-    - Automatic reconnection con exponential backoff
-    - QoS 1 per at-least-once delivery
+    - **Publishing Schedule (ogni 2 minuti)**:
+      - Intervallo di pubblicazione: 120 secondi tra ogni invio di metriche
+      - **Perché non più frequente**: Bilanciamento tra visibilità real-time e carico sul broker MQTT
+      - **Perché non meno frequente**: 2 minuti garantisce detection rapida di problemi (es. spike di errori)
+      - Ogni pubblicazione invia uno snapshot completo delle metriche accumulate dall'ultimo invio
+    
+    - **Staggered Start (Random Delay 0-60 secondi)**:
+      - **Problema**: Se tutti i servizi (Entry-Hub, Security-Switch, Database-Vault) partono simultaneamente, inviano metriche allo stesso istante ogni 2 minuti
+      - **Conseguenza**: Il broker MQTT riceve troppi messaggi simultanei creando picchi di carico
+      - **Soluzione**: Ogni servizio aspetta un delay casuale (0-60s) prima di iniziare il loop di pubblicazione. In questo modo le pubblicazioni sono distribuite uniformemente nel tempo
+      - **Implementazione**: `time.Sleep(time.Duration(rand.Intn(60)) * time.Second)` all'avvio del publisher
+    
+    - **Riconnessione automatica con backoff esponenziale**:
+      - Cosa succede quando il broker MQTT è temporaneamente irraggiungibile
+      - **Strategia di Reconnection**:
+        1. **Primo tentativo**: Attende 1 secondo e riprova
+        2. **Secondo tentativo**: Attende 2 secondi (2^1)
+        3. **Terzo tentativo**: Attende 4 secondi (2^2)
+        4. **Quarto tentativo**: Attende 8 secondi (2^3)
+        5. **Max backoff**: Cap a 60 secondi per evitare attese eccessivamente lunghe
+      - In questo modo si evita che centinaia di client provino a riconnettersi ogni millisecondo, sovraccaricando il broker appena riavviato
+    
+    - **QoS 1 (At-Least-Once Delivery)**:
+      - **Livelli QoS disponibili in MQTT**:
+        - **QoS 0** (At-Most-Once): "Fire and forget": nessuna garanzia, può perdere messaggi
+        - **QoS 1** (At-Least-Once): Garantisce la consegna ma con possibili duplicati
+        - **QoS 2** (Exactly-Once): Garanzia assoluta ma overhead maggiore
+      - **Flow QoS 1**:
+        1. Publisher invia `PUBLISH` message al broker
+        2. Broker salva il messaggio e risponde con `PUBACK`
+        3. Publisher marca messaggio come consegnato
+        4. Se non riceve nessun `PUBACK` entro il tempo di timeout, il publisher reinvia automaticamente
+    
+    - **Message Format & Topic Strategy**:
+      - **Topic dedicato per servizio**: `metrics/entry-hub`, `metrics/security-switch`, `metrics/database-vault`
+      - **Payload JSON**: Serializzazione di `types.Metric` con campi: `service`, `timestamp`, `name`, `value`, `labels`, `type`
+      - **mTLS Authentication**: Ogni publisher usa un certificato dedicato (`mqtt-publisher.crt`) validato dal broker tramite ACL
+      - **ACL Enforcement**: Il publisher può scrivere SOLO sul proprio topic
+
 
 - **Metrics-Collector**: [metrics-collector/main.go](metrics-collector/main.go)
   - **MQTT Subscriber**: [metrics-collector/mqtt/subscriber.go](metrics-collector/mqtt/subscriber.go)
@@ -154,22 +187,37 @@ Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT
     - Hypertable per ottimizzazione time-series
     - Continuous aggregates (hourly/daily) per performance
     - Retention policy automatica (30 giorni)
-    - Compression per dati > 7 giorni
+    - Compression per dati più vecchi di 7 giorni
   - **Admin API** (port 8446): endpoints per health check e statistiche
 
 **Caratteristiche di Sicurezza del Sistema di Metriche**:
-- **Topic Isolation**: ACL prevents metric spoofing and unauthorized access
-- **Zero-Knowledge Enforcement**: automatic rejection of any metrics containing sensitive fields
-- **mTLS Everywhere**: broker, publishers, and subscriber all use certificate authentication
-- **Service Authentication**: metrics are validated against the publishing service's topic
-- **Immutable Storage**: time-series data cannot be modified after insertion
-- **Audit Trail**: all MQTT connections and metric rejections are logged
+
+- **Isolamento dei Topic**: 
+  - Le ACL del broker MQTT garantiscono che ogni servizio possa pubblicare esclusivamente sul proprio topic dedicato (`metrics/entry-hub`, `metrics/security-switch`, `metrics/database-vault`). 
+  - Il Metrics-Collector può leggere da tutti i topic tramite `metrics/*` ma non può pubblicare. 
+Questo design rende impossibile per un servizio impersonare un altro o iniettare metriche fraudolente.
+
+- **mTLS End-to-End**: Broker, publisher e subscriber utilizzano autenticazione basata su certificati X.509. Forse è un pò Over Power per un sistema di metriche, ma va bene così. 
+
+- **Autenticazione del Servizio**: Le metriche sono validate confrontando il campo `metric.Service` con il topic MQTT di provenienza. 
+Se una metrica dichiara `service: "entry-hub"` ma in qualche modo arriva su `metrics/security-switch`, viene automaticamente rifiutata per prevenire metric injection.
+
+- **Storage Immutabile**: I dati time-series in TimescaleDB seguono semantica append-only. Nessuna operazione di UPDATE o DELETE è consentita manualmente. La rimozione dei vecchi dati (oltre 30 giorni) avviene esclusivamente tramite retention policy automatica, preservando l'integrità storica.
+
+- **Audit Trail Completo**: Tutte le connessioni MQTT e i validation failures sono registrati con dettagli su chi si connette, quando, con quale certificato, e perché una metrica è stata rifiutata.
 
 **Ruolo nell'Architettura**:
-- **Operational Visibility**: monitoring without compromising user privacy
-- **Performance Analysis**: request latency, error rates, throughput metrics
-- **Security Monitoring**: validation failures, authentication attempts, error patterns
-- **Capacity Planning**: connection counts, database load, resource utilization
+
+Il sistema di metriche svolge quattro funzioni critiche nell'ecosistema R.A.M.-U.S.B.:
+
+- **Visibilità Operativa**: Le dashboard Grafana mostrano metriche aggregate. 
+
+- **Analisi delle Performance**: Tracciamento di latenza delle richieste (p50, p95, p99), tassi di errore e throughput per identificare colli di bottiglia.
+
+- **Monitoraggio della Sicurezza**: Detection precoce di attacchi attraverso l'analisi di pattern anomali: burst improvvisi di 401 Unauthorized, anomalie nel traffico mTLS (tentativi di man-in-the-middle) e molto altro.
+
+- **Capacity Planning**: Monitoraggio continuo di connessioni attive, carico del database e utilizzo delle risorse hardware. Questi dati permettono di prevedere quando scalare l'infrastruttura e forniscono metriche concrete per il dimensionamento ottimale.
+
 
 ## Livello 3: Architettura di Basso Livello (50 minuti)
 
@@ -205,7 +253,8 @@ Seguite una richiesta di registrazione utente attraverso l'intero sistema per co
   - **Isolamento Errori**: Categorizza errori senza esporre dati degli utenti e dettagli interni
 
 - **Ruolo nell'Architettura**:
-  - **Perimetro di Sicurezza**: Il Security-Switch separa il Database-Vault dal punto di ingresso per gli utenti, fungendo da barriera aggiuntiva nel caso in cui l'Entry-Hub dovesse essere compromesso. L'idea è di tenere il database più lontano possibile dagli utenti. Infatti gira su una macchina virtuale separata, non direttamente raggiungibile dall'Entry-Hub
+  - **Perimetro di Sicurezza**: Il Security-Switch separa il Database-Vault dal punto di ingresso per gli utenti, fungendo da barriera aggiuntiva nel caso in cui l'Entry-Hub dovesse essere compromesso. 
+L'idea è di tenere il database più lontano possibile dagli utenti, infatti gira su una macchina virtuale separata, non direttamente raggiungibile dall'Entry-Hub
 
 ### **Security-Switch -> Database-Vault:**
 - **Implementazione**: [database-vault/handlers/store.go](database-vault/handlers/store.go)
