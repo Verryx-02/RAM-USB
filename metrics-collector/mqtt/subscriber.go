@@ -213,14 +213,6 @@ func messageHandler(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
-	// ZERO-KNOWLEDGE VALIDATION
-	// Reject metrics containing sensitive data
-	if err := validateMetric(metric); err != nil {
-		log.Printf("Metric validation failed from %s: %v", serviceName, err)
-		incrementCounter(&metricsRejected)
-		return
-	}
-
 	// TIMESTAMP VALIDATION
 	// Ensure metric timestamp is reasonable
 	now := time.Now().Unix()
@@ -239,94 +231,6 @@ func messageHandler(client mqtt.Client, msg mqtt.Message) {
 	}
 
 	// Note: metricsStored counter is now incremented inside TimescaleDB storage after commit
-}
-
-// validateMetric checks metric for sensitive data and format compliance.
-//
-// Security features:
-// - Rejects metrics with forbidden label keys
-// - Validates label sizes to prevent storage attacks
-// - Checks metric name format and length
-// - Ensures no PII or credentials in metric data
-//
-// Returns error if metric contains sensitive data or invalid format.
-func validateMetric(m types.Metric) error {
-	// METRIC NAME VALIDATION
-	// Check name length and format
-	if len(m.Name) == 0 || len(m.Name) > types.MaxMetricNameLength {
-		return fmt.Errorf("invalid metric name length: %d", len(m.Name))
-	}
-
-	// FORBIDDEN LABEL DETECTION
-	// Check for sensitive data in labels
-	forbiddenKeys := []string{
-		types.ForbiddenLabelEmail,
-		types.ForbiddenLabelPassword,
-		types.ForbiddenLabelSSHKey,
-		types.ForbiddenLabelEmailHash,
-		types.ForbiddenLabelUserID,
-		types.ForbiddenLabelUsername,
-	}
-
-	for _, forbidden := range forbiddenKeys {
-		if _, exists := m.Labels[forbidden]; exists {
-			return fmt.Errorf("forbidden label key: %s", forbidden)
-		}
-
-		// Check if forbidden key is substring of any label key
-		for key := range m.Labels {
-			if strings.Contains(strings.ToLower(key), forbidden) {
-				return fmt.Errorf("label key contains forbidden term: %s", forbidden)
-			}
-		}
-	}
-
-	// LABEL SIZE VALIDATION
-	// Prevent oversized labels that could cause storage issues
-	if len(m.Labels) > types.MaxLabelsPerMetric {
-		return fmt.Errorf("too many labels: %d (max %d)", len(m.Labels), types.MaxLabelsPerMetric)
-	}
-
-	for key, value := range m.Labels {
-		if len(key) > types.MaxLabelKeyLength {
-			return fmt.Errorf("label key too long: %s", key)
-		}
-		if len(value) > types.MaxLabelValueLength {
-			return fmt.Errorf("label value too long for key %s", key)
-		}
-
-		// Check for sensitive data patterns in values
-		valueLower := strings.ToLower(value)
-		if strings.Contains(valueLower, "@") && strings.Contains(valueLower, ".") {
-			return fmt.Errorf("label value appears to contain email address")
-		}
-		if strings.HasPrefix(valueLower, "ssh-") {
-			return fmt.Errorf("label value appears to contain SSH key")
-		}
-	}
-
-	// METRIC TYPE VALIDATION
-	// Ensure valid metric type for proper aggregation
-	validTypes := []types.MetricType{
-		types.MetricTypeCounter,
-		types.MetricTypeGauge,
-		types.MetricTypeHistogram,
-		types.MetricTypeSummary,
-	}
-
-	typeValid := false
-	for _, validType := range validTypes {
-		if m.Type == validType {
-			typeValid = true
-			break
-		}
-	}
-
-	if !typeValid {
-		return fmt.Errorf("invalid metric type: %s", m.Type)
-	}
-
-	return nil
 }
 
 // Disconnect gracefully disconnects MQTT client.

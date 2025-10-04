@@ -128,21 +128,6 @@ type ServiceHealth struct {
 	Version      string    `json:"version,omitempty"` // Service version if available
 }
 
-// ValidationError represents a metric validation failure.
-//
-// Security features:
-// - Generic error messages prevent information disclosure
-// - No inclusion of actual sensitive data in errors
-// - Categorized reasons for monitoring validation issues
-//
-// Used for rejecting metrics with sensitive data.
-type ValidationError struct {
-	Timestamp  time.Time `json:"timestamp"`             // When validation failed
-	Service    string    `json:"service"`               // Service that sent invalid metric
-	Reason     string    `json:"reason"`                // Generic failure reason
-	MetricName string    `json:"metric_name,omitempty"` // Metric that failed validation
-}
-
 // Constants for validation and limits
 const (
 	// METRIC SIZE LIMITS
@@ -150,13 +135,4 @@ const (
 	MaxLabelValueLength = 256 // Maximum length for label values
 	MaxLabelsPerMetric  = 20  // Maximum number of labels per metric
 	MaxMetricNameLength = 256 // Maximum length for metric names
-
-	// SENSITIVE DATA PATTERNS - for zero-knowledge validation
-	// These keys should NEVER appear in metrics
-	ForbiddenLabelEmail     = "email"
-	ForbiddenLabelPassword  = "password"
-	ForbiddenLabelSSHKey    = "ssh_key"
-	ForbiddenLabelEmailHash = "email_hash"
-	ForbiddenLabelUserID    = "user_id"
-	ForbiddenLabelUsername  = "username"
 )

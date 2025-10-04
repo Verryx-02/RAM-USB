@@ -154,7 +154,6 @@ func StoreMetric(metric types.Metric) error {
 // StoreBatch stores multiple metrics using the global storage instance.
 //
 // Security features:
-// - Batch validation before storage
 // - Transactional integrity
 // - Efficient for bulk operations
 //
