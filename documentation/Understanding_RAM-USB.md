@@ -1,24 +1,50 @@
 # Comprendere il Progetto RAM-USB
 
-Questa sezione fornisce un approccio a 3 livelli per la comprensione di R.A.M.-U.S.B.  
+Questa sezione fornisce un approccio a 3 livelli per la comprensione di RAM-USB  
 Spazia dalla comprensione di alto livello ai dettagli implementativi, garantendo una comprensione completa sia dell'architettura di sicurezza che della sua implementazione pratica. Più precisamente:  
 - Il primo livello fornisce un'overview generale e approssimativa
 - Il secondo livello scende più nei dettagli ed è già sufficiente a comprendere a pieno il progetto. 
 - Il terzo livello approfondisce l'implementazione   
 
-## Livello 1: Architettura di Alto Livello (5 minuti)
+## Scopo del progetto
+Lo scopo inizialmente era di fare qualcosa di piccolo in modo da passare velocemente l'esame di IoT. Durante la progettazione però, l'esame di IoT è sceso in secondo piano, surclassato dalla curiosità e passione per lo sviluppo di qualcosa che potesse insegnarci molto sulla sicurezza informatica, sulla protezione dei dati, sui progetti Open Source e su molto altro.  
+Quindi, lo scopo di questo progetto non è creare qualcosa di rivoluzionario, ma di studiare e approfondire la progettazione di progetti complessi che mettono al primo posto la sicurezza e la privacy dei dati degli utenti.
 
-Iniziate da qui per comprendere il design del sistema e i principi di sicurezza su cui si fonda.
+## Livello 1: Architettura di Alto Livello (10 minuti)
+RAM-USB è un'architettura a micro-servizi, composta da due Macchine Virtuali (VM) e da sette Linux Container (LXC) riassunti nella seguente tabella. 
 
-1. **Diagramma di Flusso di Sistema**: Iniziate con il file [documentation/registration_flow.md](registration_flow.md) per visualizzare il flusso completo delle richieste. 
-2. **Panoramica dell'Architettura**: La natura distribuita del sistema con 4 microservizi
-3. **Concetto Fondamentale**: Architettura zero-trust dove ogni servizio autentica ogni altro servizio
+| Nome                   | Tipo |
+| ---------------------- | ---- |
+| **Entry-Hub**          | LXC  |
+| **Security-Switch**    | LXC  |
+| **Database-Vault**     | KVM  |
+| **Storage-Service**    | KVM  |
+| **OPA**                | LXC  |
+| **Jump-Host-Storage**  | LXC  |
+| **Mosquitto**          | LXC  |
+| **Metrics-Collector**  | LXC  |
+| **Metrics-Visualizer** | LXC  |
+
+Attualmente però, è implementato solo il sistema di iscrizione degli utenti al servizio, quindi soltanto:
+
+| Nome                   | Tipo |
+| ---------------------- | ---- |
+| **Entry-Hub**          | LXC  |
+| **Security-Switch**    | LXC  |
+| **Database-Vault**     | KVM  |
+| **Mosquitto**          | LXC  |
+| **Metrics-Collector**  | LXC  |
+| **Metrics-Visualizer** | LXC  |
+
+Iniziamo da qui per comprendere il design del sistema e i principi di sicurezza su cui si fonda.
+
+**Diagramma di Flusso di Sistema**: Iniziamo con il file [documentation/registration_flow.md](registration_flow.md) per visualizzare il flusso completo delle richieste. 
 
 **Punti Chiave da Comprendere:**
 - Il sistema implementa una pipeline: Client -> Entry-Hub -> Security-Switch -> Database-Vault
 - **In parallelo**, ogni servizio pubblica metriche: Servizi -> MQTT Broker -> Metrics-Collector -> TimescaleDB
 - Ogni servizio gira su una porta diversa (8443, 8444, 8445) e comunica tramite mTLS
-- Per il momento gira tutto sullo stesso pc, senza container nè altro. Vengono usati 5 terminali. Idealmente ogni servizio dovrebbe girare su un container/VM separato.
+- Per il momento gira tutto sullo stesso pc, senza container nè altro. Vengono usati 5 terminali. Idealmente ogni servizio dovrebbe girare su un container/VM separato in ambiente Proxmox.
 - Le email degli utenti sono crittografate prima di essere salvate nel database con AES-256-GCM in modo da poter essere recuperate quando necessario, e sono salvate anche come hash.
 - Le password sono salvate come hash calcolata con Argon2id, un algoritmo di hashing lento resistente agli attacchi brute force di GPU parallele. 
 - Nessun componente singolo ha informazioni complete e le email non vengono mai loggate in chiaro, viene loggata la hash (principio **zero-knowledge**)
@@ -31,9 +57,9 @@ Iniziate da qui per comprendere il design del sistema e i principi di sicurezza 
 
 
 
-## Livello 2: Architettura di Medio Livello (30 minuti)
+## Livello 2: Architettura di Medio Livello (40 minuti)
 
-Esaminate i meccanismi di sicurezza che proteggono i dati degli utenti e prevengono accessi non autorizzati:
+Esaminiamo i meccanismi di sicurezza che proteggono i dati degli utenti e prevengono accessi non autorizzati:
 
 **Autenticazione Mutual TLS:**
 - **Implementazione**: [security-switch/middleware/mtls.go](../security-switch/middleware/mtls.go)
@@ -50,49 +76,50 @@ Esaminate i meccanismi di sicurezza che proteggono i dati degli utenti e preveng
   - **Prevenzione del Man-in-the-Middle**: Solo certificati firmati dalla CA interna sono accettati. Questo controllo viene fatto durante l'handshake TLS in [security-switch/main.go](../security-switch/main.go), (riga 73). Se il middleware è stato chiamato allora sicuramente il certificato era valido. 
   - **Verifica ulteriore dell'identità**: Anche con certificato valido, deve appartenere all'organizzazione corretta
   - **Comprehensive Logging**: Ogni tentativo (successo/fallimento) viene tracciato senza esporre dati sensibili
-  - **Blocco a livello di rete**: Anche se un utente malintenzionato riuscisse a superare queste misure, non potrebbe nemmeno mandare un ping ai container interni perché l'accesso è bloccato dal file ACL di Tailscale.
+  - **Blocco a livello di rete**: Anche se un utente malintenzionato riuscisse a superare queste misure, non potrebbe nemmeno mandare un ping ai container interni perché l'accesso è bloccato dal file ACL di Tailscale. 
 
 - **Ruolo nell'Architettura**: 
-  - Implementa il "checkpoint" critico dove Entry-Hub deve dimostrare la sua identità
+  - Implementa il "checkpoint" critico in cui l'Entry-Hub deve dimostrare la sua identità
   - Previene che servizi esterni o compromessi raggiungano Database-Vault
   - Parte del design defense-in-depth: anche se l'Entry-Hub fosse compromesso, deve ancora presentare certificati validi
 
 **Validazione Defense-in-Depth:**
-- **Livello 1**: [entry-hub/utils/validation.go](../entry-hub/utils/validation.go) - Sanitizzazione iniziale dell'input
-- **Livello 2**: [security-switch/utils/validation.go](../security-switch/utils/validation.go) - Ri-validazione nonostante la fiducia mTLS
+- **Livello 1**: [entry-hub/utils/validation.go](../entry-hub/utils/validation.go): Sanitizzazione iniziale dell'input
+- **Livello 2**: [security-switch/utils/validation.go](../security-switch/utils/validation.go): Ri-validazione nonostante il mTLS
 - **Livello 3**: [database-vault/utils/validation.go](../database-vault/utils/validation.go): Validazione finale prima dello storage
 - **Motivazione**: Anche se un livello è compromesso, gli altri mantengono la sicurezza. È sufficiente cambiare i certificati dei componenti non compromessi, isolare il componente compromesso e avviarne una nuova istanza su una nuova macchina virtuale grazie a ProxmoxVE.  
 
-Le email vengono salvate in due modi: crittografate con AES e in forma di hash con SHA256. Le password invece vengono salvate sotto forma di hash calcolata con Argon2ID
+Le email vengono salvate in due modi: crittografate con AES e in forma di hash con SHA256.  
+Le password, invece, vengono salvate sotto forma di hash calcolata con Argon2ID
 
 **Implementazione Crittografica:**
 
 - **Crittografia Email Non-Deterministica**: [database-vault/crypto/aes.go](../database-vault/crypto/aes.go)
   - **Processo Step-by-Step**:
     1. **Generazione del salt** (righe 83-88): 16 bytes crittograficamente sicuri per ogni utente
-    2. **Derivazione della chiave** (righe 90-100): HKDF-SHA256(MasterKey + Salt + Context) -> chiave AES-256 unica
+    2. **Derivazione della chiave** (righe 90-100): `HKDF-SHA256(MasterKey + Salt + Context)` genera una chiave AES-256 unica
     3. **Generatione del nonce** (righe 102-107): 12 bytes random per ogni operazione di crittografia
     4. **Crittazione con AES-256-GCM** (righe 120-122): Crittografia autenticata con integrity check
     5. **Formato di Storage**: nonce + ciphertext + auth_tag -> base64 per database
-  
+
   - **Garanzie di Sicurezza**:
     - **Non-Deterministica**: Stessa email produce cifratura diversa ogni volta (salt + nonce random)
     - **Derivazione della chiave**: La chiave viene derivata su richiesta, non viene mai salvata ed è diversa per ogni email
     - **Protezione di integrità**: GCM mode previene manomissioni del ciphertext
-    - **Indicizzazione Zero-Knowledge**: SHA-256 hash delle email per query veloci senza esporre nulla in chiaro
+    - **Indicizzazione Zero-Knowledge**: SHA-256 hash delle email per eseguire query veloci senza esporre nulla in chiaro
 
 - **Sicurezza hashing Password Memory-Hard**: [database-vault/crypto/password.go](../database-vault/crypto/password.go)
   - **Algoritmo**: Argon2id con parametri resistance-tuned
     - **Costo in termini di memoria**: 32MB (lo standard è 64MB, ne vengono usati 32 per facilitare il testing)
     - **Costo in termini di tempo**: 1 iterazione (lo standard è 2 o 3. Ne viene usato 1 per motivi di testing)
-    - **Parallelismo**: 4 thread - sfrutta CPU multi-core
+    - **Parallelismo**: 4 thread: sfrutta CPU multi-core
     - **Lunghezza dell'output**: 32 bytes (256 bit) per robustezza crittografica
   
   - **Protezioni Specifiche**:
-    - **Anti-GPU**: Memory-hard design rende gli attacchi GPU economicamente svantaggiosi
+    - **Anti-GPU**: Memory-hard design rende gli attacchi GPU rendendoli economicamente svantaggiosi
     - **Anti-ASIC**: Argon2id è resistente anche ad hardware specializzato
     - **Anti-Rainbow Table**: Viene usato un salt crittograficamente sicuro (16 bytes) per ogni password. Anche se la password è debole, viene "rinforzata" dal salt
-    - **Anti Timing Attack**: Comparazione constant-time in VerifyPassword (righe 81-90) impedisce ad un attaccante di sapere quanti caratteri della hash sono corretti. Va migliorata
+    - **Anti Timing Attack**: Comparazione constant-time in VerifyPassword (righe 81-90) impedisce ad un attaccante di sapere quanti caratteri della hash sono corretti. Va migliorata, ma mi sembrava un'idea carina.
 
 - **Gestione delle chiavi**: [database-vault/crypto/keys.go](../database-vault/crypto/keys.go)
   - **Derivazione HKDF-SHA256**: Context separato per operazioni diverse (`"email-encryption-secure-v1"`)
@@ -107,7 +134,8 @@ Le email vengono salvate in due modi: crittografate con AES e in forma di hash c
 
 **Sistema di Monitoraggio MQTT:**
 
-Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT per raccogliere metriche operative da tutti i servizi mantenendo i principi zero-knowledge.
+Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT per raccogliere metriche operative da tutti i servizi mantenendo i principi zero-knowledge.  
+Attualmente li raccoglie solo da Entry-Hub. 
 
 - **MQTT Broker**: [mqtt-broker/mosquitto.conf](../mqtt-broker/mosquitto.conf) e [mqtt-broker/acl.conf](../mqtt-broker/acl.conf)
   - **Scopo**: Message broker centrale per distribuzione sicura delle metriche
@@ -121,26 +149,26 @@ Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT
     - Certificate-based authentication con validazione CA (mosquitto.conf righe 29-46)
     - ACL rules per publisher/subscriber isolation (acl.conf righe 52-59)
 
-- **Metrics Collection nei Servizi**: Ogni servizio (Per ora solo Entry-Hub, ma idealmente anche gli altri) implementa:
+- **Metrics Collection nei Servizi**: Ogni servizio (Per ora solo Entry-Hub) implementa:
   - **Collector interno**: [entry-hub/metrics/collector.go](../entry-hub/metrics/collector.go)
     - Raccoglie metriche in-memory: requests, latency, errors, registrations
-    - **Zero-Knowledge**: nessun campo per user data, solo statistiche aggregate
+    - **Zero-Knowledge**: nessun campo per i dati utente, solo statistiche aggregate
     - **Thread-Safety con Mutex RWLock**:
       - Visto che più richieste HTTP simultanee chiamano `IncrementRequest()` contemporaneamente, viene utilizzato `sync.RWMutex`. In questo modo:
         - Sono permesse multiple letture concorrenti (RLock) quando si esportano metriche verso MQTT
-        - Viene imposta la scrittura esclusiva (Lock) quando si incrementano contatori
+        - Viene imposta la scrittura esclusiva (Lock) quando si incrementano i contatori
     
     - **Analisi della latenza con percentili**:
-      - **p50 (mediana)**: 50% delle richieste sono più veloci di questo valore → "latenza tipica"
-      - **p95**: 95% delle richieste sono più veloci → identifica problemi di performance
-      - **p99**: 99% delle richieste sono più veloci → rileva outliers e casi peggiori possibili
-      - **Esempio pratico**: Se p50=20ms, p95=80ms, p99=300ms → il 99% degli utenti ha risposta entro 300ms, ma c'è un 1% che sperimenta rallentamenti da investigare
+      - **p50 (mediana)**: 50% delle richieste sono più veloci di questo valore -> "latenza tipica"
+      - **p95**: 95% delle richieste sono più veloci -> identifica problemi di performance
+      - **p99**: 99% delle richieste sono più veloci -> rileva outliers e casi peggiori possibili
+      - **Esempio pratico**: Se p50=20ms, p95=80ms, p99=300ms -> il 99% degli utenti ha risposta entro 300ms, ma c'è un 1% che sperimenta rallentamenti da investigare
       - **Utilizzo**: Questi dati vengono graficati sulla dashboard Grafana per il monitoraggio real-time e alerting
   - **MQTT Publisher**: [entry-hub/mqtt/publisher.go](../entry-hub/mqtt/publisher.go)
     - **Publishing Schedule (ogni 2 minuti)**:
       - Intervallo di pubblicazione: 120 secondi tra ogni invio di metriche
-      - **Perché non più frequente**: Bilanciamento tra visibilità real-time e carico sul broker MQTT
-      - **Perché non meno frequente**: 2 minuti garantisce detection rapida di problemi (es. spike di errori)
+      - **Perché non più frequente**: È un bilanciamento tra visibilità real-time e carico sul broker MQTT
+      - **Perché non meno frequente**: 2 minuti garantiscono una detection abbastanza rapida di problemi
       - Ogni pubblicazione invia uno snapshot completo delle metriche accumulate dall'ultimo invio
     
     - **Staggered Start (Random Delay 0-60 secondi)**:
@@ -165,9 +193,9 @@ Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT
         - **QoS 1** (At-Least-Once): Garantisce la consegna ma con possibili duplicati
         - **QoS 2** (Exactly-Once): Garanzia assoluta ma overhead maggiore
       - **Flow QoS 1**:
-        1. Publisher invia `PUBLISH` message al broker
-        2. Broker salva il messaggio e risponde con `PUBACK`
-        3. Publisher marca messaggio come consegnato
+        1. Il Publisher invia `PUBLISH` message al broker
+        2. Il Broker salva il messaggio e risponde con `PUBACK`
+        3. Il Publisher marca il messaggio come consegnato
         4. Se non riceve nessun `PUBACK` entro il tempo di timeout, il publisher reinvia automaticamente
     
     - **Message Format & Topic Strategy**:
@@ -176,11 +204,10 @@ Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT
       - **mTLS Authentication**: Ogni publisher usa un certificato dedicato (`mqtt-publisher.crt`) validato dal broker tramite ACL
       - **ACL Enforcement**: Il publisher può scrivere SOLO sul proprio topic
 
-
 - **Metrics-Collector**: [metrics-collector/main.go](../metrics-collector/main.go)
   - **MQTT Subscriber**: [metrics-collector/mqtt/subscriber.go](../metrics-collector/mqtt/subscriber.go)
     - Sottoscritto a `metrics/*` per ricevere metriche da tutti i servizi
-    - **Zero-Knowledge Validation** (righe 76-97): rifiuta metriche con label keys proibite (`email`, `password`, `ssh_key`, `user_id`)
+    - **Zero-Knowledge Validation**
     - Verifica service name consistency (topic vs metric.Service)
     - Timestamp validation per prevenire metriche future o troppo vecchie
   - **TimescaleDB Storage**: [metrics-collector/storage/timescaledb.go](../metrics-collector/storage/timescaledb.go)
@@ -197,7 +224,7 @@ Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT
   - Il Metrics-Collector può leggere da tutti i topic tramite `metrics/*` (permesso esplicito con `topic read`) ma non può pubblicare (negato implicitamente perché non ha permesso `write`).
   - Questo design rende impossibile per un servizio impersonare un altro o iniettare metriche fraudolente.
 
-- **mTLS End-to-End**: Broker, publisher e subscriber utilizzano autenticazione basata su certificati X.509. Forse è un pò Over Power per un sistema di metriche, ma va bene così. 
+- **mTLS End-to-End**: Broker, publisher e subscriber utilizzano autenticazione basata su certificati X.509. Forse è un pò Over Power per un sistema di metriche, ma mi piaceva come idea. 
 
 - **Autenticazione del Servizio**: Le metriche sono validate confrontando il campo `metric.Service` con il topic MQTT di provenienza. 
 Se una metrica dichiara `service: "entry-hub"` ma in qualche modo arriva su `metrics/security-switch`, viene automaticamente rifiutata per prevenire metric injection.
@@ -208,7 +235,7 @@ Se una metrica dichiara `service: "entry-hub"` ma in qualche modo arriva su `met
 
 **Ruolo nell'Architettura**:
 
-Il sistema di metriche svolge quattro funzioni critiche nell'ecosistema R.A.M.-U.S.B.:
+Il sistema di metriche svolge quattro funzioni critiche nell'ecosistema RAM-USB:
 
 - **Visibilità Operativa**: Le dashboard Grafana mostrano metriche aggregate. 
 
@@ -220,6 +247,7 @@ Il sistema di metriche svolge quattro funzioni critiche nell'ecosistema R.A.M.-U
 
 
 ## Livello 3: Architettura di Basso Livello (90 minuti)
+La lettura di questa sezione non è obbligatoria alla comprensione del progetto, ma è sicuramente utile.
 
 Seguite una richiesta di registrazione utente attraverso l'intero sistema per comprendere l'implementazione nel dettaglio.
 
