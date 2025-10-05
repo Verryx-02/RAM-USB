@@ -194,8 +194,8 @@ Il sistema implementa un'architettura di monitoraggio distribuito basata su MQTT
 
 - **Isolamento dei Topic**: 
   - Le ACL del broker MQTT garantiscono che ogni servizio possa pubblicare esclusivamente sul proprio topic dedicato (`metrics/entry-hub`, `metrics/security-switch`, `metrics/database-vault`). 
-  - Il Metrics-Collector può leggere da tutti i topic tramite `metrics/*` ma non può pubblicare. 
-Questo design rende impossibile per un servizio impersonare un altro o iniettare metriche fraudolente.
+  - Il Metrics-Collector può leggere da tutti i topic tramite `metrics/*` (permesso esplicito con `topic read`) ma non può pubblicare (negato implicitamente perché non ha permesso `write`).
+  - Questo design rende impossibile per un servizio impersonare un altro o iniettare metriche fraudolente.
 
 - **mTLS End-to-End**: Broker, publisher e subscriber utilizzano autenticazione basata su certificati X.509. Forse è un pò Over Power per un sistema di metriche, ma va bene così. 
 
@@ -493,8 +493,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
   - **Subscriber Rules**:
     - Metrics-Collector: `user metrics-collector-subscriber` + `topic read metrics/+`
     - Il `+` è un wildcard che matcha un singolo livello: `metrics/entry-hub`, `metrics/security-switch`, ecc.
-    - **Deny esplicito**: `topic deny metrics/+` e `topic deny metrics/#` per write
-    - Anche se qualcuno modifica accidentalmente le permissions, questa rule esplicita previene writes
+    - Il write è implicitamente negato. Specificando solo `topic read`, il subscriber può solo leggere e non può pubblicare.
     - Metrics-Collector può SOLO leggere, MAI pubblicare
   
   - **Default Deny Rule**:
@@ -748,6 +747,75 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
   - **Compromesso**: I dati compressi sono in sola lettura (niente UPDATE/DELETE) e più lenti da leggere
   - Per dati storici (oltre 7 giorni) questo è accettabile: si consultano raramente, il risparmio di spazio è più importante
 
-- **Integrazione con Grafana**:
-  - Dashboard per visualizzare le metriche aggregate
+### **Visualizzazione delle Metriche con Grafana**
 
+Il sistema utilizza Grafana per visualizzare le metriche raccolte in TimescaleDB. 
+Di seguito le query principali per creare una dashboard di monitoraggio dell'Entry-Hub.
+Sono molto approssimative, è un inizio
+
+#### **Configurazione Data Source**
+
+- **Host**: `localhost:5432`
+- **Database**: `metrics_db`
+- **User**: `metrics_user`
+- **SSL Mode**: `require`
+
+#### **Query Dashboard**
+
+##### **1. Response Time**
+
+Visualizza i tempi di risposta delle richieste HTTP. Include i percentili p50, p95, p99 calcolati dal metrics collector.
+
+```sql
+SELECT 
+    time,
+    value as "Response Time"
+FROM metrics 
+WHERE 
+    service = 'entry-hub' 
+    AND metric_name = 'request_duration_milliseconds'
+    AND $__timeFilter(time)
+ORDER BY time
+```
+
+**Tipo di visualizzazione**: Time series  
+**Unità**: milliseconds (ms)
+
+##### **2. Total Requests**
+
+Mostra il volume totale di richieste HTTP ricevute dall'Entry-Hub.
+
+```sql
+SELECT 
+    time,
+    SUM(value) as "Total Requests"
+FROM metrics 
+WHERE 
+    service = 'entry-hub' 
+    AND metric_name = 'requests_total'
+    AND $__timeFilter(time)
+GROUP BY time
+ORDER BY time
+```
+
+**Tipo di visualizzazione**: Time series o Bar chart  
+**Unità**: count
+
+##### **3. Active Connections (Connessioni Simultanee)**
+
+Traccia il numero di connessioni HTTP attive simultaneamente.
+
+```sql
+SELECT 
+    time,
+    value as "Active Connections"
+FROM metrics 
+WHERE 
+    service = 'entry-hub' 
+    AND metric_name = 'connections_active'
+    AND $__timeFilter(time)
+ORDER BY time
+```
+
+**Tipo di visualizzazione**: Time series o Gauge  
+**Unità**: count
