@@ -57,3 +57,6 @@ certificates/database-vault/mqtt-publisher.crt
 certificates/database-vault/mqtt-publisher.key
 certificates/security-switch/mqtt-publisher.crt
 certificates/security-switch/mqtt-publisher.key
+
+# for not loosing encription key
+certificates/ramusb_key_backup.txt
