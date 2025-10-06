@@ -31,15 +31,20 @@ The system is composed of several distributed components:
 - **Security-Switch**: Manages secure communication and access control between services using mutual TLS.
 - **Database-Vault**: Stores credentials and user metadata, encrypted and isolated.
 - **Storage-Service**: Handles encrypted file storage and retrieval.
+- **OpenPolicyAgent**: Handles authorization for the access to the Storage-Service.
+- **Jump-Host-Storage**: Prevents users from directly accessing storage. (Also known as SSH Bastion)
 - **Tailscale Mesh VPN**: Ensures secure, private communication across nodes without opening any public ports.
 
-All communication between components is secured with **mutual TLS (mTLS)**.
+Below is the communication scheme for the various services even tho At the moment only user registration to the service is implemented, so only Entry-Hub<->Security-Switch<->Database-Vault->PostgreSQL
+
+
+<img src="documentation/Images/GeneralArchitectureFlow.jpg" alt="General Architecture Flow" width="88%">
 
 ## Monitoring & Metrics System
 
 RAM-USB implements a **distributed monitoring architecture** to track system health, performance, and security events across all microservices in real-time.
 
-<img src="documentation/Images/Metrics-Architecture.jpg" alt="Metrics Architecture" width="80%">
+<img src="documentation/Images/Metrics-Architecture.jpg" alt="Metrics Architecture" width="88%">
 
 ### Architecture Overview
 
