@@ -14,12 +14,13 @@ We set out to build a secure, distributed backup infrastructure that ensures **p
 
 ## Key Features
 
-- **Zero-Knowledge Design** — All user data is encrypted client-side; even we cannot access your files.
-- **Geo-Distributed Architecture** — The system can run across multiple physical nodes for redundancy and load balancing.
-- **Smart Access Control** — Only authenticated users can access storage nodes, using strict SFTP policies.
-- **Multi-User Support** — Each user has an isolated environment and encryption keys.
-- **Remote Access** — Users can perform secure backups and restores from anywhere in the world.
-- **Modern Cryptography** — Argon2id for email and password hashing, AES for encryption.
+- **Zero-Knowledge Design**: All user data is encrypted client-side; even we cannot access your files.
+- **Geo-Distributed Architecture**: The system can run across multiple physical nodes for redundancy and load balancing.
+- **Smart Access Control**: Only authenticated users can access storage nodes, using strict SFTP policies.
+- **Multi-User Support**: Each user has an isolated environment and encryption keys.
+- **Remote Access**: Users can perform secure backups and restores from anywhere in the world.
+- **Modern Cryptography**: Argon2id for email and password hashing, AES for encryption.
+- **Zero-Knowledge Metrics System**: Using MQTT over TLS, TimescaleDB and Grafana 
 
 ---
 
