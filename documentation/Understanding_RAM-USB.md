@@ -246,7 +246,10 @@ Il sistema di metriche svolge quattro funzioni critiche nell'ecosistema RAM-USB:
 - **Capacity Planning**: Monitoraggio continuo di connessioni attive, carico del database e utilizzo delle risorse hardware. Questi dati permettono di prevedere quando scalare l'infrastruttura e forniscono metriche concrete per il dimensionamento ottimale.
 
 ## Livello 3: Architettura di Basso Livello (90 minuti)
-La lettura di questa sezione NON è obbligatoria alla comprensione del progetto.
+(  
+La lettura di questa sezione NON è obbligatoria alla comprensione del progetto. Se hai già letto il [readme](../README.md) e il file [registration_flow](../documentation/registration_flow.md) potrebbe essere sufficiente. 
+L'unica sezione che potrebbe essere utile di questo livello 3 è quella finale con le query di Grafana.  
+)  
 
 Seguite una richiesta di registrazione utente attraverso l'intero sistema per comprendere l'implementazione nel dettaglio.
 
