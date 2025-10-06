@@ -36,54 +36,71 @@ The system is composed of several distributed components:
 - **Jump-Host-Storage**: Prevents users from directly accessing storage. (Also known as SSH Bastion)
 - **Tailscale Mesh VPN**: Ensures secure, private communication across nodes without opening any public ports.
 
-Below, the communication scheme for the various services even tho, at the moment, only user registration is implemented, so only Entry-Hub<->Security-Switch<->Database-Vault->PostgreSQL
+### Architecture Overview
+
+**Request Flow**: `Client -> Entry-Hub -> Security-Switch -> Database-Vault`
+
+1. **Entry-Hub**: Exposes public HTTPS API, performs initial validation, forwards via mTLS
+2. **Security-Switch**: Acts as security checkpoint with defense-in-depth validation  
+3. **Database-Vault**: Final storage layer with email encryption and password hashing
+4. **Certificate Infrastructure**: Every service authenticates via mTLS using dedicated certificates
+
+### Key Security Features
+
+- **Zero-Trust Network**: All inter-service communication requires mutual TLS authentication
+- **Defense-in-Depth**: Each layer re-validates input data independently  
+- **Email Encryption**: AES-256-GCM with random salt prevents deterministic encryption
+- **Password Security**: Argon2id hashing with cryptographic salt generation
+- **Certificate-Based Authentication**: Each service validates client organization certificates
+
+Below, the communication scheme for the various services even tho, at the moment, only user registration is implemented, so only **Entry-Hub<->Security-Switch<->Database-Vault->PostgreSQL**
 
 
-<img src="documentation/Images/GeneralArchitectureFlow.jpg" alt="General Architecture Flow" width="88%">
+<img src="documentation/Images/GeneralArchitectureFlow.jpg" alt="General Architecture Flow" width="90%">
 
 ## Monitoring & Metrics System
 
 RAM-USB implements a **distributed monitoring architecture** to track system health, performance, and security events across all microservices in real-time.
 
-<img src="documentation/Images/Metrics-Architecture.jpg" alt="Metrics Architecture" width="88%">
+<img src="documentation/Images/Metrics-Architecture.jpg" alt="Metrics Architecture" width="90%">
 
 ### Architecture Overview
 
 The monitoring system follows a **publish-subscribe pattern** secured with mutual TLS:
 
-**Services → MQTT Broker (Mosquitto) → Metrics-Collector → TimescaleDB**
+**Services -> MQTT Broker (Mosquitto) -> Metrics-Collector -> TimescaleDB**
 
-Each service publishes metrics every 2 minutes to dedicated MQTT topics. The Metrics-Collector subscribes to all topics, validates incoming data, and stores time-series metrics in TimescaleDB for analysis and visualization.
+Each service publishes metrics every 2 minutes to dedicated MQTT topics. The Metrics-Collector subscribes to all topics, and stores time-series metrics in TimescaleDB for analysis and visualization.
 
 ### Key Components
 
-- **MQTT Broker (Mosquitto)** — Secure message broker with mTLS authentication and topic-based ACL enforcement. Each service can only publish to its own topic (`metrics/entry-hub`, `metrics/security-switch`, etc.)
-- **Metrics-Collector** — Subscribes to all metrics topics, performs zero-knowledge validation, and persists data to TimescaleDB. Exposes admin API on port 8446
-- **TimescaleDB** — Time-series database optimized for metrics storage with hypertables, continuous aggregates, automatic compression, and 30-day retention policy
+- **MQTT Broker (Mosquitto)**: Secure message broker with mTLS authentication and topic-based ACL enforcement. Each service can only publish to its own topic (`metrics/entry-hub`, `metrics/security-switch`, etc.)
+- **Metrics-Collector**: Subscribes to all metrics topics, performs zero-knowledge validation, and persists data to TimescaleDB. Exposes admin API on port 8446
+- **TimescaleDB**: Time-series database optimized for metrics storage with hypertables, continuous aggregates, automatic compression, and 30-day retention policy
 
 ### Monitored Metrics
 
-- **Request metrics** — Total requests, success/error rates by endpoint
-- **Performance metrics** — Request latency percentiles (p50, p95, p99), active connections
-- **Business metrics** — User registrations, authentication attempts
-- **System health** — Service uptime, connection status
+- **Request metrics**: Total requests, success/error rates by endpoint
+- **Performance metrics**: Request latency percentiles (p50, p95, p99), active connections
+- **Business metrics**: User registrations, authentication attempts
+- **System health**: Service uptime, connection status
 
 ### Security Features
 
-- **mTLS Authentication** — All MQTT connections require valid client certificates
-- **Topic Isolation** — ACL rules prevent services from accessing each other's metrics
-- **Zero-Knowledge Validation** — No sensitive user data (emails, passwords, SSH keys) in metrics
-- **Certificate-Based Authorization** — Each service uses dedicated certificates with strict organizational validation
+- **mTLS Authentication**: All MQTT connections require valid client certificates
+- **Topic Isolation**: ACL rules prevent services from accessing each other's metrics
+- **Zero-Knowledge Validation**: No sensitive user data (emails, passwords, SSH keys) in metrics
+- **Certificate-Based Authorization**: Each service uses dedicated certificates with organizational validation
 
 --- 
 
 See the [documentation](documentation/registration_flow.md) for more 
 
-If you are Professor Scagnetto, read [this guide](https://github.com/Verryx-02/RAM-USB/blob/main/documentation/Understanding_RAM-USB.md) 
+If you are Professor Scagnetto, read also [this guide](documentation/Understanding_RAM-USB.md) 
 
 ## Project Structure
 
-R.A.M.-U.S.B. implements a **distributed zero-trust architecture** with four main microservices communicating via mutual TLS (mTLS).  
+R.A.M.-U.S.B. implements a **distributed zero-trust architecture** with several microservices.
 Each component has specific security responsibilities in the authentication and storage pipeline.
 
 ```
@@ -176,25 +193,6 @@ Each component has specific security responsibilities in the authentication and 
 │   └── generate_key.sh             # Automated certificate generation script
 └── env_setup.sh                    # Environment variables configuration for all services
 ```
-
-
-
-### Architecture Overview
-
-**Request Flow**: `Client → Entry-Hub → Security-Switch → Database-Vault`
-
-1. **Entry-Hub**: Exposes public HTTPS API, performs initial validation, forwards via mTLS
-2. **Security-Switch**: Acts as security checkpoint with defense-in-depth validation  
-3. **Database-Vault**: Final storage layer with email encryption and password hashing
-4. **Certificate Infrastructure**: Every service authenticates via mTLS using dedicated certificates
-
-### Key Security Features
-
-- **Zero-Trust Network**: All inter-service communication requires mutual TLS authentication
-- **Defense-in-Depth**: Each layer re-validates input data independently  
-- **Email Encryption**: AES-256-GCM with random salt prevents deterministic encryption
-- **Password Security**: Argon2id hashing with cryptographic salt generation
-- **Certificate-Based Authentication**: Each service validates client organization certificates
 
 
 ## Getting Started
