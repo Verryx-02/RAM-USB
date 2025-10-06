@@ -2,7 +2,7 @@
 
 ---
 
-**R.A.M.-U.S.B.** is a geo-distributed, Remotely Accessible Multi-User Backup Server written in **Go**, designed with **zero-knowledge security principles** in mind. 
+**RAM-USB** is a geo-distributed, Remotely Accessible Multi-User Backup Server written in **Go**, designed with **zero-knowledge security principles** in mind. 
 
 This project was designed by [**Francesco Verrengia**](https://github.com/Verryx-02) and [**Riccardo Gottardi**](https://github.com/Riccardo-Gottardi).  
 Implemented by [**Francesco Verrengia**](https://github.com/Verryx-02) with [**Claude AI**](https://en.wikipedia.org/wiki/Claude_(language_model)) as part of academic work in the field of IoT and cybersecurity.  
@@ -100,7 +100,7 @@ If you are Professor Scagnetto, read also [this guide](documentation/Understandi
 
 ## Project Structure
 
-R.A.M.-U.S.B. implements a **distributed zero-trust architecture** with several microservices.
+RAM-USB implements a **distributed zero-trust architecture** with several microservices.
 Each component has specific security responsibilities in the authentication and storage pipeline.
 
 ```

@@ -1,4 +1,4 @@
-// Database-Vault module for R.A.M.-U.S.B. distributed backup system
+// Database-Vault module for RAM-USB distributed backup system
 // Implements secure credential storage with mTLS authentication and AES-256-GCM encryption
 module database-vault
 

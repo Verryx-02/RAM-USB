@@ -1,7 +1,7 @@
 /*
 User credential storage handler for Database-Vault secure persistence service.
 
-Implements the final layer of the R.A.M.-U.S.B. distributed authentication system
+Implements the final layer of the RAM-USB distributed authentication system
 with comprehensive defense-in-depth validation, SHA-256 email hashing for indexing,
 AES-256-GCM email encryption with random salt, Argon2id password hashing, and secure
 database storage. Receives mTLS-authenticated storage requests from Security-Switch

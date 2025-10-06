@@ -1,7 +1,7 @@
 // simple-client/README.md
 # Simple Registration Client
 
-A lightweight Go client for testing R.A.M.-U.S.B. user registration.
+A lightweight Go client for testing RAM-USB user registration.
 
 ## Setup
 
@@ -37,7 +37,7 @@ Edit `registration/registration.go` to modify:
 ## Expected Output
 
 ```
-R.A.M.-U.S.B. Simple Registration Client
+RAM-USB Simple Registration Client
 ========================================
 Starting user registration process...
 Reading SSH public key from: keys/ssh_public_key.pub

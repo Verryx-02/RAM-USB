@@ -5,7 +5,7 @@ Implements authenticated encryption for email addresses using AES-256-GCM
 with cryptographically secure random nonce and salt generation for safe
 database storage. Provides confidentiality and authenticity for email data
 with SHA-256 hashing for fast database indexing while maintaining
-zero-knowledge user identification in the R.A.M.-U.S.B. storage system.
+zero-knowledge user identification in the RAM-USB storage system.
 */
 package crypto
 

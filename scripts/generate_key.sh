@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script to generate all necessary certificates for R.A.M.-U.S.B. system
+# Script to generate all necessary certificates for RAM-USB system
 # Generates CA certificate and separate certificates for each component:
 
 # - Entry-Hub
@@ -32,7 +32,7 @@
 set -e  # Exit if any command fails
 
 echo "============================================"
-echo "R.A.M.-U.S.B. Certificate Generation Script"
+echo "RAM-USB Certificate Generation Script"
 echo "============================================"
 echo ""
 

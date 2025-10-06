@@ -3,7 +3,7 @@ mTLS client interface for Entry-Hub to Security-Switch communication.
 
 Provides secure request forwarding with mutual TLS authentication and certificate
 validation. Implements connection pooling and timeout management for reliable
-distributed service communication within the R.A.M.-U.S.B. architecture.
+distributed service communication within the RAM-USB architecture.
 
 TO-DO in NewEntryHubClient
 */

@@ -1,4 +1,4 @@
-// Entry-Hub module for R.A.M.-U.S.B. distributed backup system
+// Entry-Hub module for RAM-USB distributed backup system
 // Implements HTTPS REST API with mTLS client for Security-Switch communication
 module https_server
 

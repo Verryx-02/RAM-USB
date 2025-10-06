@@ -2,7 +2,7 @@
 MQTT subscriber implementation for Metrics-Collector service.
 
 Provides secure MQTT client functionality for receiving metrics from all
-R.A.M.-U.S.B. services. Implements TLS authentication, zero-knowledge validation,
+RAM-USB services. Implements TLS authentication, zero-knowledge validation,
 and reliable message processing with automatic reconnection. Subscribes to
 metrics/* topics and validates all incoming data before storage.
 */

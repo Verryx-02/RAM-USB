@@ -1,7 +1,7 @@
 /*
 Registration request handler for Security-Switch mTLS gateway service.
 
-Implements the second layer of the R.A.M.-U.S.B. distributed authentication system
+Implements the second layer of the RAM-USB distributed authentication system
 with defense-in-depth validation. Receives mTLS-authenticated registration requests
 from Entry-Hub instances, performs comprehensive security validation, and securely
 forwards validated requests to Database-Vault using mutual TLS authentication.

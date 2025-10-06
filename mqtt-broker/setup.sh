@@ -183,7 +183,7 @@ if [ "$OS" != "macos" ]; then
     
     sudo tee /etc/systemd/system/mosquitto-ramusb.service > /dev/null << EOF
 [Unit]
-Description=Mosquitto MQTT Broker for R.A.M.-U.S.B.
+Description=Mosquitto MQTT Broker for RAM-USB
 After=network.target
 Wants=network.target
 

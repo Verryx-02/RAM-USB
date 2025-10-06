@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	fmt.Println("R.A.M.-U.S.B. Simple Registration Client")
+	fmt.Println("RAM-USB Simple Registration Client")
 	fmt.Println("========================================")
 
 	// Execute registration

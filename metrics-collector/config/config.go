@@ -4,7 +4,7 @@ Configuration management for Metrics-Collector monitoring service.
 Provides centralized configuration for mTLS server operations, MQTT subscriber
 settings, TimescaleDB connection parameters.
 Uses environment variables for sensitive data with hardcoded certificate paths
-following the R.A.M.-U.S.B. pattern for development environments.
+following the RAM-USB pattern for development environments.
 
 TO-DO in GetConfig(): Load Tailscale IPs from environment variables
 TO-DO: Add configuration validation similar to database-vault

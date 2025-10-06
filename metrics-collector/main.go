@@ -2,7 +2,7 @@
 Main application entry point for Metrics-Collector monitoring service.
 
 Implements a secure metrics collection system that receives performance data from
-all R.A.M.-U.S.B. services via MQTT, stores them in TimescaleDB for time-series
+all RAM-USB services via MQTT, stores them in TimescaleDB for time-series
 analysis
 Maintains zero-knowledge principles by rejecting any metrics containing sensitive data
 like email addresses, passwords, or SSH keys.

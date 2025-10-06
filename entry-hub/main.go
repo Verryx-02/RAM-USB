@@ -1,5 +1,5 @@
 /*
-Entry-Hub HTTPS server for R.A.M.-U.S.B. distributed backup system.
+Entry-Hub HTTPS server for RAM-USB distributed backup system.
 
 Implements secure REST API gateway with TLS encryption for clients and mTLS
 client capabilities for distributed service communication. Serves as the

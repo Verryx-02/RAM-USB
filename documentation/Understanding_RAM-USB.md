@@ -245,9 +245,8 @@ Il sistema di metriche svolge quattro funzioni critiche nell'ecosistema RAM-USB:
 
 - **Capacity Planning**: Monitoraggio continuo di connessioni attive, carico del database e utilizzo delle risorse hardware. Questi dati permettono di prevedere quando scalare l'infrastruttura e forniscono metriche concrete per il dimensionamento ottimale.
 
-
 ## Livello 3: Architettura di Basso Livello (90 minuti)
-La lettura di questa sezione non è obbligatoria alla comprensione del progetto, ma è sicuramente utile.
+La lettura di questa sezione NON è obbligatoria alla comprensione del progetto.
 
 Seguite una richiesta di registrazione utente attraverso l'intero sistema per comprendere l'implementazione nel dettaglio.
 
@@ -722,15 +721,6 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
       - Query che filtrano per time range toccano solo i chunk rilevanti
       - Retention policy può droppare interi chunk senza eliminare l'intera tabella
       - Chunks diversi possono essere processati da core CPU diversi
-
-
-
-
-
-
-
-
-
 
 - **Aggregazioni Pre-Calcolate per le Dashboard**:
   - **Problema**: Le dashboard Grafana richiedono query come "media delle richieste per ora negli ultimi 7 giorni"

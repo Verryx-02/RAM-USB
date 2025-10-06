@@ -5,7 +5,7 @@ Provides abstract interfaces for user credential storage operations with enhance
 email security using SHA-256 hashing for indexing and AES-256-GCM encryption
 with random salt. Defines contracts for email hash indexing, encrypted email
 storage, password hash persistence, SSH key management, and duplicate detection
-within the zero-knowledge R.A.M.-U.S.B. authentication system. Enables flexible
+within the zero-knowledge RAM-USB authentication system. Enables flexible
 storage backend implementation while maintaining security guarantees.
 */
 package storage

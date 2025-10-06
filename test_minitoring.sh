@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Testing R.A.M.-U.S.B. Monitoring System"
+echo "Testing RAM-USB Monitoring System"
 echo "======================================="
 
 # Check if all services are running

@@ -4,7 +4,7 @@ Main application entry point for Security-Switch mTLS gateway server.
 Configures mutual TLS authentication, sets up secure routes, and starts the
 Security-Switch that acts as security checkpoint between Entry-Hub and Database-Vault.
 Implements zero-trust inter-service communication with certificate-based authentication
-and comprehensive validation middleware within the R.A.M.-U.S.B. distributed architecture.
+and comprehensive validation middleware within the RAM-USB distributed architecture.
 
 TO-DO: Restrict listening to specific Tailscale IPs (Entry-Hub, Database-Vault, Storage-Service, OPA)
 */

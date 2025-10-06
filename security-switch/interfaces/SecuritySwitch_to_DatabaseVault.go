@@ -4,7 +4,7 @@ mTLS client interface for Security-Switch to Database-Vault communication.
 Provides secure request forwarding with mutual TLS authentication and certificate
 validation for the second hop in the distributed authentication pipeline.
 Implements connection pooling, timeout management, and structured error handling
-for reliable zero-trust communication within the R.A.M.-U.S.B. architecture.
+for reliable zero-trust communication within the RAM-USB architecture.
 
 TO-DO in NewDatabaseVaultClient
 */

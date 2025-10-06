@@ -5,7 +5,7 @@ Provides structured data models for mTLS communication with Security-Switch,
 secure user credential storage with Argon2id hashing and non-deterministic
 email encryption, and standardized response formatting. Ensures consistent
 data handling, validation, and JSON serialization across the final storage
-layer of the R.A.M.-U.S.B. distributed authentication system.
+layer of the RAM-USB distributed authentication system.
 
 TO-DO in LoginRequest: not implemented
 */
@@ -59,7 +59,7 @@ type StoredUser struct {
 // Security features:
 // - Consistent error handling prevents information disclosure variations
 // - Success indication for reliable distributed service integration
-// - Standardized format across all R.A.M.-U.S.B. mTLS services
+// - Standardized format across all RAM-USB mTLS services
 // - Audit-friendly message format for security monitoring
 //
 // Used for Database-Vault responses to Security-Switch via mTLS authentication.

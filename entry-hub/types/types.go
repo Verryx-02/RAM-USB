@@ -3,7 +3,7 @@ Type definitions for Entry-Hub API requests and responses.
 
 Provides structured data models for JSON serialization in REST API communication
 and mTLS message passing between distributed services. Ensures consistent data
-handling and validation across the R.A.M.-U.S.B. architecture layers.
+handling and validation across the RAM-USB architecture layers.
 
 TO-DO in LoginRequest: Implement login functionality
 */

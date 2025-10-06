@@ -31,7 +31,7 @@ type RegisterRequest struct {
 // Security features:
 // - Consistent error handling prevents information disclosure
 // - Success indication for reliable client integration
-// - Standardized format across all R.A.M.-U.S.B. services
+// - Standardized format across all RAM-USB services
 //
 // Used for Security-Switch responses to Entry-Hub and Database-Vault responses to Security-Switch.
 type Response struct {

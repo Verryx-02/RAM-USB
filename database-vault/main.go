@@ -5,7 +5,7 @@ Configures mutual TLS authentication, sets up secure routes, and starts the
 Database-Vault that acts as the final storage layer between Security-Switch and
 encrypted credential persistence. Implements zero-trust inter-service communication
 with certificate-based authentication, AES-256-GCM email encryption, and Argon2id
-password hashing within the R.A.M.-U.S.B. distributed authentication architecture.
+password hashing within the RAM-USB distributed authentication architecture.
 
 TO-DO: Restrict listening to specific Tailscale IPs (Security-Switch only)
 */

@@ -5,7 +5,7 @@ Provides centralized key derivation, loading, validation, and lifecycle manageme
 for AES-256-GCM encryption keys used in email field-level encryption. Implements
 secure key handling practices including HKDF derivation, multiple source loading,
 entropy validation, and memory cleanup to support zero-knowledge storage
-principles in the R.A.M.-U.S.B. distributed authentication system.
+principles in the RAM-USB distributed authentication system.
 
 TO-DO: Implement key rotation mechanism with graceful fallback
 */
