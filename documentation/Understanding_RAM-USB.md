@@ -248,6 +248,7 @@ Il sistema di metriche svolge quattro funzioni critiche nell'ecosistema RAM-USB:
 ## Livello 3: Architettura di Basso Livello (90 minuti)
 (  
 La lettura di questa sezione NON è obbligatoria alla comprensione del progetto. Se hai già letto il [readme](../README.md) e il file [registration_flow](../documentation/registration_flow.md) potrebbe essere sufficiente. 
+Tieni presente che in questo terzo livello viene approfondito molto il sistema di metriche.
 L'unica sezione che potrebbe essere utile di questo livello 3 è quella finale con le query di Grafana.  
 )  
 
@@ -260,24 +261,24 @@ Seguite una richiesta di registrazione utente attraverso l'intero sistema per co
   1. **Controllo delle Richieste** (righe 41-43): logging dell'IP e metodo HTTP
   2. **Controllo Metodo HTTP** (righe 49-53): Accetta solo richieste POST
   3. **Elaborazione JSON** (righe 55-67): Lettura della richiesta e parsing del JSON
-  4. **Validazione dei dati ricevuti** (righe 69-123): Validazione completa dell'input utente
-  5. **Registrazione Zero-Knowledge** (riga 126): `emailHash := utils.HashEmail(req.Email)` per log senza esporre le email in chiaro
+  4. **Validazione dei dati ricevuti** (righe 69-123)
+  5. **Log Zero-Knowledge** (riga 126): `emailHash := utils.HashEmail(req.Email)` per log senza esporre le email in chiaro
   6. **Configurazione Client mTLS** (righe 128-157): Inizializzazione client con certificati per Security-Switch
-  7. **Inoltro della richiesta verso il Security-Switch** (righe 159-188): `securityClient.ForwardRegistration(req)`
+  7. **Inoltro della richiesta verso il Security-Switch** (righe 159-188)
 
 ### **Entry-Hub -> Security-Switch:**
 - **Implementazione**: [security-switch/handlers/register.go](../security-switch/handlers/register.go)
 - **Scopo**: Il Security-Switch fa da centro di controllo. Implementa defense-in-depth e zero-trust ed inoltra la richiesta verso il Database-Vault
-- **Implementazione Difesa in Profondità**:
+- **Implementazione defense-in-depth**:
   1. **Ri-controllo Metodo** (righe 41-43): Ri-verifica POST nonostante il mTLS
-  2. **Ri-elaborazione JSON** (righe 45-57): Riprocessa tutto da zero, non si fida dell'Entry-Hub
-  3. **Ri-validazione Completa** (righe 59-113): Validazione identica all'Entry-Hub 
+  2. **Ri-elaborazione JSON** (righe 45-57)
+  3. **Ri-validazione Completa** (righe 59-113): Identica all'Entry-Hub 
   4. **Configurazione Client Database-Vault** (righe 118-147): Inizializzazione client con certificati per Database-Vault
   5. **Inoltro Sicuro** (righe 149-175): `dbClient.StoreUserCredentials(req)` verso Database-Vault
   6. **Validazione Risposta** (righe 177-184): Verifica risposta Database-Vault + inoltro errori
 
 - **Garanzie di Sicurezza**:
-  - **Architettura Zero-Trust**: Assume che l'Entry-Hub potrebbe essere compromesso
+  - **Architettura Zero-Trust**: Il Security-Switch Assume che l'Entry-Hub potrebbe essere compromesso
   - **Validazione Identica**: Stessi controlli del livello precedente per coerenza
   - **Catena Certificati**: Verifica `organization="SecuritySwitch"` per Database-Vault
   - **Isolamento Errori**: Categorizza errori senza esporre dati degli utenti e dettagli interni
@@ -290,7 +291,7 @@ L'idea è di tenere il database più lontano possibile dagli utenti, infatti gir
 - **Implementazione**: [database-vault/handlers/store.go](../database-vault/handlers/store.go)
 - **Scopo**: Layer finale di archiviazione con crittografia email e hashing password prima della persistenza
 - **Processo di Archiviazione Crittografica**:
-  1. **Validazione Finale** (righe 68-160): Terza validazione identica (ultimo controllo)
+  1. **Validazione Finale** (righe 68-160): Terza validazione identica
   2. **Verifica disponibilità del Database-Vault** (righe 162-168): Verifica che userStorage sia inizializzato correttamente. 
   3. **Caricamento Chiave Crittografia** (righe 170-177): Carica la chiave AES-256 per crittografare l'email
   4. **Elaborazione Crittografica Email** (righe 184-192):
@@ -330,22 +331,65 @@ Seguiamo il percorso completo di una metrica dalla sua raccolta iniziale nel ser
 - **Scopo**: Aggregazione in-memory di metriche operative senza impattare le performance delle richieste HTTP.  
 Il collector lavora come un buffer locale che accumula statistiche prima della trasmissione periodica via MQTT.
 
-- **Architettura del Collector**:
-  - **Pattern Singleton** (righe 76-100): La funzione `Initialize()` crea una singola istanza globale `collector` condivisa da tutti gli handler. 
-  Questo pattern garantisce che non ci siano duplicazioni di metriche e che tutti i goroutine accedano alla stessa struttura dati.  
-  L'inizializzazione è protetta da `sync.Once` per essere thread-safe anche se chiamata da più goroutine contemporaneamente.
-  
-  - **Struttura Dati** (righe 19-74): Il `MetricsCollector` contiene diverse mappe per diversi tipi di metriche:
-    - `requestsTotal map[string]int64`: Chiave composita "method:path:status" per tracciare ogni combinazione (es. "POST:/api/register:201", "GET:/api/health:200")
-    - `requestDurations []float64`: Slice che accumula tutte le latenze in millisecondi per calcolare percentili statistici
-    - `registrationsTotal map[string]int64`: Contatori separati per registrazioni "success" vs "failed"
-    - `validationFailures map[string]int64`: Categorizzazione dei failure per tipo (es. "invalid_email", "weak_password")
-    - `activeConnections int64`: Gauge che traccia connessioni HTTP concorrenti in tempo reale
-    - `errorsTotal map[string]int64`: Categorizzazione errori interni del servizio
+- **Struttura Dati** (righe 48-74): Il `MetricsCollector` contiene diverse mappe per diversi tipi di metriche:
+  - `mu sync.RWMutex`: Mutex per garantire accesso thread-safe ai dati condivisi
+  - `requestsTotal map[string]int64`: Chiave composita "method:path:statusClass" con status code raggruppati (es. "POST:/api/register:2xx", "GET:/api/health:4xx")
+  - `requestDurations []float64`: Slice (lista in Go) che accumula tutte le latenze in millisecondi per calcolare percentili statistici (p50, p95, p99). Limitato a 10000 elementi per prevenire memory leak
+  - `registrationsTotal map[string]int64`: Contatori separati per registrazioni "success" vs "failed"
+  - `validationFailures map[string]int64`: Categorizzazione normalizzata dei failure. Chiavi possibili: "invalid_email", "invalid_password", "invalid_ssh_key", "validation_error"
+  - `activeConnections int64`: Gauge che traccia connessioni HTTP concorrenti in tempo reale
+  - `mtlsConnections int64`: Connessioni mTLS attive verso Security-Switch (non ancora inizializzato. TO-DO)
+  - `errorsTotal map[string]int64`: Categorizzazione normalizzata errori. Chiavi possibili: "timeout", "connection", "tls", "certificate", "internal"
+  - `lastResetTime time.Time`: Timestamp inizializzazione collector per calcoli di rate e uptime
+
+Per capirci, dopo un pò di tempo la struttura dati porebbe avere questo aspetto:
+```go 
+MetricsCollector {
+    mu: sync.RWMutex{},
+    
+    requestsTotal: {
+        "POST:/api/register:2xx": 847,    // Successi (200, 201...)
+        "POST:/api/register:4xx": 23,     // Errori client (400, 404...)
+        "POST:/api/register:5xx": 2,      // Errori server (500, 502...)
+        "GET:/api/health:2xx": 21600,     // Health checks
+    },
+    
+    requestDurations: [12.3, 15.7, 11.9, ..., 8.4],  // Fino a 10000 elementi
+    
+    registrationsTotal: {
+        "success": 847,
+        "failed": 25,
+    },
+    
+    validationFailures: {
+        "invalid_email": 12,
+        "invalid_password": 11,        // Include weak_password + password_too_short
+        "invalid_ssh_key": 2,
+        "validation_error": 0,         // Errori non categorizzati
+    },
+    
+    activeConnections: 5,              // Connessioni attive
+    mtlsConnections: 0,                // Non ancora implementato
+    
+    errorsTotal: {
+        "timeout": 3,                  // security_switch_timeout -> normalizzato (esempio: "security_switch_timeout" -> "timeout")
+        "certificate": 1,              // certificate_error -> normalizzato  
+        "connection": 2,               // connection_refused -> normalizzato
+        "tls": 0,                      // tls_handshake_failed -> normalizzato
+        "internal": 1,                 // Errori non categorizzati
+    },
+    
+    lastResetTime: 2025-10-06T10:00:00Z,  // Timestamp inizializzazione
+}
+```
 
 **Recording delle Richieste HTTP**: (righe 102-127)
 - Ogni volta che `IncrementRequest(method, path, status)` viene chiamato dal middleware, vengono eseguite tre operazioni di normalizzazione:
-  - **Path sanitization**: `sanitizePath(path)` rimuove parti dinamiche dall'URL per prevenire cardinalità esplosiva. Esempio: `/users/12345` diventa `/users/{id}`, altrimenti avremmo migliaia di chiavi uniche (una per ogni user ID)
+  - **Path sanitization**: `sanitizePath(path)` normalizza i path degli endpoint principali:
+    - Path contenente `/register` -> `/api/register`
+    - Path contenente `/health` -> `/api/health`
+    - Altri path → rimangono invariati
+    - **NOTA**: L'implementazione attuale è basilare e copre solo gli endpoint principali del progetto. Una futura implementazione potrebbe rimuovere IDs dinamici (es. `/users/12345` -> `/users/{id}`) per ridurre ulteriormente la cardinalità
   - **Status code grouping**: `fmt.Sprintf("%dxx", status/100)` raggruppa gli status code per classe. `201` diventa `2xx`, `404` diventa `4xx`, `503` diventa `5xx`. Questo è fondamentale per ridurre la cardinalità: invece di tracciare ogni singolo status code (200, 201, 202, 204...), raggruppiamo per categoria (2xx = success, 4xx = client error, 5xx = server error)
   - **Chiave composita**: Viene costruita una stringa nel formato `"method:path:statusClass"`, ad esempio `"POST:/api/register:2xx"`
 - La mappa `requestsTotal` viene aggiornata atomicamente grazie al mutex lock: `collector.requestsTotal[key]++`
@@ -369,7 +413,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
  - **p95**: Elemento in posizione 950 → il 95% delle richieste è più veloce di questo valore, solo il 5% è più lento
  - **p99**: Elemento in posizione 990 → identifica gli outliers, le richieste più lente che potrebbero indicare problemi
  - Questi valori sono fondamentali per capire la "salute" del servizio: se p50=20ms ma p99=5000ms significa che la maggior parte degli utenti ha un'esperienza ottima, ma c'è un 1% che sperimenta rallentamenti significativi da investigare
-  
+
 **Export Periodico** (righe 243-363): 
  - `GetMetrics()` viene chiamato ogni 2 minuti dal publisher MQTT
  - Utilizza `RLock()` (read lock) perché non modifica i dati, li legge solo per serializzarli
@@ -394,12 +438,12 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
   - **Misurazione della latenza**: 
     - `startTime := time.Now()` cattura il timestamp iniziale
     - L'handler originale viene eseguito normalmente
-    - `duration := time.Since(startTime)` calcola il tempo totale incluso tutto: parsing JSON, validazione, chiamata mTLS al Security-Switch, risposta
+    - `duration := time.Since(startTime)` calcola il tempo totale (incluso parsing JSON, validazione, chiamata mTLS al Security-Switch, risposta)
     - Conversione in millisecondi per leggibilità sulle dashboard Grafana
   - **Cattura dello Status Code**: 
     - Problema: `http.ResponseWriter` non espone lo status code dopo che è stato scritto
     - Soluzione: Wrapper personalizzato `responseWriter` che intercetta la chiamata a `WriteHeader()`
-    - Quando l'handler chiama `w.WriteHeader(201)`, il nostro wrapper salva `201` prima di inoltrare al ResponseWriter vero
+    - Quando l'handler chiama `w.WriteHeader(201)`, il wrapper salva `201` prima di inoltrare al ResponseWriter vero
     - Default a `200 OK` se l'handler non chiama esplicitamente WriteHeader
 
 #### **MQTT Publisher: Trasmissione sicura**
@@ -410,7 +454,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
   - La funzione `configureTLS()` costruisce una configurazione TLS completa:
     - Avviene la lettura del certificato della Certification Authority per validare il broker MQTT
     - `x509.NewCertPool()` crea un pool di certificati trusted
-    - `AppendCertsFromPEM()` aggiunge il CA cert al pool - se fallisce significa che il file è corrotto
+    - `AppendCertsFromPEM()` aggiunge il CA cert al pool (se fallisce significa che il file è corrotto)
     - `tls.LoadX509KeyPair()` carica la coppia cert+key del publisher
     - Questo certificato ha CN=entry-hub-mqtt-publisher e Organization=EntryHubPublisher
     - `MinVersion: tls.VersionTLS13` rifiuta connessioni con TLS 1.2 o inferiore
@@ -421,9 +465,9 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
     - `SetClientID()`: Identificatore unico "entry-hub-publisher" usato dal broker per tracking e persistent sessions
     - `SetTLSConfig()`: Associa la configurazione TLS appena creata
     - `SetAutoReconnect(true)`: Abilita reconnection automatica in caso di network failure
-    - `SetMaxReconnectInterval(30 * time.Second)`: Cap per il backoff esponenziale
+    - `SetMaxReconnectInterval(30 * time.Second)`: Limite per il backoff esponenziale
     - `SetKeepAlive(60 * time.Second)`: Ping ogni 60s per mantenere la connessione attiva e rilevare disconnessioni
-    - `SetCleanSession(false)`: Il broker mantiene lo stato della sessione anche dopo disconnect, permettendo di ricevere messaggi QoS 1 persi durante downtime
+    - `SetCleanSession(false)`: Il broker mantiene lo stato della sessione anche dopo la disconnessione, permettendo di ricevere messaggi QoS 1 persi durante downtime
 
 - **Publishing Loop (Il Cuore del Sistema di metriche)** (righe 186-239):
   1. **Staggered Start**: 
@@ -478,7 +522,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
     - `tls_version tlsv1.3`: rifiuta TLS 1.2/1.1/1.0
     - `cafile`: Path al certificato della CA che ha firmato tutti i certificati client e server
     - Durante l'handshake, il broker verifica che il certificato del client sia stato firmato da questa CA
-    - Se un attacker prova a connettersi con un certificato self-signed o firmato da un'altra CA, viene immediatamente rifiutato
+    - Se un attaccante prova a connettersi con un certificato self-signed o firmato da un'altra CA, viene immediatamente rifiutato
     - `certfile` e `keyfile`: Certificato e chiave privata del broker per autenticarsi verso i client
     - I client verificano che il certificato del broker sia firmato dalla stessa CA
     - `require_certificate true`: OBBLIGA tutti i client a presentare un certificato, no anonymous connections
@@ -493,7 +537,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
      - Broker richiede certificato client (`require_certificate true`)
      - Client invia il suo certificato (es. entry-hub-mqtt-publisher.crt)
      - Broker verifica il certificato client contro la sua CA
-     - Se tutto OK, handshake completa e connessione è criptata
+     - Se tutto okk, l'handshake è completato e la connessione è criptata
 
   2. **Username Extraction**:
      - Broker estrae il CN dal certificato client
@@ -509,7 +553,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
      - Client prova a pubblicare su `metrics/entry-hub`
      - Broker consulta `acl.conf` cercando rules per username "entry-hub-mqtt-publisher"
      - Trova la rule: `user entry-hub-mqtt-publisher` + `topic write metrics/entry-hub`
-     - ACL check PASSA -> messaggio viene accettato e inoltrato ai subscriber
+     - ACL check PASSA -> il messaggio viene accettato e inoltrato ai subscriber
 
 - **ACL Rules: Isolamento Topic-Based** (file acl.conf):
   - **Publisher Rules**:
@@ -522,7 +566,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
 
   - **Subscriber Rules**:
     - Metrics-Collector: `user metrics-collector-subscriber` + `topic read metrics/+`
-    - Il `+` è un wildcard che matcha un singolo livello: `metrics/entry-hub`, `metrics/security-switch`, ecc.
+    - **Nota** Il `+` è un wildcard che matcha un singolo livello nella gerarchia: `metrics/+` = `metrics/entry-hub`, `metrics/security-switch`, ecc.
     - Il write è implicitamente negato. Specificando solo `topic read`, il subscriber può solo leggere e non può pubblicare.
     - Metrics-Collector può SOLO leggere, MAI pubblicare
   
@@ -530,13 +574,13 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
     - `user *` matcha qualsiasi username
     - `topic deny #` nega accesso a TUTTI i topic per utenti non esplicitamente listati
     - Fail-secure: Se qualcuno crea un nuovo certificato senza aggiungere ACL rules, viene automaticamente bloccato
-    - Questo è il principio "default deny": tutto è vietato a meno che esplicitamente permesso
+    - Tutto è vietato a meno che esplicitamente permesso
 
 #### **Metrics-Collector Subscriber: Ricezione**
 - **Implementazione**: [metrics-collector/mqtt/subscriber.go](../metrics-collector/mqtt/subscriber.go)
 - **Scopo**: Sottoscrizione, ricezione e storage di tutte le metriche provenienti dai servizi distribuiti, implementando principi zero-knowledge e resilienza a network failures.
 
-- **Initialization e Connection** (righe 40-90):
+- **Initialization e Connection** (righe 41-94):
   - **TLS Configuration**: Processo identico al publisher ma con certificato subscriber
     - Carica `mqtt-subscriber.crt` con CN=metrics-collector-subscriber
     - Le ACL del broker riconoscono questo CN e permettono solo `topic read metrics/+`
@@ -546,7 +590,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
     - `SetMaxReconnectInterval(30 * time.Second)`: Stesso exponential backoff dei publisher
     - `SetKeepAlive(60 * time.Second)`: Ping ogni 60s
     - **`SetCleanSession(false)`**: Questa è la feature più importante:
-      - Quando `false`, il broker mantiene lo stato della sessione anche dopo disconnect
+      - Quando `false`, il broker mantiene lo stato della sessione anche dopo la disconnessione
       - Se il subscriber si disconnette per 5 minuti, il broker bufferizza tutti i messaggi QoS 1 ricevuti
       - Quando il subscriber si riconnette, riceve tutti i messaggi persi durante il downtime
       - Senza questo, perderemmo 2-3 cicli di metriche durante ogni restart del Metrics-Collector
@@ -561,7 +605,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
   - Il subscriber resta connesso e può fare retry della subscription se qualcosa fallisce
 
 - **Message Processing Pipeline**:
-  Ogni messaggio attraversa una pipeline di validazione rigorosa prima dello storage:
+  Ogni messaggio attraversa una pipeline di validazione prima dello storage:
   
   1. **Metrics Tracking**: `incrementCounter(&metricsReceived)` contatore thread-safe
   
@@ -574,7 +618,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
   
   3. **JSON Deserialization**:
      - `json.Unmarshal(msg.Payload(), &metric)` tenta di parsare il payload
-     - Se il JSON è malformato o mancano campi required, unmarshal fallisce
+     - Se il JSON è malformato o mancano campi richiesti, unmarshal fallisce
      - Questo cattura attacchi in cui qualcuno invia payload corrotti per crashare il service
   
   4. **Service Name Consistency Check**:
@@ -586,19 +630,19 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
      - Verifica che `metric.Timestamp > 0`
      - Verifica che `metric.Timestamp <= now + 60` (non più di 60 secondi nel futuro)
      - Se un servizio ha il clock 5 minuti avanti, le sue metriche vengono rifiutate
-     - Questo previene attacchi dove metriche con timestamp future potrebbero rendere la cosa molto confusa
+     - Questo previene che metriche con timestamp future rendano la cosa molto confusa
   
   6. **Storage Operation**:
-     - Se tutte le validazioni passano, chiamata a `storage.StoreMetric(metric)`
+     - Se tutte le validazioni passano, viene fatta una chiamata a `storage.StoreMetric(metric)`
      - Questa è una chiamata bloccante che aspetta il commit al database
-     - Se lo storage fallisce (database down, disk full), logghiamo ma NON incrementiamo `metricsRejected`
+     - Se lo storage fallisce (database down, disco pieno), logghiamo ma NON incrementiamo `metricsRejected`
      - Il messaggio MQTT è già stato consumato, quindi il broker non lo reinvia
      - Trade-off: Preferiamo perdere alcune metriche durante db downtime piuttosto che far crashare il subscriber
 
 - **Connection Lost Handling**:
   - `onConnectionLostHandler` viene invocato quando la connessione MQTT si interrompe
   - Il client library gestisce automaticamente il reconnect con exponential backoff
-  - Durante il la disconnessione, il broker bufferizza i messaggi QoS 1 grazie a `CleanSession=false`
+  - Durante la disconnessione, il broker bufferizza i messaggi QoS 1 grazie a `CleanSession=false`
   - Quando la connessione si ripristina:
     1. `onConnectHandler` viene chiamato di nuovo
     2. Re-subscribe a `metrics/+`
@@ -606,7 +650,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
     4. Il subscriber processa tutti i messaggi persi in ordine
 
 - **Graceful Shutdown**:
-  - Chiamato durante service shutdown quando riceviamo SIGTERM/SIGINT (kill<pid>/ctrl+c)
+  - Chiamato durante service shutdown quando riceviamo SIGTERM/SIGINT (kill<pid> , ctrl+c)
   - **Unsubscribe Esplicito**: `client.Unsubscribe("metrics/+")` informa il broker che non vogliamo più messaggi
   - Senza unsubscribe, il broker continuerebbe a bufferizzare messaggi per una sessione che non ritornerà mai
   - **Disconnect con Timeout**: `client.Disconnect(5000)` aspetta fino a 5 secondi
@@ -624,7 +668,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
   - **Perché un pool?**: Creare una nuova connessione PostgreSQL costa ~10ms (handshake TCP + SSL + auth)
   - Se creassimo una connessione per ogni metrica, il sistema collasserebbe sotto carico
   - Il pool mantiene N connessioni sempre aperte e le riusa
-  - Si può fare perché le metriche non sono eccessivamente 
+  - Si può fare perché le metriche non sono eccessivamente critiche. Vanno protette, ma senza far crashare tutto. Questa è una buona via di mezzo. 
   
   - **Pool Configuration**:
     - `MaxConns: 25`: Massimo 25 connessioni simultanee al database
@@ -634,9 +678,9 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
     - `MinConns: 5`: Il pool mantiene sempre almeno 5 connessioni aperte anche se idle
     - Questo evita il "cold start" quando arriva un burst di metriche
     - `MaxConnLifetime: time.Hour`: Ogni connessione viene chiusa e ricreata dopo 1 ora
-    - Previene accumulo di memory leaks o connessioni stale
-    - `MaxConnIdleTime: 30 * time.Minute`: Connessioni idle > 30 min vengono chiuse
-    - Riduce il carico sul database quando il traffic è basso
+    - Previene accumulo di memory leaks o connessioni "rotte"
+    - `MaxConnIdleTime: 30 * time.Minute`: Connessioni idle da oltre 30 min vengono chiuse
+    - Riduce il carico sul database quando il traffico è basso
     - `HealthCheckPeriod: time.Minute`: Ogni minuto, il pool verifica che le connessioni siano ancora valide
     - Se una connessione è "rotta" (network partition, database restart), viene automaticamente rimossa e rimpiazzata
   
@@ -665,12 +709,12 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
       - Tentativo 1 fallisce -> aspetta 100ms
       - Tentativo 2 fallisce -> aspetta 200ms (2x)
       - Tentativo 3 fallisce -> aspetta 300ms (3x)
-    - Questo riduce il "retry storm" quando il database è sotto stress
+    - Questo evita di sovraccaricare il database quando è sotto stress
 
 - **Esecuzione dell'Insert: Flow della Transazione**:
-  1. **Query Prefatta**:
+  1. **Query Prefatte**:
      - SQL con placeholders `$1, $2, $3...` invece di stringhe concatenate
-     - Previene SQL injection: Anche se `metric.Service` contenesse `'; DROP TABLE metrics; --`, verrebbe trattato come stringa normale
+     - Previene le SQL injection: Anche se `metric.Service` contenesse `'; DROP TABLE metrics; --`, verrebbe trattato come stringa normale
      - PostgreSQL compila la query una volta e la riusa -> performance boost
   
   2. **Labels Serialization**:
@@ -711,7 +755,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
     - Singolo commit alla fine: tutto o niente (atomicità)
   
   - **Trade-off**:
-    - Pro: Throughput molto superiore, meno overhead di transaction
+    - Pro: Throughput molto superiore, meno overhead di transazione
     - Contro: Se un singolo INSERT fallisce, l'intero batch subisce un rollback
     - Per questo usiamo batch solo quando siamo sicuri che le metriche siano già validate
 
@@ -719,7 +763,7 @@ Il collector lavora come un buffer locale che accumula statistiche prima della t
   - **Hypertable Creazione**:
     - `SELECT create_hypertable('metrics', 'time')`:
     - Converte una tabella normale in una hypertable partizionata automaticamente
-    - Partizionamento per `time` con chunk di 7 giorni
+    - Partizionamento per `time` con chunk di 1 giorno
     - **Benefici**:
       - Query che filtrano per time range toccano solo i chunk rilevanti
       - Retention policy può droppare interi chunk senza eliminare l'intera tabella
