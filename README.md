@@ -39,7 +39,7 @@ All communication between components is secured with **mutual TLS (mTLS)**.
 
 RAM-USB implements a **distributed monitoring architecture** to track system health, performance, and security events across all microservices in real-time.
 
-![Metrics Architecture](documentation/Images/Metrics-Architecture.jpg)
+<img src="documentation/Images/Metrics-Architecture.jpg" alt="Metrics Architecture" width="80%">
 
 ### Architecture Overview
 
