@@ -35,7 +35,7 @@ The system is composed of several distributed components:
 - **Jump-Host-Storage**: Prevents users from directly accessing storage. (Also known as SSH Bastion)
 - **Tailscale Mesh VPN**: Ensures secure, private communication across nodes without opening any public ports.
 
-Below is the communication scheme for the various services even tho At the moment only user registration to the service is implemented, so only Entry-Hub<->Security-Switch<->Database-Vault->PostgreSQL
+Below, the communication scheme for the various services even tho, at the moment, only user registration is implemented, so only Entry-Hub<->Security-Switch<->Database-Vault->PostgreSQL
 
 
 <img src="documentation/Images/GeneralArchitectureFlow.jpg" alt="General Architecture Flow" width="88%">
