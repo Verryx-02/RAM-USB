@@ -35,11 +35,45 @@ The system is composed of several distributed components:
 
 All communication between components is secured with **mutual TLS (mTLS)**.
 
+## Monitoring & Metrics System
+
+RAM-USB implements a **distributed monitoring architecture** to track system health, performance, and security events across all microservices in real-time.
+
+![Metrics Architecture](documentation/Images/Metrics-Architecture.jpg)
+
+### Architecture Overview
+
+The monitoring system follows a **publish-subscribe pattern** secured with mutual TLS:
+
+**Services → MQTT Broker (Mosquitto) → Metrics-Collector → TimescaleDB**
+
+Each service publishes metrics every 2 minutes to dedicated MQTT topics. The Metrics-Collector subscribes to all topics, validates incoming data, and stores time-series metrics in TimescaleDB for analysis and visualization.
+
+### Key Components
+
+- **MQTT Broker (Mosquitto)** — Secure message broker with mTLS authentication and topic-based ACL enforcement. Each service can only publish to its own topic (`metrics/entry-hub`, `metrics/security-switch`, etc.)
+- **Metrics-Collector** — Subscribes to all metrics topics, performs zero-knowledge validation, and persists data to TimescaleDB. Exposes admin API on port 8446
+- **TimescaleDB** — Time-series database optimized for metrics storage with hypertables, continuous aggregates, automatic compression, and 30-day retention policy
+
+### Monitored Metrics
+
+- **Request metrics** — Total requests, success/error rates by endpoint
+- **Performance metrics** — Request latency percentiles (p50, p95, p99), active connections
+- **Business metrics** — User registrations, authentication attempts
+- **System health** — Service uptime, connection status
+
+### Security Features
+
+- **mTLS Authentication** — All MQTT connections require valid client certificates
+- **Topic Isolation** — ACL rules prevent services from accessing each other's metrics
+- **Zero-Knowledge Validation** — No sensitive user data (emails, passwords, SSH keys) in metrics
+- **Certificate-Based Authorization** — Each service uses dedicated certificates with strict organizational validation
+
+--- 
+
 See the [documentation](documentation/registration_flow.md) for more 
 
 If you are Professor Scagnetto, read [this guide](https://github.com/Verryx-02/RAM-USB/blob/main/documentation/Understanding_RAM-USB.md) 
-
---- 
 
 ## Project Structure
 
@@ -156,21 +190,12 @@ Each component has specific security responsibilities in the authentication and 
 - **Password Security**: Argon2id hashing with cryptographic salt generation
 - **Certificate-Based Authentication**: Each service validates client organization certificates
 
-### Where to Start
-
-- **Overall Architecture**: `documentation/registration_flow.md`
-- **Certificate Setup**: `scripts/generate_key.sh` 
-- **API Gateway**: `entry-hub/main.go` and `entry-hub/handlers/`
-- **Security Model**: `security-switch/middleware/mtls.go`
-- **Encryption Implementation**: `database-vault/crypto/`
-- **Test the System**: `user-client/main.go`
-
 
 ## Getting Started
 
 > ⚠️ This project is under active development and is not ready for production use. It has only been tested on macOS. It should work on Linux, but it has not been tested yet.
 
-To test the registration process locally:
+To test the registration process locally: (Only a reminder for me, plz don't do that)
 
 ### Prerequisites
 
@@ -211,30 +236,36 @@ To test the registration process locally:
    DatabaseVaultIP: "100.64.123.456:8445"
    ```
 
-4. **Open 4 terminal tabs**
+4. **Open 5 terminal tabs**
 
 ### Setup and Start Services (in order)
 
-**TAB-1 (Database-Vault):**
+**TAB-1 (Metrics-Collector):**
+```bash
+cd Metrics-Collector 
+go run .
+```
+
+**TAB-2 (Database-Vault):**
 ```bash
 cd database-vault
 export RAMUSB_ENCRYPTION_KEY=$(openssl rand -hex 32)
 go run .
 ```
 
-**TAB-2 (Security-Switch):**
+**TAB-3 (Security-Switch):**
 ```bash
 cd security-switch  
 go run .
 ```
 
-**TAB-3 (Entry-Hub):**
+**TAB-4 (Entry-Hub):**
 ```bash
 cd entry-hub
 go run .
 ```
 
-**TAB-4 (Test Client):**
+**TAB-5 (Test Client):**
 ```bash
 cd user-client
 go run .
