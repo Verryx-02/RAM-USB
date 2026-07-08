@@ -2,14 +2,16 @@
 
 A multi-user, geo-distributed, remotely accessible backup service, designed around **zero-knowledge**, **zero-trust**, and **defense-in-depth** principles.
 
-This is a Bachelor's degree thesis project in Computer Science at the **University of Udine**, supervised by [**Prof. Ivan Scagnetto**](https://users.dimi.uniud.it/~ivan.scagnetto/).
+This is my Bachelor's degree thesis project in Computer Science at the **University of Udine**, supervised by [**Prof. Ivan Scagnetto**](https://users.dimi.uniud.it/~ivan.scagnetto/).
+
+This project is designed by [Francesco Verrengia](https://github.com/Verryx-02) and [Riccardo Gottardi](https://github.com/Riccardo-Gottardi)
 
 ---
 ## About
 
 RAM-USB is built as an in-depth case study on the secure design of distributed backup systems, where correctness and transparency of the design matter more than delivery speed or feature coverage.
 
-The full requirements are documented in [`docs/SRS.md`](https://github.com/Verryx-02/RAM-USB/blob/main/docs/SRS.md) (Software Requirements Specification), which is the single source of truth for what this system must do. This README gives a practical overview.
+The full requirements are documented in [`docs/SRS.md`](https://github.com/Verryx-02/RAM-USB/blob/main/docs/Software_Requirements_Specification.md) (Software Requirements Specification), which is the single source of truth for what this system must do. This README gives a practical overview.
 
 ### Design principles
 
@@ -94,7 +96,7 @@ Parts of the implementation are carried out with the help of [Claude Sonnet 5](h
 
 ## Documentation
 
-- [Software Requirements Specification](https://github.com/Verryx-02/RAM-USB/blob/main/docs/SRS.md): full requirements, use cases, and known risks
+- [Software Requirements Specification](https://github.com/Verryx-02/RAM-USB/blob/main/docs/Software_Requirements_Specification.md): full requirements, use cases, and known risks
 - [Contributing guidelines](https://github.com/Verryx-02/RAM-USB/blob/main/CONTRIBUTING.md): commit conventions, branching model, workflow
 
 ---
