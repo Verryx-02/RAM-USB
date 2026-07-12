@@ -1,0 +1,54 @@
+@startuml
+!include ../_style.puml
+
+title UC-01 — User Registration
+
+actor User
+participant "Entry-Hub" as EH
+participant "Security-Switch" as SS
+participant "Database-Vault" as DV
+participant "Storage-Service" as ST
+participant "Network-Manager" as NM
+
+note over User
+  SSH keypair already generated client-side;
+  the private key never leaves the client (CL-F-01)
+end note
+
+User -> EH : POST /api/register (HTTPS)\nemail, password, SSH public key
+EH -> SS : forward request (mTLS)
+SS -> DV : forward request (mTLS)
+
+note over EH, DV
+  Each hop independently re-validates the input.
+  On failure: HTTP 400, request not forwarded further,
+  issue logged without identifying the user (EH-F-06, SS-F-03, DV-F-02)
+end note
+
+DV -> DV : hash email (SHA-256) · encrypt email\nhash password (Argon2id)
+
+alt email or SSH key already registered
+  DV --> SS : 409 Conflict
+  SS --> EH : 409 Conflict
+  EH --> User : 409 Conflict
+else no duplicate
+  DV -> DV : save user record (atomic transaction)
+  DV -> ST : create POSIX user "user<xxxxxx>" (mTLS)
+
+  alt POSIX user creation fails
+    ST --> DV : failure
+    DV -> DV : delete user record (compensating rollback)
+    DV --> SS : registration failed
+    SS --> EH : 5xx
+    EH --> User : 5xx
+  else success
+    ST --> DV : POSIX user created
+    DV --> SS : registration success
+    SS -> NM : create Headscale user + pre-auth key (mTLS)
+    NM --> SS : pre-auth key
+    SS --> EH : 201 Created + pre-auth key
+    EH --> User : 201 Created + pre-auth key
+  end
+end
+
+@enduml
