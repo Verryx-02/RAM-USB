@@ -1,0 +1,65 @@
+@startuml
+!include ../_style.puml
+
+title Deployment Diagram
+
+skinparam nodesep 35
+skinparam ranksep 50
+skinparam ArrowFontSize 11
+skinparam roundCorner 12
+
+skinparam node<<service>> {
+  BackgroundColor #E8F1FC
+  BorderColor #2C5C8F
+}
+skinparam node<<public>> {
+  BackgroundColor #E8F1FC
+  BorderColor #B58900
+  LineThickness 2.5
+}
+skinparam node<<infra>> {
+  BackgroundColor #F0F0F0
+  BorderColor #666666
+}
+skinparam node<<external>> {
+  BackgroundColor #FAFAFA
+  BorderColor #999999
+}
+skinparam cloud {
+  BackgroundColor #EAF7EA
+  BorderColor #2E7D32
+}
+
+node "**User-Client**\n[laptop/desktop]\nrestic + SSH key + Tailscale" as UserClient <<external>>
+
+cloud "**Headscale Mesh VPN**\nprivate network, mTLS\ncerts from private CA, TLS 1.3" as Mesh
+
+node "Proxmox VE Host" as Proxmox {
+
+  rectangle "KVM Virtual Machines\n(RNF-ORG-04)" as KVMGroup #line.dashed;line:AAAAAA;back:FDFDFD {
+    node "**Storage-Service**\n[Go, SFTP]" as StorageService <<service>>
+    node "**Database-Vault**\n[Go]" as DatabaseVault <<service>>
+    node "**Network-Manager**\n[Go, Headscale]" as NetworkManager <<service>>
+  }
+
+  rectangle "LXC Containers" as LXCGroup #line.dashed;line:AAAAAA;back:FDFDFD {
+    node "**Entry-Hub**\n[Go]\npublic HTTPS :443" as EntryHub <<public>>
+    node "**Security-Switch**\n[Go]" as SecuritySwitch <<service>>
+    node "**Certificate-Authority**\n[smallstep/certificates]" as CA <<infra>>
+    node "**Mosquitto**\n[MQTT broker]" as Mosquitto <<infra>>
+    node "**Metrics-Collector**\n[Go]" as MetricsCollector <<infra>>
+    node "**Metrics-Visualizer**\n[Grafana]" as Grafana <<infra>>
+  }
+}
+
+UserClient -right-> EntryHub : HTTPS :443 (public internet)\nLet's Encrypt cert
+UserClient .down.> Mesh : joins after bootstrap\n(pre-auth key, CL-F-04)
+Proxmox <-down-> Mesh : mTLS (private CA)\nTLS 1.3
+
+note bottom of Mesh
+  Only Entry-Hub is publicly reachable.
+  Every other node communicates exclusively over
+  the mesh, mutually authenticated with private-CA certificates.
+end note
+
+@enduml
