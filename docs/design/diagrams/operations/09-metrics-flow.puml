@@ -1,0 +1,39 @@
+@startuml
+!include ../_style.puml
+
+title Metrics Flow — Publish, Validate, Store, Query
+
+collections "Services\n(Entry-Hub, Security-Switch, Database-Vault,\nStorage-Service, Network-Manager, Certificate-Authority)" as Services
+participant "MQTT-Broker\n[Mosquitto]" as Broker
+participant "Metrics-Collector" as Collector
+database "TimescaleDB" as TSDB
+participant "Grafana" as Grafana
+actor "Admin" as Admin
+
+note over Services
+  Every service publishes, every minute and only, to its dedicated
+  **metrics/<ServiceName>** topic via mTLS, after verifying the peer
+  certificate comes from an MQTT-Broker and is a valid X.509 cert.
+  Metrics carry aggregated statistics only — never personal data (RNF-SEC-01).
+end note
+
+Services -> Broker : publish metrics/<ServiceName>
+Broker -> Collector : subscribe metrics/*
+
+alt "service" field matches source topic (MT-F-02, Mosquitto ACL)
+  Collector -> TSDB : insert (hypertable)
+else field mismatch
+  Collector -> Collector : discard
+end
+
+note right of TSDB
+  30-day retention,
+  compression after 7 days (MT-F-03)
+end note
+
+Admin -> Grafana : open dashboards\n(response time, throughput,\nactive connections — MT-F-04)
+Grafana -> TSDB : query raw / hourly-daily views,\nfiltered by service & metric name (UC-05)
+TSDB --> Grafana : results
+Grafana --> Admin : rendered dashboard
+
+@enduml
