@@ -1,0 +1,27 @@
+@startuml
+!include ../_style.puml
+
+title UC-03 — Backing Up a File
+
+actor User
+participant "Storage-Service" as ST
+participant "Database-Vault" as DV
+
+note over User
+  Preconditions: user authenticated (UC-02, active ACL grant);
+  holds the SSH private key generated at registration (CL-F-01)
+end note
+
+User -> ST : SFTP connect, SSH key auth\n(Storage-Service resolved via MagicDNS)
+ST -> DV : AuthorizedKeysCommand:\nfetch current public key (mTLS)
+DV --> ST : current SSH public key
+
+alt key valid and ACL grant active
+  ST --> User : SFTP session established\n(chroot: /storage/user<xxxxxx>/data/)
+  User -> ST : restic backup\n(already encrypted client-side)
+  ST --> User : backup persisted
+else stale key, expired/missing ACL grant,\nor non-SFTP connection attempt
+  ST --> User : SFTP authentication rejected
+end
+
+@enduml
