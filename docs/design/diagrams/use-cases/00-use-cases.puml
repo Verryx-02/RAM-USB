@@ -6,17 +6,30 @@ title Use Case Diagram
 left to right direction
 skinparam linetype ortho
 
+skinparam rectangle {
+  BackgroundColor #F7FAFD
+  BorderColor #7FA6CC
+}
+skinparam usecase<<user>> {
+  BackgroundColor #E8F1FC
+  BorderColor #2C5C8F
+}
+skinparam usecase<<admin>> {
+  BackgroundColor #EDE7F6
+  BorderColor #6A4C93
+}
+
 actor User
 actor Admin
 
 rectangle "RAM-USB" {
   together {
-    usecase "UC-01\nRegister" as UC1
-    usecase "UC-04\nRestore a file" as UC4
-    usecase "UC-03\nBack up a file" as UC3
-    usecase "UC-05\nConsult operational metrics" as UC5
+    usecase "UC-01\nRegister" as UC1 <<user>>
+    usecase "UC-04\nRestore a file" as UC4 <<user>>
+    usecase "UC-03\nBack up a file" as UC3 <<user>>
+    usecase "UC-05\nConsult operational metrics" as UC5 <<admin>>
   }
-  usecase "UC-02\nLogin" as UC2
+  usecase "UC-02\nLogin" as UC2 <<user>>
 }
 
 User -- UC1
