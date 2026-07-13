@@ -1,0 +1,67 @@
+@startuml
+!include ../_style.puml
+
+title PKI Hierarchy
+
+skinparam nodesep 30
+skinparam ranksep 50
+skinparam ArrowFontSize 11
+
+skinparam component<<publicCA>> {
+  BackgroundColor #FFF3D6
+  BorderColor #B58900
+}
+skinparam component<<privateCA>> {
+  BackgroundColor #FFE0E0
+  BorderColor #A33
+}
+skinparam component<<service>> {
+  BackgroundColor #E8F1FC
+  BorderColor #2C5C8F
+}
+
+component "**Let's Encrypt**" as LetsEncrypt <<publicCA>>
+component "**Certificate-Authority**\n[smallstep/certificates]" as PrivateCA <<privateCA>>
+
+package "Core request path" {
+  together {
+    component "**Entry-Hub**" as EntryHub <<service>>
+    component "**Security-Switch**" as SecuritySwitch <<service>>
+    component "**Database-Vault**" as DatabaseVault <<service>>
+    component "**Storage-Service**" as StorageService <<service>>
+    component "**Network-Manager**" as NetworkManager <<service>>
+  }
+
+  EntryHub -[hidden]right- SecuritySwitch
+  SecuritySwitch -[hidden]right- DatabaseVault
+  DatabaseVault -[hidden]right- StorageService
+  StorageService -[hidden]right- NetworkManager
+}
+
+package "Monitoring pipeline" {
+  component "**Mosquitto**\n[MQTT-Broker]" as MqttBroker <<service>>
+  component "**Metrics-Collector**" as MetricsCollector <<service>>
+  component "**Metrics-Visualizer**\n[Grafana]" as MetricsVisualizer <<service>>
+
+  MqttBroker -[hidden]right- MetricsCollector
+  MetricsCollector -[hidden]right- MetricsVisualizer
+}
+
+LetsEncrypt ..> EntryHub
+
+PrivateCA ..> EntryHub
+PrivateCA ..> SecuritySwitch
+PrivateCA ..> DatabaseVault
+PrivateCA ..> StorageService
+PrivateCA ..> NetworkManager
+PrivateCA ..> MqttBroker
+PrivateCA ..> MetricsCollector
+PrivateCA ..> MetricsVisualizer
+PrivateCA ..> PrivateCA : self-signed
+
+legend
+  every dashed arrow is a <<signs>> relationship
+  (certificate issuance)
+end legend
+
+@enduml
