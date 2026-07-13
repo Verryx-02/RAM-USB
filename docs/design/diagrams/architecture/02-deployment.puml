@@ -9,26 +9,29 @@ skinparam ArrowFontSize 11
 skinparam roundCorner 12
 skinparam linetype ortho
 
-skinparam node<<service>> {
-  BackgroundColor #E8F1FC
-  BorderColor #2C5C8F
-}
+' node<<service>> / node<<infra>> come from _style.puml's "blu notte" palette
+' unchanged — no local override needed here.
 skinparam node<<public>> {
-  BackgroundColor #E8F1FC
-  BorderColor #B58900
+  BackgroundColor #2A4A7F/#1B3A6B
+  BorderColor #C9A227
   LineThickness 2.5
-}
-skinparam node<<infra>> {
-  BackgroundColor #F0F0F0
-  BorderColor #666666
+  FontColor #F0F0F0
 }
 skinparam node<<external>> {
-  BackgroundColor #FAFAFA
-  BorderColor #999999
+  BackgroundColor #C7D3DE/#A9BAC9
+  BorderColor #5C7089
+  FontColor #14202B
+}
+skinparam node<<docker>> {
+  BackgroundColor #DDE4EA
+  BorderColor #8C9BAA
+  LineThickness 1
+  FontColor #5A6B7A
 }
 skinparam cloud {
-  BackgroundColor #EAF7EA
-  BorderColor #2E7D32
+  BackgroundColor #D8E6F2/#B8D4E3
+  BorderColor #3A6EA5
+  FontColor #14304D
 }
 
 node "**User-Client**\n[laptop/desktop]\nrestic + SSH key + Tailscale" as UserClient <<external>>
@@ -50,47 +53,68 @@ node "Proxmox VE Host" as Proxmox {
 
   rectangle "LXC Containers" as LXCGroup #line.dashed;line:AAAAAA;back:FDFDFD {
     together {
-      node "**Entry-Hub**\n[Go]\nHTTPS :443" as EntryHub <<public>>
-      node "**Security-Switch**\n[Go]" as SecuritySwitch <<service>>
-      node "**Certificate-Authority**\n[smallstep/certificates]" as CA <<infra>>
-      node "**Mosquitto**\n[MQTT broker]" as Mosquitto <<infra>>
-      node "**Metrics-Collector**\n[Go]" as MetricsCollector <<infra>>
-      node "**Metrics-Visualizer**\n[Grafana]" as Grafana <<infra>>
+      node " " as EntryHubDocker <<docker>> {
+        node "**Entry-Hub**\n[Go]\nHTTPS :443" as EntryHub <<public>>
+      }
+      node " " as SecuritySwitchDocker <<docker>> {
+        node "**Security-Switch**\n[Go]" as SecuritySwitch <<service>>
+      }
+      node " " as CADocker <<docker>> {
+        node "**Certificate-Authority**\n[smallstep/certificates]" as CA <<infra>>
+      }
+      node " " as MosquittoDocker <<docker>> {
+        node "**Mosquitto**\n[MQTT broker]" as Mosquitto <<infra>>
+      }
+      node " " as MetricsCollectorDocker <<docker>> {
+        node "**Metrics-Collector**\n[Go]" as MetricsCollector <<infra>>
+      }
+      node " " as GrafanaDocker <<docker>> {
+        node "**Metrics-Visualizer**\n[Grafana]" as Grafana <<infra>>
+      }
     }
 
-    EntryHub -[hidden]right- SecuritySwitch
-    SecuritySwitch -[hidden]right- CA
-    CA -[hidden]right- Mosquitto
-    Mosquitto -[hidden]right- MetricsCollector
-    MetricsCollector -[hidden]right- Grafana
+    EntryHubDocker -[hidden]right- SecuritySwitchDocker
+    SecuritySwitchDocker -[hidden]right- CADocker
+    CADocker -[hidden]right- MosquittoDocker
+    MosquittoDocker -[hidden]right- MetricsCollectorDocker
+    MetricsCollectorDocker -[hidden]right- GrafanaDocker
   }
 
   rectangle "KVM Virtual Machines\n(RNF-ORG-04)" as KVMGroup #line.dashed;line:AAAAAA;back:FDFDFD {
     together {
-      node "**Database-Vault**\n[Go]" as DatabaseVault <<service>>
-      node "**Storage-Service**\n[Go, SFTP]" as StorageService <<service>>
-      node "**Network-Manager**\n[Go, Headscale]" as NetworkManager <<service>>
+      node " " as DatabaseVaultDocker <<docker>> {
+        node "**Database-Vault**\n[Go]" as DatabaseVault <<service>>
+      }
+      node " " as StorageServiceDocker <<docker>> {
+        node "**Storage-Service**\n[Go, SFTP]" as StorageService <<service>>
+      }
+      node " " as NetworkManagerDocker <<docker>> {
+        node "**Network-Manager**\n[Go, Headscale]" as NetworkManager <<service>>
+      }
     }
 
-    DatabaseVault -[hidden]right- StorageService
-    StorageService -[hidden]right- NetworkManager
+    DatabaseVaultDocker -[hidden]right- StorageServiceDocker
+    StorageServiceDocker -[hidden]right- NetworkManagerDocker
   }
 
-  EntryHub -[hidden]down- DatabaseVault
+  EntryHubDocker -[hidden]down- DatabaseVaultDocker
 }
 
-' repeated 3x: strengthens the pull so the layout engine centers
-' User-Client's column exactly on Entry-Hub instead of only loosely below it
+' repeated edges: strengthens the pull so the layout engine centers
+' User-Client's column as closely as possible on the Entry-Hub Docker box
+' instead of only loosely below it (exact centering is bounded by how
+' GraphViz anchors edges to a nested cluster rather than a plain node)
 UserClient -[hidden]down- VGap1
 UserClient -[hidden]down- VGap1
-VGap1 -[hidden]down- EntryHub
+VGap1 -[hidden]down- EntryHubDocker
+VGap1 -[hidden]down- EntryHubDocker
 Mesh -[hidden]down- VGap1
 
 UserClient -[hidden]right- HGap1
 HGap1 -[hidden]right- Mesh
 
 UserClient -right-> Mesh : joins after bootstrap\n(pre-auth key, CL-F-04)
-UserClient -down-> EntryHub : HTTPS :443 (public internet)\nLet's Encrypt cert
+UserClient -down-> EntryHubDocker : HTTPS :443 (public internet)\nLet's Encrypt cert
 
 legend
   Only Entry-Hub is publicly reachable.
