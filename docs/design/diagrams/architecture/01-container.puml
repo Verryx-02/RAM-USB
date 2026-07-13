@@ -1,0 +1,40 @@
+@startuml
+!include ../_style.puml
+!include ../_sprites/postgresql.puml
+
+title Container Diagram
+
+skinparam nodesep 30
+skinparam ranksep 55
+skinparam ArrowFontSize 11
+
+actor "User\n[Person]" as User
+actor "Admin\n[Person]" as Admin
+
+rectangle "RAM-USB System" {
+
+  component "**Entry-Hub**\n[Go]\nPublic API gateway" as EntryHub <<service>>
+  component "**Security-Switch**\n[Go]\nRequest re-validation" as SecuritySwitch <<service>>
+  component "**Database-Vault**\n[Go]\nRe-validation, identity\nstorage & crypto" as DatabaseVault <<service>>
+  component "**Storage-Service**\n[Go, SFTP]\nEncrypted backup storage" as StorageService <<service>>
+  component "**Network-Manager**\n[Go]\nMesh & ACL orchestration" as NetworkManager <<service>>
+
+  database "<$postgresql>\n**PostgreSQL**\nUser identity records" as Postgres
+
+  component "**Certificate-Authority**\n[smallstep/certificates]\nmTLS issuance & rotation" as CA <<infra>>
+  component "**Observability**\n[Mosquitto, Metrics-Collector,\nGrafana, TimescaleDB]\nMetrics pipeline & dashboards" as Observability <<infra>>
+}
+
+User -down-> EntryHub : **HTTPS**\nregister / login / health
+EntryHub -down-> SecuritySwitch : **mTLS**
+SecuritySwitch -down-> DatabaseVault : **mTLS**
+DatabaseVault -right-> Postgres : **SQL**
+DatabaseVault <-down-> StorageService : **mTLS**\ncreate POSIX user / fetch public key
+SecuritySwitch -right-> NetworkManager : **mTLS**\nACL grant / pre-auth key
+EntryHub -right-> NetworkManager : **Headscale coordination**\n(reverse-proxied)
+
+User --> StorageService : **SFTP**\nbackup / restore
+
+Admin -down-> Observability : **HTTPS**\ndashboards
+
+@enduml

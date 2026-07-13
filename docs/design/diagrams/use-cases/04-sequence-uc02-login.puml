@@ -1,0 +1,36 @@
+@startuml
+!include ../_style.puml
+
+title UC-02: Login
+
+actor User
+participant "Entry-Hub" as EH <<service>>
+participant "Security-Switch" as SS <<service>>
+participant "Database-Vault" as DV <<service>>
+participant "Network-Manager" as NM <<service>>
+
+User -> EH : POST /api/login (HTTPS)\nemail, password
+EH -> SS : forward request (mTLS)
+SS -> DV : forward request (mTLS)
+
+note over EH, DV
+  Each hop independently re-validates the input (DV-F-02).
+  On failure: HTTP 400, request not forwarded further,
+  issue logged without identifying the user (EH-F-06, SS-F-03, DV-F-20)
+end note
+
+DV -> DV : retrieve salt via SHA-256(email)\nrecompute Argon2id(password, salt, pepper)\ncompare with stored hash
+
+alt nonexistent email or wrong password
+  DV --> SS : 401 Unauthorized
+  SS --> EH : 401 Unauthorized
+  EH --> User : 401 Unauthorized
+else valid credentials
+  DV --> SS : authentication success
+  SS -> NM : grant ACL tag, 12h expiry (mTLS)
+  NM --> SS : ACL grant confirmed
+  SS --> EH : 200 OK
+  EH --> User : 200 OK
+end
+
+@enduml

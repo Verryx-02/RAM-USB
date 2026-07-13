@@ -1,0 +1,47 @@
+@startuml
+!include ../_style.puml
+
+title Use Case Diagram
+
+left to right direction
+skinparam linetype ortho
+
+skinparam rectangle {
+  BackgroundColor #C4D3E3/#A9BDD6
+  BorderColor #3A5578
+  FontColor #1B2A3D
+}
+skinparam usecase<<user>> {
+  BackgroundColor #2A4A7F/#1B3A6B
+  BorderColor #0A1B36
+  FontColor #F0F0F0
+}
+skinparam usecase<<admin>> {
+  BackgroundColor #6FA3B0/#4A7E8C
+  BorderColor #2F5A66
+  FontColor #0A1B22
+}
+
+actor User
+actor Admin
+
+rectangle "RAM-USB" {
+  together {
+    usecase "UC-01\nRegister" as UC1 <<user>>
+    usecase "UC-04\nRestore a file" as UC4 <<user>>
+    usecase "UC-03\nBack up a file" as UC3 <<user>>
+    usecase "UC-05\nConsult operational metrics" as UC5 <<admin>>
+  }
+  usecase "UC-02\nLogin" as UC2 <<user>>
+}
+
+User -- UC1
+User -- UC3
+User -- UC4
+User -- UC2
+Admin -- UC5
+
+UC3 ..> UC2 : <<include>>
+UC4 ..> UC2 : <<include>>
+
+@enduml

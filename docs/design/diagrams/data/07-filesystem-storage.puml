@@ -1,0 +1,50 @@
+@startuml
+!include ../_style.puml
+
+title Storage-Service Filesystem Layout
+
+skinparam nodesep 40
+skinparam ranksep 40
+skinparam ArrowFontSize 11
+skinparam roundCorner 8
+
+' file system: same teal family as the shared <<infra>> stereotype —
+' /storage/ is the storage infrastructure's root container.
+skinparam node<<file system>> {
+  BackgroundColor #6FA3B0/#4A7E8C
+  BorderColor #2F5A66
+  FontColor #0A1B22
+}
+' execution environment: same navy family as the shared <<service>>
+' stereotype — each chroot is effectively an isolated service instance.
+skinparam node<<execution environment>> {
+  BackgroundColor #2A4A7F/#1B3A6B
+  BorderColor #0A1B36
+  FontColor #F0F0F0
+}
+' artifact: same gold family as the shared database stereotype —
+' data/ is where persisted (backed-up) data actually lives.
+skinparam artifact {
+  BackgroundColor #E8C766/#C9A227
+  BorderColor #8B6F1A
+  FontColor #1A1400
+}
+
+node "/storage/\nroot of all registered users" as StorageRoot <<file system>> {
+
+  node "user7k2m9x/\n{owner = root:root}\n{home = none, shell = none}" as U1 <<execution environment>> {
+    artifact "data/\n{owner = user7k2m9x:user7k2m9x}\n{writable = true}" as D1
+  }
+
+  node "user3f9a1c/\n{owner = root:root}\n{home = none, shell = none}" as U2 <<execution environment>> {
+    artifact "data/\n{owner = user3f9a1c:user3f9a1c}\n{writable = true}" as D2
+  }
+}
+
+legend
+  Pattern repeats per registered user "user<xxxxxx>" (ST-F-06). Each execution
+  environment is an isolated chroot the user can never leave (ST-F-05, ST-F-07);
+  data/ is the only writable path, holding Restic's client-side-encrypted backups (ST-F-02, ST-F-08).
+end legend
+
+@enduml
