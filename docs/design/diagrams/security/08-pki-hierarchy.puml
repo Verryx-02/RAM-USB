@@ -7,18 +7,22 @@ skinparam nodesep 30
 skinparam ranksep 50
 skinparam ArrowFontSize 11
 
+' publicCA: pale neutral/ice tone — signals "external to the system" (Let's Encrypt).
 skinparam component<<publicCA>> {
-  BackgroundColor #FFF3D6
-  BorderColor #B58900
+  BackgroundColor #DDE6ED/#C3D2DC
+  BorderColor #5A6B78
+  FontColor #14202B
 }
+' privateCA: teal family, same as <<infra>> but a distinct lighter variant —
+' the private CA is support infrastructure, conceptually close to <<infra>>.
 skinparam component<<privateCA>> {
-  BackgroundColor #FFE0E0
-  BorderColor #A33
+  BackgroundColor #A9CDD6/#7FB0BC
+  BorderColor #3D6570
+  FontColor #0A1B22
 }
-skinparam component<<service>> {
-  BackgroundColor #E8F1FC
-  BorderColor #2C5C8F
-}
+' <<service>> intentionally NOT redefined here: inherited as-is from
+' _style.puml (navy blue family). Do not add a local block for it — see
+' _style.puml comment on skinparam merging per-selector, not per-block.
 
 component "**Let's Encrypt**" as LetsEncrypt <<publicCA>>
 component "**Certificate-Authority**\n[smallstep/certificates]" as PrivateCA <<privateCA>>
