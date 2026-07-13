@@ -109,7 +109,8 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 
 ---
 
-> [!NOTE] Distribution of initial certificates: each service receives, out-of-band (the same channel used for the master key and pepper, see 2.6), a single-use bootstrap token. It uses this token exactly once, at startup, to obtain its initial certificate from the CA (CA-F-04). Subsequent renewals happen by presenting the mTLS certificate the service already holds, not the token.
+> [!NOTE] Distribution of initial certificates: 
+> each service receives, out-of-band (the same channel used for the master key and pepper, see 2.6), a single-use bootstrap token. It uses this token exactly once, at startup, to obtain its initial certificate from the CA (CA-F-04). Subsequent renewals happen by presenting the mTLS certificate the service already holds, not the token.
 
 ## 3. User requirements
 
@@ -443,15 +444,15 @@ Requirements/checks knowingly deferred to a later iteration, which **do not** bl
 
 > [!NOTE] Every future system requirement must be linked to a merge commit on GitHub, in order to maintain backward traceability (from code to requirement) and forward traceability (from requirement to code) as implementation proceeds.
 
-|**User requirements**|**Linked system requirements**|
-|---|---|
-|RU-01|CL-F-01, CL-F-02, <br>EH-F-02, EH-F-04, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, <br>DV-F-01, DV-F-02, DV-F-03, DV-F-04, DV-F-05, DV-F-06, DV-F-07, <br>DV-F-08, DV-F-09, DV-F-10, DV-F-11, DV-F-12, DV-F-20, <br>ST-F-06, ST-F-08, ST-F-10, <br>NM-F-08, NM-F-13|
-|RU-02|CL-F-03, <br>EH-F-03, EH-F-05, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, <br>DV-F-01, DV-F-02, DV-F-13, DV-F-14, DV-F-15, DV-F-20, <br>NM-F-09, NM-F-13|
-|RU-03|CL-F-04, CL-F-05, CL-F-06, <br>ST-F-01, ST-F-02, ST-F-03, ST-F-05, ST-F-07, ST-F-11, <br>NM-F-05, NM-F-09, NM-F-15,|
-|RU-04|CL-F-03, <br>NM-F-05, NM-F-06, NM-F-07, NM-F-09, NM-F-10, NM-F-11, <br>SS-F-05|
-|RU-05|ST-F-02, <br>RNF-SEC-01, <br>RD-01|
-|RU-06|DV-F-03, DV-F-04, DV-F-05, DV-F-06, DV-F-07, <br>RNF-SEC-01, <br>RD-01, RD-02, RD-03|
-|RU-07|CL-F-04, CL-F-05, CL-F-07, <br>ST-F-01, ST-F-02, ST-F-03, ST-F-05, ST-F-07, ST-F-11|
-|RU-08|ST-F-05, ST-F-07, ST-F-08, <br>DV-F-09|
-|RU-09|**None. See RISK-01**|
-|RU-10|MT-F-01, MT-F-02, MT-F-03, MT-F-04, <br>EH-F-10, EH-F-11, <br>SS-F-07, SS-F-08, <br>DV-F-16, DV-F-17, <br>ST-F-12, ST-F-13, <br>NM-F-17, NM-F-18, <br>CA-F-03|
+| **User requirements** | **Linked system requirements**                                                                                                                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RU-01                 | CL-F-01, CL-F-02, <br>EH-F-02, EH-F-04, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, <br>DV-F-01, DV-F-02, DV-F-03, DV-F-04, DV-F-05, DV-F-06, DV-F-07, <br>DV-F-08, DV-F-09, DV-F-10, DV-F-11, DV-F-12, DV-F-20, <br>ST-F-06, ST-F-08, ST-F-10, <br>NM-F-08, NM-F-13 |
+| RU-02                 | CL-F-03, <br>EH-F-03, EH-F-05, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, <br>DV-F-01, DV-F-02, DV-F-13, DV-F-14, DV-F-15, DV-F-20, <br>NM-F-09, NM-F-13                                                                                                            |
+| RU-03                 | CL-F-04, CL-F-05, CL-F-06, <br>ST-F-01, ST-F-02, ST-F-03, ST-F-05, ST-F-07, ST-F-11, <br>NM-F-05, NM-F-09, NM-F-15,                                                                                                                                                                         |
+| RU-04                 | CL-F-03, <br>NM-F-05, NM-F-06, NM-F-07, NM-F-09, NM-F-10, NM-F-11, <br>SS-F-05                                                                                                                                                                                                              |
+| RU-05                 | ST-F-02, <br>RNF-SEC-01, <br>RD-01                                                                                                                                                                                                                                                          |
+| RU-06                 | DV-F-03, DV-F-04, DV-F-05, DV-F-06, DV-F-07, <br>RNF-SEC-01, <br>RD-01, RD-02, RD-03                                                                                                                                                                                                        |
+| RU-07                 | CL-F-04, CL-F-05, CL-F-07, <br>ST-F-01, ST-F-02, ST-F-03, ST-F-05, ST-F-07, ST-F-11                                                                                                                                                                                                         |
+| RU-08                 | ST-F-05, ST-F-07, ST-F-08, <br>DV-F-09                                                                                                                                                                                                                                                      |
+| RU-09                 | **None. See RISK-01**                                                                                                                                                                                                                                                                       |
+| RU-10                 | MT-F-01, MT-F-02, MT-F-03, MT-F-04, <br>EH-F-10, EH-F-11, <br>SS-F-07, SS-F-08, <br>DV-F-16, DV-F-17, <br>ST-F-12, ST-F-13, <br>NM-F-17, NM-F-18, <br>CA-F-03                                                                                                                               |
