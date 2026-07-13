@@ -8,11 +8,11 @@ skinparam ranksep 55
 skinparam ArrowFontSize 11
 skinparam roundCorner 12
 
-skinparam rectangle<<service>> {
+skinparam component<<service>> {
   BackgroundColor #E8F1FC
   BorderColor #2C5C8F
 }
-skinparam rectangle<<infra>> {
+skinparam component<<infra>> {
   BackgroundColor #F0F0F0
   BorderColor #666666
 }
@@ -26,28 +26,28 @@ actor "Admin\n[Person]" as Admin
 
 rectangle "RAM-USB System" {
 
-  rectangle "**Entry-Hub**\n[Go]\nPublic API gateway" as EntryHub <<service>>
-  rectangle "**Security-Switch**\n[Go]\nRequest re-validation" as SecuritySwitch <<service>>
-  rectangle "**Database-Vault**\n[Go]\nIdentity storage & crypto" as DatabaseVault <<service>>
-  rectangle "**Storage-Service**\n[Go, SFTP]\nEncrypted backup storage" as StorageService <<service>>
-  rectangle "**Network-Manager**\n[Go]\nMesh & ACL orchestration" as NetworkManager <<service>>
+  component "**Entry-Hub**\n[Go]\nPublic API gateway" as EntryHub <<service>>
+  component "**Security-Switch**\n[Go]\nRequest re-validation" as SecuritySwitch <<service>>
+  component "**Database-Vault**\n[Go]\nRe-validation, identity\nstorage & crypto" as DatabaseVault <<service>>
+  component "**Storage-Service**\n[Go, SFTP]\nEncrypted backup storage" as StorageService <<service>>
+  component "**Network-Manager**\n[Go]\nMesh & ACL orchestration" as NetworkManager <<service>>
 
   database "**PostgreSQL**\nUser identity records" as Postgres
 
-  rectangle "**Certificate-Authority**\n[smallstep/certificates]\nmTLS issuance & rotation" as CA <<infra>>
-  rectangle "**Observability**\n[Mosquitto, Metrics-Collector,\nGrafana, TimescaleDB]\nMetrics pipeline & dashboards" as Observability <<infra>>
+  component "**Certificate-Authority**\n[smallstep/certificates]\nmTLS issuance & rotation" as CA <<infra>>
+  component "**Observability**\n[Mosquitto, Metrics-Collector,\nGrafana, TimescaleDB]\nMetrics pipeline & dashboards" as Observability <<infra>>
 }
 
-User -down-> EntryHub : HTTPS\nregister / login / health
-EntryHub -down-> SecuritySwitch : mTLS
-SecuritySwitch -down-> DatabaseVault : mTLS
-DatabaseVault -right-> Postgres : SQL
-DatabaseVault <-down-> StorageService : mTLS\ncreate POSIX user / fetch public key
-SecuritySwitch -right-> NetworkManager : mTLS\nACL grant / pre-auth key
-EntryHub -right-> NetworkManager : Headscale coordination\n(reverse-proxied)
+User -down-> EntryHub : **HTTPS**\nregister / login / health
+EntryHub -down-> SecuritySwitch : **mTLS**
+SecuritySwitch -down-> DatabaseVault : **mTLS**
+DatabaseVault -right-> Postgres : **SQL**
+DatabaseVault <-down-> StorageService : **mTLS**\ncreate POSIX user / fetch public key
+SecuritySwitch -right-> NetworkManager : **mTLS**\nACL grant / pre-auth key
+EntryHub -right-> NetworkManager : **Headscale coordination**\n(reverse-proxied)
 
-User --> StorageService : SFTP\nbackup / restore
+User --> StorageService : **SFTP**\nbackup / restore
 
-Admin -down-> Observability : HTTPS\ndashboards
+Admin -down-> Observability : **HTTPS**\ndashboards
 
 @enduml
