@@ -1,0 +1,45 @@
+@startuml
+!include ../_style.puml
+
+title ACL Grant Lifecycle (per user node)
+
+skinparam nodesep 40
+skinparam ranksep 70
+
+' Light, coherent tint of the project's "blu notte" palette — kept muted
+' since state diagrams read better with tenuous color than the saturated
+' fills used on structural diagrams. Base tone is a pale teal-infra wash;
+' "Grant active" gets a slightly deeper teal (the healthy/active phase)
+' and "Expired (pending cleanup)" a pale gold wash (echoing the
+' database-gold accent) to flag it as the transient, needs-cleanup phase.
+skinparam state {
+  BackgroundColor #DCEEF2
+  BorderColor #4A7E8C
+  FontColor #0A1B22
+}
+skinparam state<<active>> {
+  BackgroundColor #BFE0E8
+  BorderColor #2F5A66
+  FontColor #0A1B22
+}
+skinparam state<<pending>> {
+  BackgroundColor #F2E0A8
+  BorderColor #8B6F1A
+  FontColor #0A1B22
+}
+
+state "No grant" as NoGrant
+state "Grant active" as GrantActive <<active>>
+state "Expired\n(pending cleanup)" as PendingCleanup <<pending>>
+
+[*] -right-> NoGrant : node joined mesh\nvia pre-auth key (NM-F-13)
+
+NoGrant -right-> GrantActive : login succeeds,\nSecurity-Switch requests grant
+
+GrantActive -right-> GrantActive : \nrenewed by re-login before expiry
+
+GrantActive -down-> PendingCleanup : 12h expiry reached
+
+PendingCleanup -left-> NoGrant : \nperiodic sweep detects\nexpiry, removes ACL tag
+
+@enduml
