@@ -1,0 +1,39 @@
+@startuml
+!include ../_style.puml
+
+title Database-Vault: User Record (Entity-Relationship)
+
+skinparam nodesep 40
+skinparam ranksep 40
+
+' entity: same gold family as the shared <<database>> stereotype: this
+' diagram models data actually persisted in Database-Vault's datastore,
+' not the Database-Vault service itself (which is <<service>>/navy
+' elsewhere). PlantUML renders ER "entity" boxes via the class-style
+' skinparam group, not a dedicated "entity" one.
+skinparam class {
+  BackgroundColor #E8C766/#C9A227
+  BorderColor #8B6F1A
+  FontColor #1A1400
+}
+
+entity "User" as User {
+  * email_hash : CHAR(64)
+  --
+  email_encrypted : BYTEA
+  password_salt : BYTEA
+  password_hash : VARCHAR(255)
+  ssh_public_key : TEXT <<unique>>
+  posix_username : CHAR(10)
+  registered_at : TIMESTAMP
+}
+
+note right of User
+  email_hash: SHA-256 of email (DV-F-03)
+  email_encrypted: AES-256-GCM (DV-F-04)
+  password_salt: per-user (DV-F-13/14)
+  password_hash: Argon2id (DV-F-07)
+  posix_username: "user" + 6 base-36 chars (DV-F-09)
+end note
+
+@enduml
