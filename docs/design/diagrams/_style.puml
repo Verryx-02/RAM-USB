@@ -1,7 +1,64 @@
 skinparam defaultFontName "Helvetica"
 skinparam defaultFontSize 12
-skinparam shadowing false
-skinparam roundCorner 8
+skinparam shadowing true
+skinparam roundCorner 16
 skinparam ArrowColor #333333
 skinparam ArrowFontColor #333333
 skinparam actorStyle awesome
+
+' "blu notte" palette — shared across component/node/sequence diagrams.
+' PlantUML skinparam stereotype selectors are scoped per element type
+' (there is no type-agnostic "skinparam <<stereotype>>" that applies to
+' component, node, participant, and collections alike), so each color
+' block is duplicated once per element type actually used in the
+' diagrams. A diagram is still free to override any of these locally
+' after the !include if it needs a different palette (local skinparam
+' wins over the included one).
+skinparam component<<service>> {
+  BackgroundColor #2A4A7F/#1B3A6B
+  BorderColor #0A1B36
+  FontColor #F0F0F0
+}
+skinparam node<<service>> {
+  BackgroundColor #2A4A7F/#1B3A6B
+  BorderColor #0A1B36
+  FontColor #F0F0F0
+}
+skinparam component<<infra>> {
+  BackgroundColor #6FA3B0/#4A7E8C
+  BorderColor #2F5A66
+  FontColor #0A1B22
+}
+skinparam node<<infra>> {
+  BackgroundColor #6FA3B0/#4A7E8C
+  BorderColor #2F5A66
+  FontColor #0A1B22
+}
+skinparam participant<<service>> {
+  BackgroundColor #2A4A7F/#1B3A6B
+  BorderColor #0A1B36
+  FontColor #F0F0F0
+}
+skinparam collections<<service>> {
+  BackgroundColor #2A4A7F/#1B3A6B
+  BorderColor #0A1B36
+  FontColor #F0F0F0
+}
+skinparam participant<<infra>> {
+  BackgroundColor #6FA3B0/#4A7E8C
+  BorderColor #2F5A66
+  FontColor #0A1B22
+}
+skinparam collections<<infra>> {
+  BackgroundColor #6FA3B0/#4A7E8C
+  BorderColor #2F5A66
+  FontColor #0A1B22
+}
+skinparam database {
+  BackgroundColor #E8C766/#C9A227
+  BorderColor #8B6F1A
+}
+skinparam actor {
+  BackgroundColor #B7CEEA/#7FA8D9
+  BorderColor #3A6EA5
+}
