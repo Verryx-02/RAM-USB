@@ -1,25 +1,12 @@
 @startuml
 !include ../_style.puml
+!include ../_sprites/postgresql.puml
 
 title Container Diagram
 
 skinparam nodesep 30
 skinparam ranksep 55
 skinparam ArrowFontSize 11
-skinparam roundCorner 12
-
-skinparam component<<service>> {
-  BackgroundColor #E8F1FC
-  BorderColor #2C5C8F
-}
-skinparam component<<infra>> {
-  BackgroundColor #F0F0F0
-  BorderColor #666666
-}
-skinparam database {
-  BackgroundColor #FFF3D6
-  BorderColor #B58900
-}
 
 actor "User\n[Person]" as User
 actor "Admin\n[Person]" as Admin
@@ -32,7 +19,7 @@ rectangle "RAM-USB System" {
   component "**Storage-Service**\n[Go, SFTP]\nEncrypted backup storage" as StorageService <<service>>
   component "**Network-Manager**\n[Go]\nMesh & ACL orchestration" as NetworkManager <<service>>
 
-  database "**PostgreSQL**\nUser identity records" as Postgres
+  database "<$postgresql>\n**PostgreSQL**\nUser identity records" as Postgres
 
   component "**Certificate-Authority**\n[smallstep/certificates]\nmTLS issuance & rotation" as CA <<infra>>
   component "**Observability**\n[Mosquitto, Metrics-Collector,\nGrafana, TimescaleDB]\nMetrics pipeline & dashboards" as Observability <<infra>>
