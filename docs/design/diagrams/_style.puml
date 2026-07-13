@@ -4,3 +4,4 @@ skinparam shadowing false
 skinparam roundCorner 8
 skinparam ArrowColor #333333
 skinparam ArrowFontColor #333333
+skinparam actorStyle awesome
