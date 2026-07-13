@@ -14,21 +14,21 @@ diagrams/
 ├── _style.puml                    shared skinparam theme, included by every diagram
 ├── use-cases/
 │   ├── 00-use-cases.puml
-│   ├── 05-sequence-uc01-registration.puml
-│   ├── 05-sequence-uc02-login.puml
+│   ├── 03-sequence-uc01-registration.puml
+│   ├── 04-sequence-uc02-login.puml
 │   └── 05-sequence-uc03-backup.puml
 ├── architecture/
 │   ├── 01-container.puml
 │   └── 02-deployment.puml
 ├── data/
-│   ├── 03-er-database-vault.puml
-│   └── 04-filesystem-storage.puml
+│   ├── 06-er-database-vault.puml
+│   └── 07-filesystem-storage.puml
 ├── security/
-│   ├── 06-pki-hierarchy.puml
-│   └── 07-trust-zones.puml
+│   ├── 08-pki-hierarchy.puml
+│   └── 09-trust-zones.puml
 ├── operations/
-│   ├── 08-state-acl-grant.puml
-│   └── 09-metrics-flow.puml
+│   ├── 10-state-acl-grant.puml
+│   └── 11-metrics-flow.puml
 └── rendered/                      same subfolders, one .svg per .puml
 ```
 

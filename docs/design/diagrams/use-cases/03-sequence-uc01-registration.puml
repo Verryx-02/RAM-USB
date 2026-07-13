@@ -1,7 +1,7 @@
 @startuml
 !include ../_style.puml
 
-title UC-01 — User Registration
+title UC-01: User Registration
 
 actor User
 participant "Entry-Hub" as EH

@@ -1,7 +1,7 @@
 @startuml
 !include ../_style.puml
 
-title UC-03 — Backing Up a File
+title UC-03: Backing Up a File
 
 actor User
 participant "Storage-Service" as ST

@@ -18,10 +18,22 @@ on GitHub sees the diagrams without installing anything.
 diagrams/
 ├── _style.puml
 ├── use-cases/          UML use case diagram + one sequence diagram per use case
+│   ├── 00-use-cases.puml
+│   ├── 03-sequence-uc01-registration.puml
+│   ├── 04-sequence-uc02-login.puml
+│   └── 05-sequence-uc03-backup.puml
 ├── architecture/        container, deployment
+│   ├── 01-container.puml
+│   └── 02-deployment.puml
 ├── data/                 ER, filesystem/storage layout
+│   ├── 06-er-database-vault.puml
+│   └── 07-filesystem-storage.puml
 ├── security/             PKI hierarchy, trust zones
+│   ├── 08-pki-hierarchy.puml
+│   └── 09-trust-zones.puml
 ├── operations/           ACL grant state, metrics flow
+│   ├── 10-state-acl-grant.puml
+│   └── 11-metrics-flow.puml
 └── rendered/             same subfolders, one .svg per .puml
 ```
 
@@ -32,7 +44,7 @@ Create a subfolder when its first diagram is added.
 
 ## Regenerating
 
-Rendering happens in Docker — no local Java or Graphviz needed. After
+Rendering happens in Docker: no local Java or Graphviz needed. After
 editing a `.puml` file, from the project root run:
 
 ```bash

@@ -1,7 +1,7 @@
 @startuml
 !include ../_style.puml
 
-title UC-02 — Login
+title UC-02: Login
 
 actor User
 participant "Entry-Hub" as EH

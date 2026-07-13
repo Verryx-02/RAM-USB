@@ -32,10 +32,10 @@ node "/storage/\nroot of all registered users" as StorageRoot <<file system>> {
   }
 }
 
-note bottom of StorageRoot
+legend
   Pattern repeats per registered user "user<xxxxxx>" (ST-F-06). Each execution
   environment is an isolated chroot the user can never leave (ST-F-05, ST-F-07);
   data/ is the only writable path, holding Restic's client-side-encrypted backups (ST-F-02, ST-F-08).
-end note
+end legend
 
 @enduml
