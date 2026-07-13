@@ -34,12 +34,12 @@ state "Expired\n(pending cleanup)" as PendingCleanup <<pending>>
 
 [*] -right-> NoGrant : node joined mesh\nvia pre-auth key (NM-F-13)
 
-NoGrant -right-> GrantActive : login succeeds,\nSecurity-Switch requests grant
+NoGrant -right-> GrantActive : login succeeds,\nSecurity-Switch requests grant (NM-F-09)
 
-GrantActive -right-> GrantActive : \nrenewed by re-login before expiry
+GrantActive -right-> GrantActive : \nrenewed by re-login before expiry (CL-F-03)
 
 GrantActive -down-> PendingCleanup : 12h expiry reached
 
-PendingCleanup -left-> NoGrant : \nperiodic sweep detects\nexpiry, removes ACL tag
+PendingCleanup -left-> NoGrant : \nperiodic sweep detects\nexpiry, removes ACL tag (NM-F-10)
 
 @enduml

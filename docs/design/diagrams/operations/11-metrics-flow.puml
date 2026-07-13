@@ -13,12 +13,14 @@ actor "Admin" as Admin
 note over Services
   Every service publishes, every minute and only, to its dedicated
   **metrics/<ServiceName>** topic via mTLS, after verifying the peer
-  certificate comes from an MQTT-Broker and is a valid X.509 cert.
-  Metrics carry aggregated statistics only: never personal data (RNF-SEC-01).
+  certificate comes from an MQTT-Broker and is a valid X.509 cert
+  (EH-F-10, SS-F-07, DV-F-16, ST-F-12, NM-F-17, CA-F-03).
+  Metrics carry aggregated statistics only: never personal data
+  (EH-F-11, SS-F-08, DV-F-17, ST-F-13, NM-F-18).
 end note
 
 Services -> Broker : publish metrics/<ServiceName>
-Broker -> Collector : subscribe metrics/*
+Broker -> Collector : subscribe metrics/* (MT-F-01)
 
 alt "service" field matches source topic (MT-F-02, Mosquitto ACL)
   Collector -> TSDB : insert (hypertable)

@@ -33,6 +33,7 @@ note right of User
   email_encrypted: AES-256-GCM (DV-F-04)
   password_salt: per-user (DV-F-13/14)
   password_hash: Argon2id (DV-F-07)
+  ssh_public_key: unique per user (DV-F-12)
   posix_username: "user" + 6 base-36 chars (DV-F-09)
 end note
 

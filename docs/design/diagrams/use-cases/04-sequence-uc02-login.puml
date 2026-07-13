@@ -14,9 +14,9 @@ EH -> SS : forward request (mTLS)
 SS -> DV : forward request (mTLS)
 
 note over EH, DV
-  Each hop independently re-validates the input.
+  Each hop independently re-validates the input (DV-F-02).
   On failure: HTTP 400, request not forwarded further,
-  issue logged without identifying the user (EH-F-06, SS-F-03, DV-F-02)
+  issue logged without identifying the user (EH-F-06, SS-F-03, DV-F-20)
 end note
 
 DV -> DV : retrieve salt via SHA-256(email)\nrecompute Argon2id(password, salt, pepper)\ncompare with stored hash
