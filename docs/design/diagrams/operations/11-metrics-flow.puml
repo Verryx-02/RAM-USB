@@ -3,11 +3,11 @@
 
 title Metrics Flow
 
-collections "Services\n(Entry-Hub, Security-Switch, Database-Vault,\nStorage-Service, Network-Manager, Certificate-Authority)" as Services
-participant "MQTT-Broker\n[Mosquitto]" as Broker
-participant "Metrics-Collector" as Collector
+collections "Services\n(Entry-Hub, Security-Switch, Database-Vault,\nStorage-Service, Network-Manager, Certificate-Authority)" as Services <<service>>
+participant "MQTT-Broker\n[Mosquitto]" as Broker <<infra>>
+participant "Metrics-Collector" as Collector <<infra>>
 database "TimescaleDB" as TSDB
-participant "Grafana" as Grafana
+participant "Grafana" as Grafana <<infra>>
 actor "Admin" as Admin
 
 note over Services

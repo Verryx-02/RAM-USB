@@ -4,8 +4,8 @@
 title UC-03: Backing Up a File
 
 actor User
-participant "Storage-Service" as ST
-participant "Database-Vault" as DV
+participant "Storage-Service" as ST <<service>>
+participant "Database-Vault" as DV <<service>>
 
 note over User
   Preconditions: user authenticated (UC-02, active ACL grant);

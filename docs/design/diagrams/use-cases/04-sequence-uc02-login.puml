@@ -4,10 +4,10 @@
 title UC-02: Login
 
 actor User
-participant "Entry-Hub" as EH
-participant "Security-Switch" as SS
-participant "Database-Vault" as DV
-participant "Network-Manager" as NM
+participant "Entry-Hub" as EH <<service>>
+participant "Security-Switch" as SS <<service>>
+participant "Database-Vault" as DV <<service>>
+participant "Network-Manager" as NM <<service>>
 
 User -> EH : POST /api/login (HTTPS)\nemail, password
 EH -> SS : forward request (mTLS)

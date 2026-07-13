@@ -8,17 +8,26 @@ skinparam ranksep 40
 skinparam ArrowFontSize 11
 skinparam roundCorner 8
 
+' file system: same teal family as the shared <<infra>> stereotype —
+' /storage/ is the storage infrastructure's root container.
 skinparam node<<file system>> {
-  BackgroundColor #F0F0F0
-  BorderColor #666666
+  BackgroundColor #6FA3B0/#4A7E8C
+  BorderColor #2F5A66
+  FontColor #0A1B22
 }
+' execution environment: same navy family as the shared <<service>>
+' stereotype — each chroot is effectively an isolated service instance.
 skinparam node<<execution environment>> {
-  BackgroundColor #FDECEA
-  BorderColor #B0413E
+  BackgroundColor #2A4A7F/#1B3A6B
+  BorderColor #0A1B36
+  FontColor #F0F0F0
 }
+' artifact: same gold family as the shared database stereotype —
+' data/ is where persisted (backed-up) data actually lives.
 skinparam artifact {
-  BackgroundColor #E8F5E9
-  BorderColor #2E7D32
+  BackgroundColor #E8C766/#C9A227
+  BorderColor #8B6F1A
+  FontColor #1A1400
 }
 
 node "/storage/\nroot of all registered users" as StorageRoot <<file system>> {

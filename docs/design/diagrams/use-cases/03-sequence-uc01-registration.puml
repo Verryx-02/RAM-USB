@@ -4,11 +4,11 @@
 title UC-01: User Registration
 
 actor User
-participant "Entry-Hub" as EH
-participant "Security-Switch" as SS
-participant "Database-Vault" as DV
-participant "Storage-Service" as ST
-participant "Network-Manager" as NM
+participant "Entry-Hub" as EH <<service>>
+participant "Security-Switch" as SS <<service>>
+participant "Database-Vault" as DV <<service>>
+participant "Storage-Service" as ST <<service>>
+participant "Network-Manager" as NM <<service>>
 
 note over User
   SSH keypair already generated client-side;

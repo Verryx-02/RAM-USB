@@ -7,16 +7,19 @@ left to right direction
 skinparam linetype ortho
 
 skinparam rectangle {
-  BackgroundColor #F7FAFD
-  BorderColor #7FA6CC
+  BackgroundColor #C4D3E3/#A9BDD6
+  BorderColor #3A5578
+  FontColor #1B2A3D
 }
 skinparam usecase<<user>> {
-  BackgroundColor #E8F1FC
-  BorderColor #2C5C8F
+  BackgroundColor #2A4A7F/#1B3A6B
+  BorderColor #0A1B36
+  FontColor #F0F0F0
 }
 skinparam usecase<<admin>> {
-  BackgroundColor #EDE7F6
-  BorderColor #6A4C93
+  BackgroundColor #6FA3B0/#4A7E8C
+  BorderColor #2F5A66
+  FontColor #0A1B22
 }
 
 actor User
