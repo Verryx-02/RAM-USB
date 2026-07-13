@@ -3,10 +3,11 @@
 
 title Deployment Diagram
 
-skinparam nodesep 35
+skinparam nodesep 30
 skinparam ranksep 50
 skinparam ArrowFontSize 11
 skinparam roundCorner 12
+skinparam linetype ortho
 
 skinparam node<<service>> {
   BackgroundColor #E8F1FC
@@ -34,32 +35,67 @@ node "**User-Client**\n[laptop/desktop]\nrestic + SSH key + Tailscale" as UserCl
 
 cloud "**Headscale Mesh VPN**\nprivate network, mTLS\ncerts from private CA, TLS 1.3" as Mesh
 
+' invisible layout-only spacers: reserve enough vertical room for the
+' two-line "HTTPS :443.../Let's Encrypt cert" arrow label so it never
+' touches the Proxmox VE Host boundary
+rectangle "<color:white>X</color>\n<color:white>X</color>\n<color:white>X</color>" as VGap1 #line:transparent;back:transparent
+
+' invisible layout-only spacer: reserve enough horizontal room between
+' User-Client and the Mesh cloud for the two-line "joins after bootstrap
+' (pre-auth key, CL-F-04)" arrow label, without inflating the global
+' nodesep used everywhere else (Problem 1/2 fix - kept local on purpose)
+rectangle "<color:white>______________________________________________________________________________________________________________________________________________</color>" as HGap1 #line:transparent;back:transparent
+
 node "Proxmox VE Host" as Proxmox {
 
-  rectangle "KVM Virtual Machines\n(RNF-ORG-04)" as KVMGroup #line.dashed;line:AAAAAA;back:FDFDFD {
-    node "**Storage-Service**\n[Go, SFTP]" as StorageService <<service>>
-    node "**Database-Vault**\n[Go]" as DatabaseVault <<service>>
-    node "**Network-Manager**\n[Go, Headscale]" as NetworkManager <<service>>
+  rectangle "LXC Containers" as LXCGroup #line.dashed;line:AAAAAA;back:FDFDFD {
+    together {
+      node "**Entry-Hub**\n[Go]\nHTTPS :443" as EntryHub <<public>>
+      node "**Security-Switch**\n[Go]" as SecuritySwitch <<service>>
+      node "**Certificate-Authority**\n[smallstep/certificates]" as CA <<infra>>
+      node "**Mosquitto**\n[MQTT broker]" as Mosquitto <<infra>>
+      node "**Metrics-Collector**\n[Go]" as MetricsCollector <<infra>>
+      node "**Metrics-Visualizer**\n[Grafana]" as Grafana <<infra>>
+    }
+
+    EntryHub -[hidden]right- SecuritySwitch
+    SecuritySwitch -[hidden]right- CA
+    CA -[hidden]right- Mosquitto
+    Mosquitto -[hidden]right- MetricsCollector
+    MetricsCollector -[hidden]right- Grafana
   }
 
-  rectangle "LXC Containers" as LXCGroup #line.dashed;line:AAAAAA;back:FDFDFD {
-    node "**Entry-Hub**\n[Go]\npublic HTTPS :443" as EntryHub <<public>>
-    node "**Security-Switch**\n[Go]" as SecuritySwitch <<service>>
-    node "**Certificate-Authority**\n[smallstep/certificates]" as CA <<infra>>
-    node "**Mosquitto**\n[MQTT broker]" as Mosquitto <<infra>>
-    node "**Metrics-Collector**\n[Go]" as MetricsCollector <<infra>>
-    node "**Metrics-Visualizer**\n[Grafana]" as Grafana <<infra>>
+  rectangle "KVM Virtual Machines\n(RNF-ORG-04)" as KVMGroup #line.dashed;line:AAAAAA;back:FDFDFD {
+    together {
+      node "**Database-Vault**\n[Go]" as DatabaseVault <<service>>
+      node "**Storage-Service**\n[Go, SFTP]" as StorageService <<service>>
+      node "**Network-Manager**\n[Go, Headscale]" as NetworkManager <<service>>
+    }
+
+    DatabaseVault -[hidden]right- StorageService
+    StorageService -[hidden]right- NetworkManager
   }
+
+  EntryHub -[hidden]down- DatabaseVault
 }
 
-UserClient -right-> EntryHub : HTTPS :443 (public internet)\nLet's Encrypt cert
-UserClient .down.> Mesh : joins after bootstrap\n(pre-auth key, CL-F-04)
-Proxmox <-down-> Mesh : mTLS (private CA)\nTLS 1.3
+' repeated 3x: strengthens the pull so the layout engine centers
+' User-Client's column exactly on Entry-Hub instead of only loosely below it
+UserClient -[hidden]down- VGap1
+UserClient -[hidden]down- VGap1
+VGap1 -[hidden]down- EntryHub
+Mesh -[hidden]down- VGap1
 
-note bottom of Mesh
+UserClient -[hidden]right- HGap1
+HGap1 -[hidden]right- Mesh
+
+UserClient -right-> Mesh : joins after bootstrap\n(pre-auth key, CL-F-04)
+UserClient -down-> EntryHub : HTTPS :443 (public internet)\nLet's Encrypt cert
+
+legend
   Only Entry-Hub is publicly reachable.
   Every other node communicates exclusively over
   the mesh, mutually authenticated with private-CA certificates.
-end note
+end legend
 
 @enduml
