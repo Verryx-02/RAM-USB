@@ -1,13 +1,13 @@
 
 ---
 
-Date: 03-Jul-2026 
+Date: 13-Jul-2026 
 Indexes: [[RAM-USB]]
 
 ---
 
-**Version:** 1.0  
-**Status:** Frozen: starting point for design 
+**Version:** 1.1  
+**Status:** Amended: closed gaps found during diagram design (DV-F-20 added, NM-F-04 clarified) 
 **Author:** Francesco Verrengia
 
 > [!NOTE] The level of detail in this document increases with each iteration, following the spiral model of requirements engineering.
@@ -200,6 +200,7 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |DV-F-17|Metrics must never contain users' personal data, only aggregated statistics||
 |DV-F-18|A master key backup procedure should exist||
 |DV-F-19|A master key rotation procedure should exist||
+|DV-F-20|On validation failure it must:<br>- respond with HTTP 400 (Bad Request) without specifying which problem was encountered,<br>- log the issue found without identifying the user,<br>- not forward the request to any other internal service.|Same pattern as EH-F-06/SS-F-03, added for Database-Vault|
 
 ---
 
@@ -249,7 +250,7 @@ Storage-Service directory structure:
 |NM-F-01|Must ensure that only Entry-Hub, Database-Vault, Network-Manager, and Certificate-Authority can contact Security-Switch||
 |NM-F-02|Must ensure that only Security-Switch, Storage-Service, and Certificate-Authority can contact Database-Vault||
 |NM-F-03|Must ensure that only Security-Switch and Certificate-Authority can contact Network-Manager||
-|NM-F-04|Must ensure that all internal components of the network, except Users, can contact the Certificate-Authority over the mesh network||
+|NM-F-04|Must ensure that all internal components of the network, except Users, can contact, and be contacted by, the Certificate-Authority over the mesh network||
 |NM-F-05|Must ensure that **only authenticated users** can see and contact Storage-Service||
 |NM-F-06|Must ensure that **registered but not authenticated Users** can see and contact only Entry-Hub||
 |NM-F-07|Must ensure that **registered and authenticated Users** can see and contact only Entry-Hub and Storage-Service||
@@ -444,8 +445,8 @@ Requirements/checks knowingly deferred to a later iteration, which **do not** bl
 
 |**User requirements**|**Linked system requirements**|
 |---|---|
-|RU-01|CL-F-01, CL-F-02, <br>EH-F-02, EH-F-04, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, <br>DV-F-01, DV-F-02, DV-F-03, DV-F-04, DV-F-05, DV-F-06, DV-F-07, <br>DV-F-08, DV-F-09, DV-F-10, DV-F-11, DV-F-12, <br>ST-F-06, ST-F-08, ST-F-10, <br>NM-F-08, NM-F-13|
-|RU-02|CL-F-03, <br>EH-F-03, EH-F-05, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, <br>DV-F-01, DV-F-02, DV-F-13, DV-F-14, DV-F-15, <br>NM-F-09, NM-F-13|
+|RU-01|CL-F-01, CL-F-02, <br>EH-F-02, EH-F-04, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, <br>DV-F-01, DV-F-02, DV-F-03, DV-F-04, DV-F-05, DV-F-06, DV-F-07, <br>DV-F-08, DV-F-09, DV-F-10, DV-F-11, DV-F-12, DV-F-20, <br>ST-F-06, ST-F-08, ST-F-10, <br>NM-F-08, NM-F-13|
+|RU-02|CL-F-03, <br>EH-F-03, EH-F-05, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, <br>DV-F-01, DV-F-02, DV-F-13, DV-F-14, DV-F-15, DV-F-20, <br>NM-F-09, NM-F-13|
 |RU-03|CL-F-04, CL-F-05, CL-F-06, <br>ST-F-01, ST-F-02, ST-F-03, ST-F-05, ST-F-07, ST-F-11, <br>NM-F-05, NM-F-09, NM-F-15,|
 |RU-04|CL-F-03, <br>NM-F-05, NM-F-06, NM-F-07, NM-F-09, NM-F-10, NM-F-11, <br>SS-F-05|
 |RU-05|ST-F-02, <br>RNF-SEC-01, <br>RD-01|
