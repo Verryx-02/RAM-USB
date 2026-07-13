@@ -1,0 +1,74 @@
+@startuml
+!include ../_style.puml
+
+title Trust Zones: Mesh Network Reachability
+
+skinparam nodesep 30
+skinparam ranksep 50
+skinparam ArrowFontSize 11
+
+' userLimited: desaturated ice-blue/grey — unauthenticated, restricted reach.
+skinparam node<<userLimited>> {
+  BackgroundColor #C9D6DE/#A8BAC7
+  BorderColor #5C6E7A
+  FontColor #14202B
+}
+' userFull: same ice-blue family as <<actor>>, but deeper/more saturated —
+' authenticated, full reach.
+skinparam node<<userFull>> {
+  BackgroundColor #9CC3E0/#6FA0C9
+  BorderColor #2C5C8F
+  FontColor #0A1B2E
+}
+' <<service>> intentionally NOT redefined here: inherited as-is from
+' _style.puml (navy blue family). Do not add a local block for it — see
+' _style.puml comment on skinparam merging per-selector, not per-block.
+
+' privateCA: same teal family/values as 08-pki-hierarchy.puml's <<privateCA>>
+' (component selector there, node selector here — PlantUML skinparam
+' selectors are scoped per element type, so the block must be repeated).
+skinparam node<<privateCA>> {
+  BackgroundColor #A9CDD6/#7FB0BC
+  BorderColor #3D6570
+  FontColor #0A1B22
+}
+
+package "Unauthenticated User Zone" {
+  node "**User**\nregistered,\nnot logged in" as UnauthUser <<userLimited>>
+}
+
+package "Authenticated User Zone" {
+  node "**User**\nregistered\n& logged in" as AuthUser <<userFull>>
+}
+
+UnauthUser -[hidden]right- AuthUser
+
+package "Internal Mesh" {
+  node "**Entry-Hub**" as EntryHub <<service>>
+  node "**Storage-Service**" as StorageService <<service>>
+  node "**Security-Switch**" as SecuritySwitch <<service>>
+  node "**Database-Vault**" as DatabaseVault <<service>>
+  node "**Network-Manager**" as NetworkManager <<service>>
+  node "**Certificate-Authority**" as CA <<privateCA>>
+
+  EntryHub -[hidden]right- StorageService
+  SecuritySwitch -[hidden]right- DatabaseVault
+  DatabaseVault -[hidden]right- NetworkManager
+  NetworkManager -[hidden]right- CA
+
+  note bottom of CA
+    Certificate-Authority can reach, and be reached by,
+    every internal component (NM-F-04).
+  end note
+}
+
+UnauthUser --> EntryHub
+AuthUser --> EntryHub
+AuthUser --> StorageService
+
+EntryHub --> SecuritySwitch
+StorageService --> DatabaseVault
+SecuritySwitch <--> DatabaseVault
+SecuritySwitch <--> NetworkManager
+
+@enduml
