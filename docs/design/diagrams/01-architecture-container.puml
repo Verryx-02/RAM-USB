@@ -1,6 +1,6 @@
 @startuml
-!include ../_style.puml
-!include ../_sprites/postgresql.puml
+!include _style.puml
+!include _sprites/postgresql.puml
 
 title Container Diagram
 
