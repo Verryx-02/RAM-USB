@@ -137,3 +137,21 @@ Example:
 ```
 feat(entryhub): add request validation for register endpoint
 ```
+
+---
+
+## 6. Diagrams
+
+PlantUML source lives flat in `docs/design/diagrams/`, named `NN-category-name.puml`. The numeric prefix is the intended reading order, not a folder grouping — a plain `ls` already sorts the diagrams the way they're meant to be read.
+
+`_style.puml` holds the shared skinparam theme. Every diagram includes it with `!include _style.puml`; it is not itself a diagram and is skipped by the render step.
+
+To regenerate the rendered SVGs after editing a `.puml` file, from the project root run:
+
+```
+make diagrams
+```
+
+This runs PlantUML in Docker (no local Java or Graphviz needed) and rewrites `docs/design/diagrams/rendered/NN-category-name.svg` to match its source. Commit the `.puml` and its regenerated `.svg` together.
+
+To add a new diagram: create `NN-category-name.puml` directly in `docs/design/diagrams/`, following the existing reading order, starting with `!include _style.puml`, then run `make diagrams` and commit both files together.
