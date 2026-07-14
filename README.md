@@ -9,9 +9,10 @@ This project is designed by [Francesco Verrengia](https://github.com/Verryx-02) 
 ---
 ## About
 
-RAM-USB is built as an in-depth case study on the secure design of distributed backup systems, where correctness and transparency of the design matter more than delivery speed or feature coverage.
+RAM-USB is built as an in-depth case study on the secure design of distributed backup systems.   
+For this thesis, design counts more than implementation: getting the architecture, the trust boundaries, and the data flows right is the actual goal.
 
-The full requirements are documented in [`docs/SRS.md`](https://github.com/Verryx-02/RAM-USB/blob/main/docs/Software_Requirements_Specification.md) (Software Requirements Specification), which is the single source of truth for what this system must do. This README gives a practical overview.
+The [Software Requirements Specification](https://github.com/Verryx-02/RAM-USB/blob/main/docs/Software_Requirements_Specification.md) is the single source of truth for what this system must do, and the [design diagrams](https://github.com/Verryx-02/RAM-USB/tree/main/docs/design/diagrams) show how every part fits together: use cases, architecture, data model, security, and operational flows, each rendered as an SVG you can open directly from the repo.
 
 ### Design principles
 
@@ -53,10 +54,6 @@ RAM-USB is an [n-tier client-server microservices architecture](https://en.wikip
 
 ---
 
-## Repository structure
-
----
-
 ## Getting started (development)
 
 > [!WARNING] The project is still in the design phase.
@@ -68,7 +65,7 @@ git clone https://github.com/Verryx-02/RAM-USB.git
 cd RAM-USB
 ```
 
-Local development will run the full stack via:
+(ONLY) Local development will run the full stack via:
 
 ```bash
 docker compose -f deployments/docker-compose.dev.yml up
