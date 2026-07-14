@@ -1,5 +1,5 @@
 @startuml
-!include ../_style.puml
+!include _style.puml
 
 title UC-01: User Registration
 

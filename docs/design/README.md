@@ -6,34 +6,31 @@ rendered `.svg` files are committed alongside them so anyone browsing the repo s
 
 ## Structure
 
-Diagrams are grouped into subfolders by kind, with rendered SVGs mirrored
-under `rendered/`:
+Diagrams are flat in `diagrams/`, numbered in the intended reading order
+with the category folded into each filename (`NN-category-name.puml`), so a
+plain directory listing sorts diagrams the way they're meant to be read.
+Rendered SVGs are mirrored under `rendered/` with the same flat layout:
 
 ```
 diagrams/
-├── _style.puml                    shared skinparam theme, included by every diagram
-├── use-cases/
-│   ├── 00-use-cases.puml
-│   ├── 03-sequence-uc01-registration.puml
-│   ├── 04-sequence-uc02-login.puml
-│   └── 05-sequence-uc03-backup.puml
-├── architecture/
-│   ├── 01-container.puml
-│   └── 02-deployment.puml
-├── data/
-│   ├── 06-er-database-vault.puml
-│   └── 07-filesystem-storage.puml
-├── security/
-│   ├── 08-pki-hierarchy.puml
-│   └── 09-trust-zones.puml
-├── operations/
-│   ├── 10-state-acl-grant.puml
-│   └── 11-metrics-flow.puml
-└── rendered/                      same subfolders, one .svg per .puml
+├── _style.puml                                shared skinparam theme, included by every diagram
+├── 00-usecases-overview.puml
+├── 01-architecture-container.puml
+├── 02-architecture-deployment.puml
+├── 03-usecases-sequence-uc01-registration.puml
+├── 04-usecases-sequence-uc02-login.puml
+├── 05-usecases-sequence-uc03-backup.puml
+├── 06-data-er-database-vault.puml
+├── 07-data-filesystem-storage.puml
+├── 08-security-pki-hierarchy.puml
+├── 09-security-trust-zones.puml
+├── 10-operations-state-acl-grant.puml
+├── 11-operations-metrics-flow.puml
+└── rendered/                                   same flat layout, one .svg per .puml
 ```
 
-Only the subfolders holding an existing diagram exist in the repo today;
-the others are created as their first diagram is added.
+Only diagrams that currently exist are listed above; the numeric prefix
+reflects a system-comprehension reading order, not folder-grouping.
 
 ## Reading the diagrams
 
