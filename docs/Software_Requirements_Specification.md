@@ -39,6 +39,13 @@ The goal of the project is not to compete with commercial solutions, but to serv
 - a graphical interface for the end user,
 - billing / commercial limits.
 
+#### Deliberate design choices
+
+Some choices below trade a theoretically stronger design for one that better serves the actual research interest behind this thesis:
+
+- **Email/password login.** A zero-knowledge authentication protocol (e.g. SRP) would avoid ever transmitting the plaintext password, even in transit. This project deliberately uses classic email/password login instead: exploring that authentication pattern, and how far its guarantees can still be pushed (salted+peppered Argon2id hashing, encrypted email storage, never persisting or logging plaintext), is itself the object of study.
+- **Filesystem-based backup over SFTP.** A block-level protocol (e.g. iSCSI) would avoid most of the complexity in ST-F-06..ST-F-11 (POSIX user creation, chroot isolation, `AuthorizedKeysCommand`), since the server would never need to reason about directories or user escaping at all. This project deliberately backs up to a filesystem instead, because the research interest is specifically in filesystem-level isolation and preventing directory escaping via chroot.
+
 ### 1.3 Definitions and acronyms
 
 | **Term**           | **Meaning**                                                                                                  |
@@ -307,7 +314,7 @@ Storage-Service directory structure:
 
 |**ID**|**Requirement**|**Verifiable via**|
 |---|---|---|
-|RNF-SEC-01|Zero-knowledge: no server-side component may access the plaintext email, password, or file contents||
+|RNF-SEC-01|Zero-knowledge: no server-side component ever accesses backup file contents in plaintext, since encryption happens client-side before transmission.<br>This does not extend to login credentials: email and password transit, encrypted (TLS/mTLS), through Entry-Hub, Security-Switch, and Database-Vault for validation and hashing, though they are never persisted or logged in plaintext (see DV-F-03, RD-01).||
 |RNF-SEC-02|Zero-trust: no service must implicitly trust data received from another, even if mTLS-authenticated||
 |RNF-SEC-03|Defense-in-depth: every layer independently re-validates input||
 |RNF-SEC-04|All inter-service communication must use mTLS, with no exceptions||
