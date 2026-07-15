@@ -145,6 +145,40 @@ func SaveUser(ctx context.Context, db Beginner, record UserRecord) error {
 	return nil
 }
 
+// deleteUserSQL removes exactly one row by its email_hash primary key. Used
+// by DeleteUser as the compensating rollback DV-F-10 requires when POSIX-user
+// creation fails after SaveUser already committed the record.
+const deleteUserSQL = `DELETE FROM users WHERE email_hash = $1`
+
+// DeleteUser removes the user record identified by emailHash inside a single
+// atomic transaction, committing or rolling back exactly like SaveUser. It
+// implements DV-F-10's compensating rollback: registration.Register calls
+// this when Storage-Service reports POSIX-user creation failed, so a
+// database row is never left behind for a user with no POSIX account.
+//
+// DeleteUser does not check whether a row existed to delete (a DELETE
+// matching zero rows is not, by itself, an error here) — the only failure
+// modes surfaced are transaction-level (begin/exec/commit failing).
+func DeleteUser(ctx context.Context, db Beginner, emailHash string) error {
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("storage: begin transaction: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, deleteUserSQL, emailHash); err != nil {
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			return fmt.Errorf("storage: delete user: %w (rollback also failed: %v)", err, rbErr)
+		}
+		return fmt.Errorf("storage: delete user: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("storage: commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 // classifyInsertError wraps a raw insert error, distinguishing a
 // unique-constraint violation (ErrDuplicateUser) from any other failure, so
 // a future DV-F-12 handler can tell them apart via errors.Is without this

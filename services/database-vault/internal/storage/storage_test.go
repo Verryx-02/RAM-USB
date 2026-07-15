@@ -248,3 +248,94 @@ func TestSaveUser_CommitError(t *testing.T) {
 		t.Fatal("Rollback was called after a Commit error; Commit failing does not mean the insert failed")
 	}
 }
+
+// Requirement: DV-F-10
+func TestDeleteUser_CommitsOnSuccess(t *testing.T) {
+	tx := &fakeTx{}
+	db := &fakeBeginner{tx: tx}
+
+	err := DeleteUser(context.Background(), db, testRecord().EmailHash)
+
+	if err != nil {
+		t.Fatalf("DeleteUser() error = %v, want nil", err)
+	}
+	if !tx.execCalled {
+		t.Fatal("Exec was not called")
+	}
+	if tx.execSQL != deleteUserSQL {
+		t.Fatalf("Exec SQL = %q, want %q", tx.execSQL, deleteUserSQL)
+	}
+	if len(tx.execArgs) != 1 || tx.execArgs[0] != testRecord().EmailHash {
+		t.Fatalf("Exec args = %v, want [%q]", tx.execArgs, testRecord().EmailHash)
+	}
+	if !tx.commitCalled {
+		t.Fatal("Commit was not called")
+	}
+	if tx.rollbackCalled {
+		t.Fatal("Rollback was called on the success path")
+	}
+}
+
+// Requirement: DV-F-10
+func TestDeleteUser_BeginError(t *testing.T) {
+	wantErr := errors.New("connection refused")
+	db := &fakeBeginner{beginErr: wantErr}
+
+	err := DeleteUser(context.Background(), db, testRecord().EmailHash)
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("DeleteUser() error = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+// Requirement: DV-F-10
+func TestDeleteUser_RollsBackOnExecError(t *testing.T) {
+	execErr := errors.New("connection reset")
+	tx := &fakeTx{execErr: execErr}
+	db := &fakeBeginner{tx: tx}
+
+	err := DeleteUser(context.Background(), db, testRecord().EmailHash)
+
+	if !errors.Is(err, execErr) {
+		t.Fatalf("DeleteUser() error = %v, want wrapping %v", err, execErr)
+	}
+	if !tx.rollbackCalled {
+		t.Fatal("Rollback was not called after an Exec error")
+	}
+	if tx.commitCalled {
+		t.Fatal("Commit was called after an Exec error")
+	}
+}
+
+// Requirement: DV-F-10
+func TestDeleteUser_RollbackErrorIsSurfaced(t *testing.T) {
+	execErr := errors.New("delete failed")
+	rollbackErr := errors.New("rollback failed")
+	tx := &fakeTx{execErr: execErr, rollErr: rollbackErr}
+	db := &fakeBeginner{tx: tx}
+
+	err := DeleteUser(context.Background(), db, testRecord().EmailHash)
+
+	if err == nil {
+		t.Fatal("DeleteUser() error = nil, want non-nil")
+	}
+	if !errors.Is(err, execErr) {
+		t.Fatalf("DeleteUser() error = %v, want wrapping the original exec error %v", err, execErr)
+	}
+}
+
+// Requirement: DV-F-10
+func TestDeleteUser_CommitError(t *testing.T) {
+	commitErr := errors.New("commit failed")
+	tx := &fakeTx{commitErr: commitErr}
+	db := &fakeBeginner{tx: tx}
+
+	err := DeleteUser(context.Background(), db, testRecord().EmailHash)
+
+	if !errors.Is(err, commitErr) {
+		t.Fatalf("DeleteUser() error = %v, want wrapping %v", err, commitErr)
+	}
+	if tx.rollbackCalled {
+		t.Fatal("Rollback was called after a Commit error")
+	}
+}
