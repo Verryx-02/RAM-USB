@@ -7,50 +7,12 @@ This document only covers _how_ that gets built and verified.
 
 ## 1. Development methodology
 
-### 1.1 Pre-testing (TDD)
+RAM-USB follows a V-model: every level of specification has a corresponding level of testing, and a test is written before the implementation it verifies. Test levels, technique per level, integration strategy, and entry/exit criteria are in [`docs/Test_Plan.md`](docs/Test_Plan.md).
 
-Before implementing anything, a test is written that describes the expected behavior for a specific requirement.
-
-- If a test cannot be written for a requirement, the requirement is not clear enough and it must be clarified or reworded in the SRS before implementation starts.
-- Each `*-F-*` ID should have a corresponding test conceived before its implementation.
-
-### 1.2 Implementation and testing (V-model)
-
-Implementation follows the V-model: every level of specification has a corresponding level of testing, executed in parallel with implementation.
-
-| **Specification level**                                    | **Corresponding testing level**            |
-| ---------------------------------------------------------- | ------------------------------------------ |
-| System requirement for a single component (e.g. `EH-F-04`) | Component test (unit test)                 |
-| Use case spanning multiple components (`UC-01`..`UC-05`)   | Integration test                           |
-| Non-functional requirement (`RNF-*`)                       | System test                                |
-| User requirement (`RU-*`)                                  | Acceptance checklist against the use cases |
-
-Rules that apply throughout:
+Two rules shape the git workflow directly:
 
 - No new feature is started until the current one is thoroughly tested.
-- Every relevant change triggers a re-run of the affected test suite (regression testing).
-
-### 1.3 Integration strategy: bottom-up, driver and stub
-
-```
-DRIVER (simulates the caller) -> COMPONENT UNDER TEST -> STUB (simulates the callee)
-```
-
-Integration starts from the innermost component (Database-Vault) and works outward.
-
-### 1.4 System tests
-
-Once the full chain is integrated:
-
-- **Functional**: complete end-to-end scenarios (e.g. registration from client HTTP request down to the Database-Vault row and the resulting TimescaleDB metric).
-- **Non-functional**: p50/p95/p99 response times, verification that no internal service is reachable from outside the mesh, isolation checks (a component going down should not take down others where isolation is required).
-
-### 1.5 Exit criteria
-
-A test level is considered complete for a given component/feature when:
-
-- Decision coverage is reached on validation functions.
-- No known failing test on the already-integrated chain.
+- If a test cannot be written for a requirement, the requirement is not clear enough: it gets reworded in the SRS before implementation starts.
 
 ---
 
