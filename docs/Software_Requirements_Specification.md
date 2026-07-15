@@ -195,13 +195,13 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |DV-F-04|Must encrypt the user's email: derive a per-record encryption key from the master key with HKDF-SHA256 and a random 16-byte salt, then encrypt the email with AES-256-GCM using that derived key and a random 12-byte nonce.||
 |DV-F-05|The master key should come from a configurable source with length validation (32 bytes)||
 |DV-F-06|Must hold a pepper as an environment variable||
-|DV-F-07|Must compute the password hash with Argon2id: memory 47104 KiB (46 MiB), 2 iterations, parallelism 1, 32-byte output, using a random per-record salt and the pepper (DV-F-06).||
+|DV-F-07|Must compute the password hash with Argon2id: memory 47104 KiB (46 MiB), 2 iterations, parallelism 1, 32-byte output, using a random per-record salt and the pepper (DV-F-06).|Stored as a single self-describing string (algorithm, cost parameters, salt, and digest together); no separate salt field is persisted.|
 |DV-F-08|Must save the user record in an atomic transaction||
 |DV-F-09|Must ask Storage-Service to create the unique POSIX user on the server with username `user<xxxxxx>`, where `xxxxxx` are 6 random characters from a base-36 alphabet, and wait for its response|"user<xxxxxx>" all lowercase|
 |DV-F-10|If POSIX user creation fails, must delete the user from the database and inform Security-Switch that user registration failed||
 |DV-F-11|After creating the user record and the POSIX user, must inform Security-Switch that the user was registered||
 |DV-F-12|Must reject (HTTP 409) registrations with an email or SSH key that already exists, without giving details about the error||
-|DV-F-13|During login, must retrieve the salt associated with the email via the SHA-256 hash of the email (DV-F-03)||
+|DV-F-13|During login, must retrieve the salt associated with the email via the SHA-256 hash of the email (DV-F-03)|The salt is retrieved by decoding the stored password hash (DV-F-07), not a separate stored field.|
 |DV-F-14|Must recompute Argon2id on the received password using the retrieved salt and the pepper, and compare the result with the stored hash||
 |DV-F-15|Must respond with the same HTTP 401 status code for both a nonexistent email and an incorrect password, without distinguishing between the two cases either in the response or in the log||
 |DV-F-16|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Database-Vault`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.||
