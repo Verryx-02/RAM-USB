@@ -1,11 +1,15 @@
-// Package mtls provides the mutual-TLS server configuration shared by every
-// RAM-USB service that must accept connections only from a specific caller
-// (PKI-F-02: verify the peer certificate's organization field, not merely
-// its validity). Each component-level requirement that repeats this pattern
-// - DV-F-01 (Database-Vault accepts only "SecuritySwitch"), SS-F-01
+// Package mtls provides the mutual-TLS configuration shared by every
+// RAM-USB service that must accept connections only from a specific caller,
+// or make outbound connections only to a specific callee (PKI-F-02: verify
+// the peer certificate's organization field, not merely its validity).
+// Each component-level requirement that repeats the accept-side pattern -
+// DV-F-01 (Database-Vault accepts only "SecuritySwitch"), SS-F-01
 // (Security-Switch accepts only "EntryHub"), ST-F-01 (Storage-Service
-// accepts only "Database-Vault") - configures this same logic with its own
-// allowed organization instead of re-implementing the check.
+// accepts only "Database-Vault") - configures ServerConfig with its own
+// allowed organization instead of re-implementing the check. The symmetric
+// outbound-call pattern - DV-F-09 (Database-Vault calls Storage-Service,
+// verifying organization="StorageService") - configures ClientConfig the
+// same way.
 package mtls
 
 import (
@@ -24,6 +28,22 @@ func ServerConfig(serverCert tls.Certificate, clientCAs *x509.CertPool, allowedO
 		Certificates:     []tls.Certificate{serverCert},
 		ClientAuth:       tls.RequireAndVerifyClientCert,
 		ClientCAs:        clientCAs,
+		MinVersion:       tls.VersionTLS13,
+		VerifyConnection: verifyOrganization(allowedOrganization),
+	}
+}
+
+// ClientConfig returns a *tls.Config for a client making an outbound mTLS
+// call: it presents clientCert to the server and, symmetrically to
+// ServerConfig, rejects any server whose certificate Subject does not carry
+// allowedOrganization (e.g. Database-Vault calling Storage-Service for
+// DV-F-09, verifying the peer's certificate comes from
+// organization="StorageService"). rootCAs is the pool trusted to have
+// issued the server's certificate.
+func ClientConfig(clientCert tls.Certificate, rootCAs *x509.CertPool, allowedOrganization string) *tls.Config {
+	return &tls.Config{
+		Certificates:     []tls.Certificate{clientCert},
+		RootCAs:          rootCAs,
 		MinVersion:       tls.VersionTLS13,
 		VerifyConnection: verifyOrganization(allowedOrganization),
 	}
