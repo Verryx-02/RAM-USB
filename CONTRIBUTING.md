@@ -44,7 +44,7 @@ git commit -m "<type>(<area>): <description> (<requirement IDs>)"
 - **`(<requirement IDs>)`**: the SRS requirement ID(s) covered by this commit.
 
 When a feature is complete and tested, it is merged into `main`.  
-**The merge commit must include every requirement covered by the branch**.
+**The merge commit must include every requirement covered by the branch**. A feature-branch commit may cite a requirement it's building toward (e.g. a shared library a requirement depends on, before every caller exists yet); the merge commit only cites a requirement once it's fully complete.
 
 ---
 
