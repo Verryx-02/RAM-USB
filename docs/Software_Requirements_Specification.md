@@ -195,7 +195,7 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |DV-F-04|Must encrypt the user's email: derive a per-record encryption key from the master key with HKDF-SHA256 and a random 16-byte salt, then encrypt the email with AES-256-GCM using that derived key and a random 12-byte nonce.||
 |DV-F-05|The master key should come from a configurable source with length validation (32 bytes)||
 |DV-F-06|Must hold a pepper as an environment variable||
-|DV-F-07|Must [[compute the password hash]]||
+|DV-F-07|Must compute the password hash with Argon2id: memory 47104 KiB (46 MiB), 2 iterations, parallelism 1, 32-byte output, using a random per-record salt and the pepper (DV-F-06).||
 |DV-F-08|Must save the user record in an atomic transaction||
 |DV-F-09|Must ask Storage-Service to create the unique POSIX user on the server with username `user<xxxxxx>`, where `xxxxxx` are 6 random characters from a base-36 alphabet, and wait for its response|"user<xxxxxx>" all lowercase|
 |DV-F-10|If POSIX user creation fails, must delete the user from the database and inform Security-Switch that user registration failed||
