@@ -192,7 +192,7 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |DV-F-01|Must accept only mTLS connections from clients with:<br>- `organization="SecuritySwitch"`,<br>- a valid certificate,<br>- access to the private mesh network.||
 |DV-F-02|Must re-validate the received input, independently of the validation already performed by Security-Switch.||
 |DV-F-03|Must compute the SHA-256 hash of the email for indexing and as primary key, never logging the plaintext email.||
-|DV-F-04|Must [[encrypt the user's email]].||
+|DV-F-04|Must encrypt the user's email: derive a per-record encryption key from the master key with HKDF-SHA256 and a random 16-byte salt, then encrypt the email with AES-256-GCM using that derived key and a random 12-byte nonce.||
 |DV-F-05|The master key should come from a configurable source with length validation (32 bytes)||
 |DV-F-06|Must hold a pepper as an environment variable||
 |DV-F-07|Must [[compute the password hash]]||
