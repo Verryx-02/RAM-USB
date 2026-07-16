@@ -1,0 +1,69 @@
+# Minimal dev-only Headscale configuration for Network-Manager's mesh
+# backend (NM-F-08, NM-F-09), mounted read-only into the
+# network-manager-headscale service defined in
+# deployments/docker-compose.dev.yml.
+#
+# Only what NM-F-08/NM-F-09 actually exercise this session is filled in
+# beyond Headscale's own defaults (github.com/juanfont/headscale
+# v0.29.2's config-example.yaml, confirmed via go doc/source read this
+# session): SQLite persistence (Headscale's own recommended choice -
+# Postgres is explicitly "highly discouraged" upstream, a completely
+# separate concern from this project's own Postgres use for
+# Database-Vault's user records), policy.mode: database (NOT policy.mode:
+# file - NM-F-09/NM-F-10 need to change ACL policy at runtime without a
+# process reload/SIGHUP, and only "database" mode supports that), and TLS
+# via a dev-only self-signed certificate (see
+# third-party/network-manager/headscale/dev-tls/'s own doc comment) so
+# that services/network-manager/internal/headscale.Dial's bearer-token
+# gRPC auth (which always requires transport security, mirroring
+# Headscale's own CLI) has a real TLS listener to connect to.
+#
+# NM-F-15 (MagicDNS base domain), NM-F-14 (coordination endpoint reachable
+# only from the private network), and NM-F-12 (admin interface exposure)
+# are explicitly out of this session's scope - base_domain below is a
+# placeholder value, not a considered choice, and this compose file
+# exposes the gRPC port to the host for local dev/test convenience (the
+# same convention already established for database-vault-postgres's
+# 5432:5432 mapping), not a statement about NM-F-14's real production
+# network boundary.
+
+server_url: https://network-manager-headscale:8080
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+grpc_listen_addr: 0.0.0.0:50443
+grpc_allow_insecure: false
+
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+
+derp:
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+
+tls_cert_path: /etc/headscale-tls/cert.dev-only.pem
+tls_key_path: /etc/headscale-tls/key.dev-only.pem
+
+log:
+  level: info
+  format: text
+
+policy:
+  mode: database
+
+dns:
+  magic_dns: true
+  base_domain: ramusb-mesh.internal
+  override_local_dns: false
+  nameservers:
+    global:
+      - 1.1.1.1
