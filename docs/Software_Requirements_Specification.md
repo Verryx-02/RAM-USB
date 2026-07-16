@@ -100,6 +100,8 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 - **Production target:** Docker on macOS, Docker on Proxmox VE
 - **Network:** Headscale mesh VPN (self-hosted Tailscale)
 
+> [!NOTE] Docker and Proxmox are not alternatives, they serve different purposes: Docker provides ease of deployment and per-service isolation, identical in development and production. Proxmox (KVM for Storage-Service/Database-Vault/Network-Manager, LXC for the rest, per RNF-ORG-04) provides a stronger isolation boundary underneath Docker and, if a hyperconverged cluster is built later, high availability (live migration, failover between physical nodes) that Docker alone cannot provide. Every service's Docker container runs inside its assigned Proxmox VM/container in production.
+
 ### 2.5 Design and implementation constraints
 
 - **Language:** Go
