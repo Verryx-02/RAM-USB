@@ -93,3 +93,29 @@ func NewInternal(internal error) *AppError {
 		Internal: internal,
 	}
 }
+
+// NewForbidden builds an AppError for HTTP 403: a downstream component
+// explicitly refused an otherwise-well-formed, otherwise-authenticated
+// request (SS-F-06), e.g. Network-Manager declining to grant Storage-Service
+// access. The public message deliberately does not say which component or
+// policy refused it.
+func NewForbidden(internal error) *AppError {
+	return &AppError{
+		Status:   http.StatusForbidden,
+		Public:   "the request was refused",
+		Internal: internal,
+	}
+}
+
+// NewBadGateway builds an AppError for HTTP 502: an outbound mTLS call to a
+// downstream internal service did not complete - connection refused,
+// TLS/organization rejection, or a response this service does not recognize
+// - as distinct from that service completing the call and reporting its own
+// failure. The public message deliberately gives no operational detail.
+func NewBadGateway(internal error) *AppError {
+	return &AppError{
+		Status:   http.StatusBadGateway,
+		Public:   "the request could not be completed",
+		Internal: internal,
+	}
+}
