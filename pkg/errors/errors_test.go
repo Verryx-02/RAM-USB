@@ -8,6 +8,7 @@ import (
 
 // Requirement: DV-F-20
 // Requirement: SS-F-06
+// Requirement: EH-F-09
 func TestAppError_ConstructorsSetStatusAndSafePublicMessage(t *testing.T) {
 	internal := errors.New("internal detail: column email_hash violates unique constraint")
 
@@ -23,6 +24,7 @@ func TestAppError_ConstructorsSetStatusAndSafePublicMessage(t *testing.T) {
 		{"forbidden", NewForbidden, http.StatusForbidden},
 		{"bad gateway", NewBadGateway, http.StatusBadGateway},
 		{"gateway timeout", NewGatewayTimeout, http.StatusGatewayTimeout},
+		{"service unavailable", NewServiceUnavailable, http.StatusServiceUnavailable},
 	}
 
 	for _, tc := range cases {
