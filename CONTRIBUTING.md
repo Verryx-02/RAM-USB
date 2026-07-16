@@ -7,50 +7,12 @@ This document only covers _how_ that gets built and verified.
 
 ## 1. Development methodology
 
-### 1.1 Pre-testing (TDD)
+RAM-USB follows a V-model: every level of specification has a corresponding level of testing, and a test is written before the implementation it verifies. Test levels, technique per level, integration strategy, and entry/exit criteria are in [`docs/Test_Plan.md`](docs/Test_Plan.md).
 
-Before implementing anything, a test is written that describes the expected behavior for a specific requirement.
-
-- If a test cannot be written for a requirement, the requirement is not clear enough and it must be clarified or reworded in the SRS before implementation starts.
-- Each `*-F-*` ID should have a corresponding test conceived before its implementation.
-
-### 1.2 Implementation and testing (V-model)
-
-Implementation follows the V-model: every level of specification has a corresponding level of testing, executed in parallel with implementation.
-
-| **Specification level**                                    | **Corresponding testing level**            |
-| ---------------------------------------------------------- | ------------------------------------------ |
-| System requirement for a single component (e.g. `EH-F-04`) | Component test (unit test)                 |
-| Use case spanning multiple components (`UC-01`..`UC-05`)   | Integration test                           |
-| Non-functional requirement (`RNF-*`)                       | System test                                |
-| User requirement (`RU-*`)                                  | Acceptance checklist against the use cases |
-
-Rules that apply throughout:
+Two rules shape the git workflow directly:
 
 - No new feature is started until the current one is thoroughly tested.
-- Every relevant change triggers a re-run of the affected test suite (regression testing).
-
-### 1.3 Integration strategy: bottom-up, driver and stub
-
-```
-DRIVER (simulates the caller) -> COMPONENT UNDER TEST -> STUB (simulates the callee)
-```
-
-Integration starts from the innermost component (Database-Vault) and works outward.
-
-### 1.4 System tests
-
-Once the full chain is integrated:
-
-- **Functional**: complete end-to-end scenarios (e.g. registration from client HTTP request down to the Database-Vault row and the resulting TimescaleDB metric).
-- **Non-functional**: p50/p95/p99 response times, verification that no internal service is reachable from outside the mesh, isolation checks (a component going down should not take down others where isolation is required).
-
-### 1.5 Exit criteria
-
-A test level is considered complete for a given component/feature when:
-
-- Decision coverage is reached on validation functions.
-- No known failing test on the already-integrated chain.
+- If a test cannot be written for a requirement, the requirement is not clear enough: it gets reworded in the SRS before implementation starts.
 
 ---
 
@@ -82,7 +44,7 @@ git commit -m "<type>(<area>): <description> (<requirement IDs>)"
 - **`(<requirement IDs>)`**: the SRS requirement ID(s) covered by this commit.
 
 When a feature is complete and tested, it is merged into `main`.  
-**The merge commit must include every requirement covered by the branch**.
+**The merge commit must include every requirement covered by the branch**. A feature-branch commit may cite a requirement it's building toward (e.g. a shared library a requirement depends on, before every caller exists yet); the merge commit only cites a requirement once it's fully complete.
 
 ---
 
@@ -155,3 +117,23 @@ make diagrams
 This runs PlantUML in Docker (no local Java or Graphviz needed) and rewrites `docs/design/diagrams/rendered/NN-category-name.svg` to match its source. Commit the `.puml` and its regenerated `.svg` together.
 
 To add a new diagram: create `NN-category-name.puml` directly in `docs/design/diagrams/`, following the existing reading order, starting with `!include _style.puml`, then run `make diagrams` and commit both files together.
+
+---
+
+## 7. Code style
+
+Tooling and package layout are baseline. Error handling and logging are structural decisions, each with a specific reason behind it.
+
+**Formatting and linting:** every file passes `gofmt`/`goimports` and `go vet`. `golangci-lint` runs with `errcheck`, `govet`, `staticcheck`, `unused`, `gosimple`, `ineffassign`, `gosec`. `gosec` specifically: this project's non-functional requirements are security-first, and the linter enforces that in code.
+
+**Package layout:**
+
+- `cmd/<service>/main.go`: wiring, config loading, dependency construction, server start.
+- `internal/<service>/`: everything private to that service.
+- `pkg/{mtls,errors,logging,validation}`: code genuinely shared across services. Input validation belongs here: every layer re-validates independently at request time (`RNF-SEC-03`), but the rules for what counts as valid live in one place, called by each service's own boundary, not reimplemented per service.
+
+**Error handling:** errors reaching an HTTP boundary use a structured error type in `pkg/errors`. The type carries a fixed, safe public message per HTTP status code and the full internal error, both set inside the constructor. Why: `EH-F-09`, `SS-F-06`, `DV-F-20`, and `ST-F-*` require a sanitized response to the client and a detailed one in the log; a status-code-bound constructor guarantees the public message is always the safe one.
+
+**Logging:** structured logging via `log/slog` (stdlib). Any field that could hold a login credential (email, password) is typed as a dedicated redacting type in `pkg/logging`, implementing `slog.LogValuer`, printing as `REDACTED` wherever it gets logged. Why: `DV-F-03` and `RD-01` require credentials stay out of logs, and a type-level guarantee holds regardless of who writes a new log line.
+
+**Testing:** one test file per implementation file. Table-driven tests over the stdlib `testing` package. The bottom-up driver/stub strategy (`docs/Test_Plan.md` §3) uses hand-written fakes implementing the relevant interface: a fake's behavior is a few lines of Go, readable start to finish. Every test function carries a `// Requirement: <ID>` doc comment directly above it.

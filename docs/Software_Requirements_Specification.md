@@ -158,8 +158,8 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |EH-F-01|Must expose a public HTTPS health-check endpoint:<br>`POST /api/health`<br>with certificates signed by the **public** Let's Encrypt CA|The public CA is used so that Users can never reach the internal CA that certifies mTLS connections between the system's internal components.|
 |EH-F-02|Must expose a public HTTPS endpoint for user registration:<br>`POST /api/register`,<br>with certificates signed by the **public** Let's Encrypt CA||
 |EH-F-03|Must expose an HTTPS endpoint<br>`POST /api/login`<br>for the authentication of registered users, reachable only by them, <br>with certificates signed by the **public** Let's Encrypt CA||
-|EH-F-04|`/api/register` must accept JSON and ensure it is [[valid input]]||
-|EH-F-05|`/api/login` must accept JSON and ensure it is [[valid input]]|Same as register, but without the SSH key|
+|EH-F-04|`/api/register` must accept JSON and validate: presence of `email`, `password`, and SSH public key fields; payload size within a defined limit; no unexpected additional fields; email format (RFC 5322); password length between 8 and 128 characters; password complexity (at least 3 character categories among lowercase, uppercase, digit, symbol); the SSH public key is well-formed.||
+|EH-F-05|`/api/login` must accept JSON and validate: presence of `email` and `password` fields; payload size within a defined limit; no unexpected additional fields; email format (RFC 5322); password length between 8 and 128 characters; password complexity (at least 3 character categories).|Same as register, but without the SSH key|
 |EH-F-06|On validation failure it must:<br>- respond with HTTP 400 (Bad Request) without specifying which problem was encountered,<br>- log the issue found without identifying the user,<br>- not forward the request to any other internal service.||
 |EH-F-07|On successful validation it must:<br>- log the validation outcome without identifying the user,<br>- forward the request to Security-Switch via mTLS,<br>- verify that the certificate **comes from a Security-Switch**,<br>- verify that the X.509 certificate is valid.||
 |EH-F-08|Must forward Security-Switch's response back to the user||
@@ -192,16 +192,16 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |DV-F-01|Must accept only mTLS connections from clients with:<br>- `organization="SecuritySwitch"`,<br>- a valid certificate,<br>- access to the private mesh network.||
 |DV-F-02|Must re-validate the received input, independently of the validation already performed by Security-Switch.||
 |DV-F-03|Must compute the SHA-256 hash of the email for indexing and as primary key, never logging the plaintext email.||
-|DV-F-04|Must [[encrypt the user's email]].||
+|DV-F-04|Must encrypt the user's email: derive a per-record encryption key from the master key with HKDF-SHA256 and a random 16-byte salt, then encrypt the email with AES-256-GCM using that derived key and a random 12-byte nonce.||
 |DV-F-05|The master key should come from a configurable source with length validation (32 bytes)||
 |DV-F-06|Must hold a pepper as an environment variable||
-|DV-F-07|Must [[compute the password hash]]||
+|DV-F-07|Must compute the password hash with Argon2id: memory 47104 KiB (46 MiB), 2 iterations, parallelism 1, 32-byte output, using a random per-record salt and the pepper (DV-F-06).|Stored as a single self-describing string (algorithm, cost parameters, salt, and digest together); no separate salt field is persisted.|
 |DV-F-08|Must save the user record in an atomic transaction||
 |DV-F-09|Must ask Storage-Service to create the unique POSIX user on the server with username `user<xxxxxx>`, where `xxxxxx` are 6 random characters from a base-36 alphabet, and wait for its response|"user<xxxxxx>" all lowercase|
 |DV-F-10|If POSIX user creation fails, must delete the user from the database and inform Security-Switch that user registration failed||
 |DV-F-11|After creating the user record and the POSIX user, must inform Security-Switch that the user was registered||
 |DV-F-12|Must reject (HTTP 409) registrations with an email or SSH key that already exists, without giving details about the error||
-|DV-F-13|During login, must retrieve the salt associated with the email via the SHA-256 hash of the email (DV-F-03)||
+|DV-F-13|During login, must retrieve the salt associated with the email via the SHA-256 hash of the email (DV-F-03)|The salt is retrieved by decoding the stored password hash (DV-F-07), not a separate stored field.|
 |DV-F-14|Must recompute Argon2id on the received password using the retrieved salt and the pepper, and compare the result with the stored hash||
 |DV-F-15|Must respond with the same HTTP 401 status code for both a nonexistent email and an incorrect password, without distinguishing between the two cases either in the response or in the log||
 |DV-F-16|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Database-Vault`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.||
@@ -216,7 +216,7 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 
 |**ID**|**Requirement**|**Notes**|
 |---|---|---|
-|ST-F-01|Must accept mTLS connections only from clients with:<br>- `organization="Database-Vault"`,<br>- a valid certificate,<br>- access to the private mesh network.|Accepts both mTLS (Database-Vault) and SFTP (Users)|
+|ST-F-01|Must accept mTLS connections only from clients with:<br>- `organization="DatabaseVault"`,<br>- a valid certificate,<br>- access to the private mesh network.|Accepts both mTLS (Database-Vault) and SFTP (Users)|
 |ST-F-02|Must provide upload/download of client-side-encrypted files, never processing plaintext content|Files are encrypted client-side|
 |ST-F-03|Access must occur exclusively via SFTP authenticated with the user's registered SSH public key||
 |ST-F-04|Must explicitly forbid any other form of SSH connection besides SFTP||

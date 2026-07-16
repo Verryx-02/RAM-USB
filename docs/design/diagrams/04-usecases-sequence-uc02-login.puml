@@ -19,7 +19,7 @@ note over EH, DV
   issue logged without identifying the user (EH-F-06, SS-F-03, DV-F-20)
 end note
 
-DV -> DV : retrieve salt via SHA-256(email)\nrecompute Argon2id(password, salt, pepper)\ncompare with stored hash
+DV -> DV : lookup record via SHA-256(email), decode salt from stored password_hash\nrecompute Argon2id(password, salt, pepper)\ncompare with stored hash
 
 alt nonexistent email or wrong password
   DV --> SS : 401 Unauthorized

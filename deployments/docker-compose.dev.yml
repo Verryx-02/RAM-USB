@@ -1,0 +1,28 @@
+# Development Docker Compose stack (docs/Test_Plan.md §4: integration and
+# system tests run against this stack).
+#
+# Only the Database-Vault Postgres datastore is defined so far, added
+# alongside DV-F-08 (atomic user-record persistence) so that requirement's
+# real-database test has something to run against. Every other service
+# listed in deployments/docker/ still has an empty Dockerfile and no
+# main.go yet; add its compose entry in the task that gives it a working
+# binary, rather than stubbing one out here ahead of time.
+services:
+  database-vault-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: database_vault
+      POSTGRES_PASSWORD: database_vault_dev_only
+      POSTGRES_DB: database_vault
+    ports:
+      - "5432:5432"
+    volumes:
+      - database-vault-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U database_vault -d database_vault"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  database-vault-postgres-data:
