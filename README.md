@@ -29,11 +29,11 @@ RAM-USB is an [n-tier client-server microservices architecture](https://en.wikip
 | Component                                                                                                 | Role                                                                                                       | Status      |
 | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------- |
 | [User-Client](https://github.com/Verryx-02/RAM-USB/tree/main/user-client)                                 | CLI client: registers, authenticates, backs up/restores files via `restic` over SFTP                       | Not started |
-| [Entry-Hub](https://github.com/Verryx-02/RAM-USB/tree/main/services/entry-hub)                            | Public-facing HTTPS gateway; validates and forwards requests                                               | Not started |
-| [Security-Switch](https://github.com/Verryx-02/RAM-USB/tree/main/services/security-switch)                | Internal request router and re-validator                                                                   | Not started |
-| [Database-Vault](https://github.com/Verryx-02/RAM-USB/tree/main/services/database-vault)                  | User data persistence (PostgreSQL), credential hashing/encryption                                          | Not started |
+| [Entry-Hub](https://github.com/Verryx-02/RAM-USB/tree/main/services/entry-hub)                            | Public-facing HTTPS gateway; validates and forwards requests                                               | Done |
+| [Security-Switch](https://github.com/Verryx-02/RAM-USB/tree/main/services/security-switch)                | Internal request router and re-validator                                                                   | Done |
+| [Database-Vault](https://github.com/Verryx-02/RAM-USB/tree/main/services/database-vault)                  | User data persistence (PostgreSQL), credential hashing/encryption                                          | Done |
 | [Storage-Service](https://github.com/Verryx-02/RAM-USB/tree/main/services/storage-service)                | Per-user isolated, chrooted SFTP storage for encrypted backups                                             | Not started |
-| [Network-Manager](https://github.com/Verryx-02/RAM-USB/tree/main/services/network-manager)                | Headscale ACL and mesh access control                                                                      | Not started |
+| [Network-Manager](https://github.com/Verryx-02/RAM-USB/tree/main/services/network-manager)                | Headscale ACL and mesh access control                                                                      | In progress |
 | [Mosquitto (MQTT broker)](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/mosquitto)           | Metrics transport between services and the collector                                                       | Not started |
 | [Metrics-Collector](https://github.com/Verryx-02/RAM-USB/tree/main/services/metrics-collector)            | Ingests and stores metrics (TimescaleDB)                                                                   | Not started |
 | [Metrics-Visualizer (Grafana)](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/grafana)        | Operational dashboards                                                                                     | Not started |
@@ -56,9 +56,10 @@ RAM-USB is an [n-tier client-server microservices architecture](https://en.wikip
 
 ## Getting started (development)
 
-> [!WARNING] The project is still in the design phase.
-> There is no runnable code yet. 
-> This section will be filled in as services are implemented.
+> [!WARNING] The project is under active implementation.
+> Entry-Hub, Security-Switch, and Database-Vault are implemented and merged; Network-Manager is partially merged.
+> None of the services are containerized yet (every Dockerfile is still a placeholder), so the full stack is not runnable via Docker Compose yet.
+> This section will be filled in as containerization lands.
 
 ```bash
 git clone https://github.com/Verryx-02/RAM-USB.git
