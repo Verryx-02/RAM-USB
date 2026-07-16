@@ -149,6 +149,33 @@ func TestHandler_Register_DuplicateRelayedUnchanged(t *testing.T) {
 	}
 }
 
+// Requirement: EH-F-08
+func TestHandler_Register_MissingContentTypeDefaultsToJSON(t *testing.T) {
+	securitySwitch := &fakeSecuritySwitch{
+		registerResult: securityswitch.Result{
+			StatusCode: http.StatusCreated,
+			// ContentType deliberately left empty: every response
+			// Security-Switch's own httpapi package writes carries
+			// application/json, but writeForwardedResponse must still
+			// fall back safely if it ever doesn't.
+			Body: []byte(`{"posix_username":"user7k2m9x"}`),
+		},
+	}
+	h, _ := newTestHandler(securitySwitch)
+
+	req := httptest.NewRequest(http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	rec := httptest.NewRecorder()
+
+	h.Register(rec, req)
+
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want %q (fallback when Security-Switch omits it)", got, "application/json")
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusCreated)
+	}
+}
+
 // Requirement: EH-F-09
 func TestHandler_Register_SecuritySwitchUnreachableMapsToBadGateway(t *testing.T) {
 	securitySwitch := &fakeSecuritySwitch{
