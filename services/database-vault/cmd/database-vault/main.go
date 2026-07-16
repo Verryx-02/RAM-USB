@@ -60,8 +60,26 @@ const (
 
 	// envClientCA locates the CA certificate bundle (PEM) trusted to have
 	// issued incoming clients' certificates - used to verify
-	// Security-Switch's certificate (DV-F-01).
+	// Security-Switch's certificate (DV-F-01) and, on the separate
+	// public-key listener below, Storage-Service's certificate (ST-F-11).
+	// Reused for both listeners rather than duplicated: this codebase's
+	// PKI is a single CA (CA-F-01..CA-F-04) issuing every service's
+	// certificate, so the pool trusted to verify one caller's certificate
+	// is the same pool trusted to verify any other's - the organization
+	// check inside server.NewTLSConfig/NewPublicKeyTLSConfig, not a
+	// different trusted-CA set, is what actually distinguishes the two
+	// listeners' allowed callers.
 	envClientCA = "RAM_USB_DATABASE_VAULT_CLIENT_CA"
+
+	// envPublicKeyListenAddr is the address Database-Vault listens on for
+	// ST-F-11's public-key lookup, a separate mTLS listener from
+	// envListenAddr's register/login one (see internal/server's
+	// pubkey_server.go doc comment for why this is a second listener
+	// rather than a shared one). It presents the same server
+	// certificate/key as the register/login listener (envServerCert/
+	// envServerKey) - both represent the one "DatabaseVault" server
+	// identity, only the allowed caller organization differs per listener.
+	envPublicKeyListenAddr = "RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR"
 
 	// envDatabaseURL is the Postgres connection string pgxpool.New
 	// parses (DV-F-08).
@@ -143,9 +161,19 @@ func run() error {
 		return err
 	}
 
+	publicKeyListenAddr, err := requireEnv(envPublicKeyListenAddr)
+	if err != nil {
+		return err
+	}
+
 	serverTLSConfig, err := buildServerTLSConfig()
 	if err != nil {
 		return fmt.Errorf("build server tls config: %w", err)
+	}
+
+	publicKeyServerTLSConfig, err := buildPublicKeyServerTLSConfig()
+	if err != nil {
+		return fmt.Errorf("build public-key server tls config: %w", err)
 	}
 
 	databaseURL, err := requireEnv(envDatabaseURL)
@@ -175,6 +203,15 @@ func run() error {
 		Metrics:          counters,
 	}
 
+	// publicKeyHandler shares the same counters as handler (DV-F-16/
+	// DV-F-17's metrics aggregate service-wide, not per-endpoint) but has
+	// its own Store — it needs no MasterKey/Pepper/registration/login
+	// dependency at all (see pubkey_handler.go's package doc comment).
+	publicKeyHandler := &httpapi.PublicKeyHandler{
+		Store:   httpapi.PublicKeyStoreAdapter{DB: storage.PoolQuerier{Pool: pool}},
+		Metrics: counters,
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc(httpapi.RegisterPath, handler.Register)
 	mux.HandleFunc(httpapi.LoginPath, handler.Login)
@@ -183,6 +220,22 @@ func run() error {
 		Addr:              listenAddr,
 		Handler:           mux,
 		TLSConfig:         serverTLSConfig,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// publicKeyMux/publicKeyHTTPServer are ST-F-11's separate mux/listener
+	// pair, bound to publicKeyListenAddr and publicKeyServerTLSConfig
+	// (organization="StorageService"), entirely distinct from httpServer's
+	// register/login mux/listener (organization="SecuritySwitch") - see
+	// internal/server/pubkey_server.go for why these are two listeners,
+	// not one.
+	publicKeyMux := http.NewServeMux()
+	publicKeyMux.HandleFunc(httpapi.PublicKeyPath, publicKeyHandler.PublicKey)
+
+	publicKeyHTTPServer := &http.Server{
+		Addr:              publicKeyListenAddr,
+		Handler:           publicKeyMux,
+		TLSConfig:         publicKeyServerTLSConfig,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -206,16 +259,38 @@ func run() error {
 		serveErr <- httpServer.ListenAndServeTLS("", "")
 	}()
 
+	publicKeyServeErr := make(chan error, 1)
+	go func() {
+		slog.Info("database-vault: public-key listener listening", "addr", publicKeyListenAddr)
+		publicKeyServeErr <- publicKeyHTTPServer.ListenAndServeTLS("", "")
+	}()
+
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return httpServer.Shutdown(shutdownCtx)
+		// Both listeners are shut down together on the same signal: they
+		// are two entry points into one process, not two independently
+		// lifecycled services.
+		shutdownErr := httpServer.Shutdown(shutdownCtx)
+		publicKeyShutdownErr := publicKeyHTTPServer.Shutdown(shutdownCtx)
+		if shutdownErr != nil {
+			return fmt.Errorf("shutdown register/login listener: %w", shutdownErr)
+		}
+		if publicKeyShutdownErr != nil {
+			return fmt.Errorf("shutdown public-key listener: %w", publicKeyShutdownErr)
+		}
+		return nil
 	case err := <-serveErr:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
-		return fmt.Errorf("serve: %w", err)
+		return fmt.Errorf("serve register/login listener: %w", err)
+	case err := <-publicKeyServeErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("serve public-key listener: %w", err)
 	}
 }
 
@@ -272,6 +347,41 @@ func buildServerTLSConfig() (*tls.Config, error) {
 	}
 
 	return server.NewTLSConfig(cert, clientCAs), nil
+}
+
+// buildPublicKeyServerTLSConfig assembles ST-F-11's mTLS server
+// configuration for the separate public-key lookup listener: the same
+// server certificate/key as buildServerTLSConfig (both represent the one
+// "DatabaseVault" server identity) and the same trusted client-CA pool
+// (see envClientCA's doc comment for why one CA bundle serves both
+// listeners), but paired with server.NewPublicKeyTLSConfig instead of
+// server.NewTLSConfig - so this listener requires
+// organization="StorageService" instead of organization="SecuritySwitch".
+func buildPublicKeyServerTLSConfig() (*tls.Config, error) {
+	certPath, err := requireEnv(envServerCert)
+	if err != nil {
+		return nil, err
+	}
+	keyPath, err := requireEnv(envServerKey)
+	if err != nil {
+		return nil, err
+	}
+	caPath, err := requireEnv(envClientCA)
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("load server certificate/key: %w", err)
+	}
+
+	clientCAs, err := loadCertPool(caPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return server.NewPublicKeyTLSConfig(cert, clientCAs), nil
 }
 
 // buildStorageServiceClient assembles the *http.Client DV-F-09 uses to
