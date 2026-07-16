@@ -98,6 +98,50 @@ func TestGrantAccess_Denied(t *testing.T) {
 }
 
 // Requirement: SS-F-06
+func TestGrantAccess_ServerErrorMapsToUnreachable(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+	}{
+		{"internal server error", http.StatusInternalServerError},
+		{"bad gateway", http.StatusBadGateway},
+		{"service unavailable", http.StatusServiceUnavailable},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				_ = json.NewEncoder(w).Encode(grantResponse{Success: false, Error: "upstream failure"})
+			})
+			defer stop()
+
+			err := GrantAccess(context.Background(), client, baseURL, "user@example.com")
+			if !errors.Is(err, ErrNetworkManagerUnreachable) {
+				t.Fatalf("GrantAccess() error = %v, want ErrNetworkManagerUnreachable", err)
+			}
+			if errors.Is(err, ErrGrantDenied) {
+				t.Fatalf("GrantAccess() error = %v must not also be ErrGrantDenied - a 5xx is Network-Manager's own failure, not a considered denial", err)
+			}
+		})
+	}
+}
+
+// Requirement: SS-F-06
+func TestGrantAccess_ServerErrorWithMalformedBodyMapsToUnreachable(t *testing.T) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("<html>Service Unavailable</html>"))
+	})
+	defer stop()
+
+	err := GrantAccess(context.Background(), client, baseURL, "user@example.com")
+	if !errors.Is(err, ErrNetworkManagerUnreachable) {
+		t.Fatalf("GrantAccess() error = %v, want ErrNetworkManagerUnreachable even with a non-JSON body", err)
+	}
+}
+
+// Requirement: SS-F-06
 func TestGrantAccess_Unreachable(t *testing.T) {
 	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

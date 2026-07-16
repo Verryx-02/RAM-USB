@@ -111,6 +111,19 @@ func GrantAccess(ctx context.Context, client *http.Client, baseURL string, email
 		return fmt.Errorf("%w: read response: %v", ErrNetworkManagerUnreachable, err)
 	}
 
+	// A 5xx status means Network-Manager itself failed to process the
+	// request (its own internal error, or the request never reached its
+	// handling logic) - this is the same "the call did not complete as a
+	// real answer" category ErrNetworkManagerUnreachable's doc comment
+	// already claims, distinct from a considered 403 refusal. Checked
+	// before the malformed-body branch below: a 5xx response's body is
+	// commonly a plain-text error page or empty, not JSON, and treating
+	// that as ErrGrantDenied would misreport a Network-Manager outage as
+	// "the user's grant was denied."
+	if resp.StatusCode >= http.StatusInternalServerError {
+		return fmt.Errorf("%w: status %d", ErrNetworkManagerUnreachable, resp.StatusCode)
+	}
+
 	var parsed grantResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return fmt.Errorf("%w: status %d, malformed response body: %v", ErrGrantDenied, resp.StatusCode, err)

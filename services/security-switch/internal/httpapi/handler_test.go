@@ -261,6 +261,22 @@ func TestHandler_Login_GrantDeniedMapsToForbidden(t *testing.T) {
 	}
 }
 
+// Requirement: SS-F-06
+func TestHandler_Login_GrantUnreachableMapsToBadGateway(t *testing.T) {
+	dbVault := &fakeDBVault{loginResult: dbvault.Result{Outcome: dbvault.OutcomeAuthenticated}}
+	networkManager := &fakeNetworkManager{err: fmt.Errorf("%w: simulated 503", networkmanager.ErrNetworkManagerUnreachable)}
+	h, _ := newTestHandler(dbVault, networkManager)
+
+	req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d (Network-Manager's own failure must not be reported as a 403 grant denial)", rec.Code, http.StatusBadGateway)
+	}
+}
+
 // Requirement: SS-F-04
 func TestHandler_Login_UnauthorizedDoesNotGrantAccess(t *testing.T) {
 	dbVault := &fakeDBVault{loginResult: dbvault.Result{Outcome: dbvault.OutcomeUnauthorized}}
