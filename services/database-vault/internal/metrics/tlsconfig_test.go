@@ -15,7 +15,7 @@ func TestTLSConfig_AcceptsOnlyMQTTBrokerOrganization(t *testing.T) {
 		t.Fatalf("NewTestCA() error = %v", err)
 	}
 
-	clientCert, err := ca.IssueLeaf("Database-Vault", "database-vault-client")
+	clientCert, err := ca.IssueLeaf("DatabaseVault", "database-vault-client")
 	if err != nil {
 		t.Fatalf("IssueLeaf(client) error = %v", err)
 	}

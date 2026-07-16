@@ -216,7 +216,7 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 
 |**ID**|**Requirement**|**Notes**|
 |---|---|---|
-|ST-F-01|Must accept mTLS connections only from clients with:<br>- `organization="Database-Vault"`,<br>- a valid certificate,<br>- access to the private mesh network.|Accepts both mTLS (Database-Vault) and SFTP (Users)|
+|ST-F-01|Must accept mTLS connections only from clients with:<br>- `organization="DatabaseVault"`,<br>- a valid certificate,<br>- access to the private mesh network.|Accepts both mTLS (Database-Vault) and SFTP (Users)|
 |ST-F-02|Must provide upload/download of client-side-encrypted files, never processing plaintext content|Files are encrypted client-side|
 |ST-F-03|Access must occur exclusively via SFTP authenticated with the user's registered SSH public key||
 |ST-F-04|Must explicitly forbid any other form of SSH connection besides SFTP||

@@ -19,7 +19,7 @@ func TestTLSConfig_AcceptsOnlySecuritySwitchOrganization(t *testing.T) {
 		t.Fatalf("NewTestCA() error = %v", err)
 	}
 
-	serverCert, err := ca.IssueLeaf("Database-Vault", "database-vault-under-test")
+	serverCert, err := ca.IssueLeaf("DatabaseVault", "database-vault-under-test")
 	if err != nil {
 		t.Fatalf("IssueLeaf(server) error = %v", err)
 	}

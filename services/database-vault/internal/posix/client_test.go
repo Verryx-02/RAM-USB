@@ -32,7 +32,7 @@ func stubStorageService(t *testing.T, ca *mtls.TestCA, serverOrg string, handler
 	}
 
 	srv = httptest.NewUnstartedServer(handler)
-	srv.TLS = mtls.ServerConfig(serverCert, ca.Pool(), "Database-Vault")
+	srv.TLS = mtls.ServerConfig(serverCert, ca.Pool(), "DatabaseVault")
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
 
@@ -51,7 +51,7 @@ func stubStorageService(t *testing.T, ca *mtls.TestCA, serverOrg string, handler
 func newClient(t *testing.T, ca *mtls.TestCA) *http.Client {
 	t.Helper()
 
-	clientCert, err := ca.IssueLeaf("Database-Vault", "database-vault-under-test")
+	clientCert, err := ca.IssueLeaf("DatabaseVault", "database-vault-under-test")
 	if err != nil {
 		t.Fatalf("IssueLeaf(client) error = %v", err)
 	}
