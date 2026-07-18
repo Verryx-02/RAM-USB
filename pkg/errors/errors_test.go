@@ -7,6 +7,7 @@ import (
 )
 
 // Requirement: DV-F-20
+// Requirement: ST-F-11
 // Requirement: SS-F-06
 // Requirement: EH-F-09
 func TestAppError_ConstructorsSetStatusAndSafePublicMessage(t *testing.T) {
@@ -22,6 +23,7 @@ func TestAppError_ConstructorsSetStatusAndSafePublicMessage(t *testing.T) {
 		{"conflict", NewConflict, http.StatusConflict},
 		{"internal", NewInternal, http.StatusInternalServerError},
 		{"forbidden", NewForbidden, http.StatusForbidden},
+		{"not found", NewNotFound, http.StatusNotFound},
 		{"bad gateway", NewBadGateway, http.StatusBadGateway},
 		{"gateway timeout", NewGatewayTimeout, http.StatusGatewayTimeout},
 		{"service unavailable", NewServiceUnavailable, http.StatusServiceUnavailable},

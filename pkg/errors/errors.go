@@ -107,6 +107,24 @@ func NewForbidden(internal error) *AppError {
 	}
 }
 
+// NewNotFound builds an AppError for HTTP 404: a lookup that found no
+// matching record for an internal service-to-service call (e.g. ST-F-11's
+// public-key lookup for a posix_username with no matching user). Unlike
+// NewUnauthorized (DV-F-15, where distinguishing "no such account" from
+// "wrong password" would let an external, potentially adversarial caller
+// enumerate registered emails), this constructor is for a lookup reached
+// only by an already-authenticated internal service over its own
+// dedicated mTLS listener — there is no equivalent enumeration risk to
+// blend this outcome with another one to hide. The public message still
+// gives no operational detail beyond "not found."
+func NewNotFound(internal error) *AppError {
+	return &AppError{
+		Status:   http.StatusNotFound,
+		Public:   "the requested resource was not found",
+		Internal: internal,
+	}
+}
+
 // NewBadGateway builds an AppError for HTTP 502: an outbound mTLS call to a
 // downstream internal service (e.g. Security-Switch calling Database-Vault
 // or Network-Manager, SS-F-04/SS-F-05) did not complete - connection
