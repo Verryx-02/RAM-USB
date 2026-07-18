@@ -1,12 +1,12 @@
 # Development Docker Compose stack (docs/Test_Plan.md §4: integration and
 # system tests run against this stack).
 #
-# Database-Vault's Postgres datastore and the Certificate-Authority
-# (official smallstep/step-ca image, CA-F-01..CA-F-04, PKI-F-01/02) are
-# defined so far. Every other service listed in deployments/docker/ still
-# has an empty Dockerfile and no main.go yet; add its compose entry in the
-# task that gives it a working binary, rather than stubbing one out here
-# ahead of time.
+# Database-Vault's Postgres datastore, Network-Manager's Headscale backend,
+# and the Certificate-Authority (official smallstep/step-ca image,
+# CA-F-01..CA-F-04, PKI-F-01/02) are defined so far. Every other service
+# listed in deployments/docker/ still has an empty Dockerfile and no
+# main.go yet; add its compose entry in the task that gives it a working
+# binary, rather than stubbing one out here ahead of time.
 services:
   database-vault-postgres:
     image: postgres:17
@@ -20,6 +20,39 @@ services:
       - database-vault-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U database_vault -d database_vault"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Network-Manager's mesh-coordination backend (NM-F-08, NM-F-09): a
+  # self-hosted Tailscale control plane (SRS 2.4's "Headscale mesh VPN").
+  # Config, TLS cert/key rationale, and every judgment call made this
+  # session are documented in
+  # third-party/network-manager/headscale/config/config.yaml's own doc
+  # comment - read that file before changing anything here.
+  network-manager-headscale:
+    image: headscale/headscale:0.29
+    command: serve
+    volumes:
+      - network-manager-headscale-data:/var/lib/headscale
+      - ../third-party/network-manager/headscale/config:/etc/headscale:ro
+      # Mounted at a path NOT nested under /etc/headscale itself: this
+      # image's /etc is read-only at the filesystem level beyond the
+      # config bind mount's own mountpoint, so a second bind mount nested
+      # under /etc/headscale/tls fails with "read-only file system"
+      # trying to create that mountpoint (found by actually running the
+      # container this session, the same category of gotcha already
+      # documented for smallstep/step-ca's /home/step/secrets in
+      # code-agent memory).
+      - ../third-party/network-manager/headscale/dev-tls:/etc/headscale-tls:ro
+    ports:
+      - "50443:50443"
+    healthcheck:
+      # This image (ko-built, no shell/wget/curl - confirmed by actually
+      # running it this session) only exposes the headscale binary
+      # itself; its own "headscale health" subcommand is the practical
+      # healthcheck, not an HTTP probe.
+      test: ["CMD", "/ko-app/headscale", "health"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -56,4 +89,5 @@ services:
 
 volumes:
   database-vault-postgres-data:
+  network-manager-headscale-data:
   certificate-authority-data:
