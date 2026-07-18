@@ -3,22 +3,26 @@ package posixuser
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/Verryx-02/RAM-USB/services/storage-service/internal/execrunner"
 )
 
 // fakeDirMaker is a hand-written test double for DirMaker (CONTRIBUTING.md
-// §7.5), recording every call in order so tests can assert both that a call
-// happened and its exact order relative to other calls.
+// §7.5), recording every call in order (including the requested mode, so
+// tests can assert the chroot root and data directory get two different,
+// correct modes) so tests can assert both that a call happened and its
+// exact order relative to other calls.
 type fakeDirMaker struct {
 	mkdirErr error
 	chownErr error
 	calls    []string
 }
 
-func (f *fakeDirMaker) Mkdir(path string) error {
-	f.calls = append(f.calls, "mkdir:"+path)
+func (f *fakeDirMaker) Mkdir(path string, mode os.FileMode) error {
+	f.calls = append(f.calls, fmt.Sprintf("mkdir:%s:%04o", path, mode))
 	return f.mkdirErr
 }
 
@@ -34,8 +38,8 @@ type selectiveFailDirMaker struct {
 	calls      []string
 }
 
-func (f *selectiveFailDirMaker) Mkdir(path string) error {
-	f.calls = append(f.calls, "mkdir:"+path)
+func (f *selectiveFailDirMaker) Mkdir(path string, mode os.FileMode) error {
+	f.calls = append(f.calls, fmt.Sprintf("mkdir:%s:%04o", path, mode))
 	if path == f.failOnPath {
 		return errors.New("mkdir failed")
 	}
@@ -85,6 +89,7 @@ func TestCreator_CreateUser_Success(t *testing.T) {
 		"--home-dir", "/storage/" + username,
 		"--shell", "/usr/sbin/nologin",
 		"--gid", username,
+		"--password", "*",
 		username,
 	}
 	if len(useraddCall.Args) != len(wantUseraddArgs) {
@@ -97,9 +102,9 @@ func TestCreator_CreateUser_Success(t *testing.T) {
 	}
 
 	wantDirCalls := []string{
-		"mkdir:/storage/" + username,
+		fmt.Sprintf("mkdir:/storage/%s:%04o", username, chrootRootMode),
 		"chown:/storage/" + username + ":root",
-		"mkdir:/storage/" + username + "/data",
+		fmt.Sprintf("mkdir:/storage/%s/data:%04o", username, dataDirMode),
 		"chown:/storage/" + username + "/data:" + username,
 	}
 	if len(dm.calls) != len(wantDirCalls) {

@@ -112,12 +112,26 @@ func (c *Creator) CreateUser(ctx context.Context, username string) error {
 	}
 
 	// Step 2: useradd --no-create-home --home-dir /storage/<username>
-	// --shell /usr/sbin/nologin --gid <username> <username>
+	// --shell /usr/sbin/nologin --gid <username> --password '*' <username>
+	//
+	// --password '*': without an explicit password field, Debian's useradd
+	// defaults to "!" in /etc/shadow. OpenSSH's own allowed_user() (auth.c)
+	// treats a leading "!" as an administrative lock and refuses ALL
+	// authentication methods for that account, including the public-key
+	// auth ST-F-11 depends on - found empirically (a real SFTP login
+	// failing "account is locked" against a "!"-shadow account) while
+	// verifying this package's Storage-Service container. "*" is the
+	// standard convention for "no password possible, other auth methods
+	// still valid" - unlike "!", OpenSSH does not treat it as a lock.
+	// useradd's -p/--password stores its argument verbatim in the shadow
+	// field (it does not hash it), so a literal "*" here is exactly what
+	// ends up on disk, not a value that needs prior hashing.
 	out, err := c.Runner.Run(ctx, "useradd",
 		"--no-create-home",
 		"--home-dir", chrootRoot,
 		"--shell", "/usr/sbin/nologin",
 		"--gid", username,
+		"--password", "*",
 		username,
 	)
 	if err != nil {
@@ -128,13 +142,24 @@ func (c *Creator) CreateUser(ctx context.Context, username string) error {
 		return fmt.Errorf("%w: %s: %w", ErrUseraddFailed, bytes.TrimSpace(out), err)
 	}
 
-	if err := c.DirMaker.Mkdir(chrootRoot); err != nil {
+	// chrootRootMode (0711): the chroot root is owned by root, but the
+	// connecting POSIX user - a different uid - must still be able to
+	// traverse into it to reach their own data/ subdirectory. Found
+	// empirically (a real SFTP session failing "realpath /data: Permission
+	// denied" against a 0700 chroot root) while verifying this package's
+	// Storage-Service container: 0700 has no other-execute bit, so a
+	// setuid'd sshd session for a different user cannot even enter it.
+	// 0711 adds execute-only for group/other (no read, so the directory's
+	// own contents stay unlistable by anyone but root - it should never
+	// contain more than the single "data" entry anyway), matching SRS
+	// §4.5's "chroot root of THIS user, owned by: root:root" note.
+	if err := c.DirMaker.Mkdir(chrootRoot, chrootRootMode); err != nil {
 		return fmt.Errorf("posixuser: create chroot root: %w", err)
 	}
 	if err := c.DirMaker.Chown(chrootRoot, rootOwner); err != nil {
 		return fmt.Errorf("posixuser: own chroot root: %w", err)
 	}
-	if err := c.DirMaker.Mkdir(dataDir); err != nil {
+	if err := c.DirMaker.Mkdir(dataDir, dataDirMode); err != nil {
 		return fmt.Errorf("posixuser: create data directory: %w", err)
 	}
 	if err := c.DirMaker.Chown(dataDir, username); err != nil {
