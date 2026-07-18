@@ -1,9 +1,9 @@
 # Development Docker Compose stack (docs/Test_Plan.md §4: integration and
 # system tests run against this stack).
 #
-# Only the Database-Vault Postgres datastore is defined so far, added
-# alongside DV-F-08 (atomic user-record persistence) so that requirement's
-# real-database test has something to run against. Every other service
+# Database-Vault's Postgres datastore, Network-Manager's Headscale backend,
+# and the Certificate-Authority (official smallstep/step-ca image,
+# CA-F-01..CA-F-04, PKI-F-01/02) are defined so far. Every other service
 # listed in deployments/docker/ still has an empty Dockerfile and no
 # main.go yet; add its compose entry in the task that gives it a working
 # binary, rather than stubbing one out here ahead of time.
@@ -57,6 +57,37 @@ services:
       timeout: 5s
       retries: 5
 
+  # Official smallstep/step-ca image (docs/design/diagrams/08-security-pki-hierarchy.puml:
+  # a single self-signed private CA issuing certs to every service). On first
+  # boot, the DOCKER_STEPCA_INIT_* variables run `step ca init` non-interactively,
+  # bootstrapping a brand-new root+intermediate CA plus a default JWK
+  # provisioner (CA-F-04's bootstrap-token mechanism) with no extra config
+  # needed. Config/keys/the CA's own database persist under /home/step across
+  # restarts via the named volume below.
+  #
+  # certificate_authority_dev_only (third-party/certificate-authority/config/
+  # password.dev-only.txt) is a throwaway placeholder for the intermediate
+  # key's password, same dev-only convention as database-vault-postgres's
+  # POSTGRES_PASSWORD above — never a production secret.
+  certificate-authority:
+    image: smallstep/step-ca:latest
+    environment:
+      DOCKER_STEPCA_INIT_NAME: "RAM-USB Dev CA"
+      DOCKER_STEPCA_INIT_DNS_NAMES: "localhost,certificate-authority"
+      DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/ca-password.dev-only
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
+    ports:
+      - "9000:9000"
+    volumes:
+      - certificate-authority-data:/home/step
+      - ../third-party/certificate-authority/config/password.dev-only.txt:/run/secrets/ca-password.dev-only:ro
+    healthcheck:
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   database-vault-postgres-data:
   network-manager-headscale-data:
+  certificate-authority-data:
