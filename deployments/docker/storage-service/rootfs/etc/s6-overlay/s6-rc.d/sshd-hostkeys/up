@@ -1,0 +1,10 @@
+# /run is a fresh tmpfs on every container start, so sshd's required
+# privilege-separation directory (/run/sshd, normally created by Debian's
+# openssh-server init script, which never runs in this container) has to be
+# recreated here every time too - found empirically this session: sshd
+# crash-looped with "Missing privilege separation directory: /run/sshd"
+# without this line. ssh-keygen -A is idempotent (a no-op for any host key
+# type that already exists), so this oneshot is safe to rerun on every
+# container start.
+if { mkdir -p -m 0755 /run/sshd }
+ssh-keygen -A

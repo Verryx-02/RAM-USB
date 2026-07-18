@@ -1,0 +1,83 @@
+# Storage-Service's hardened sshd configuration (ST-F-03, ST-F-04, ST-F-07,
+# ST-F-08, ST-F-09; RNF-SEC-02/03; RD-04).
+#
+# This file is a full replacement for Debian's default /etc/ssh/sshd_config
+# (COPY'd over it in the Dockerfile), not an addition via
+# /etc/ssh/sshd_config.d/*.conf, so every directive relevant to this
+# container's single purpose (SFTP-only access for POSIX-user accounts
+# created by ST-F-06) is visible in one place.
+
+# Port 2222, not 22: the container runs with cap_drop: ALL plus only
+# CAP_CHOWN/CAP_SETUID/CAP_SETGID/CAP_SYS_CHROOT (see the SRS 4.5 [!NOTE]
+# and this directory's Dockerfile) - CAP_NET_BIND_SERVICE is deliberately
+# not in that set, and without it even UID 0 cannot bind a port below 1024
+# inside the container. Verified empirically this session (see code-agent
+# report): sshd fails to start on port 22 under this exact capability set,
+# starts cleanly on 2222.
+Port 2222
+
+# ssh-keygen -A (run once at container start by the sshd-hostkeys oneshot,
+# see rootfs/etc/s6-overlay/s6-rc.d/sshd-hostkeys/up) writes host keys to
+# these exact default paths.
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Required at top level for "ForceCommand internal-sftp" below to resolve
+# to OpenSSH's built-in SFTP server rather than an external sftp-server
+# binary.
+Subsystem sftp internal-sftp
+
+# ST-F-09: required regardless of the fact that every created POSIX account
+# has no password set at all.
+PasswordAuthentication no
+PermitRootLogin no
+
+# Only public-key authentication is offered; there is no other credential
+# for a POSIX account created by ST-F-06 to authenticate with.
+PubkeyAuthentication yes
+PermitEmptyPasswords no
+
+# UsePAM no: this container's accounts are created directly via
+# groupadd/useradd (services/storage-service/internal/posixuser), never
+# assigned a password, and authenticate only via AuthorizedKeysCommand
+# (ST-F-11). There is no PAM-relevant state (password aging, login
+# accounting, resource limits) this container's threat model depends on;
+# disabling PAM avoids pam_unix's account-phase checks rejecting a
+# deliberately password-less/locked account, and keeps sshd's own
+# privilege-drop path (setuid/setgid/chroot) the only mechanism this
+# container relies on for per-connection isolation.
+UsePAM no
+
+# ST-F-06's fixed "user<xxxxxx>" shape (^user[0-9a-z]{6}$ in the Go code)
+# is matched here with the glob "user*", per sshd_config(5)'s Match
+# pattern syntax.
+Match User user*
+    # ST-F-05/ST-F-07: confines the session's filesystem view to this
+    # user's own subtree. Per sshd_config(5), ChrootDirectory and every
+    # directory above it up to the filesystem root must be owned by root
+    # and not writable by group or other - see the SRS 4.5 directory
+    # structure diagram ("chroot root of THIS user, owned by: root:root").
+    ChrootDirectory /storage/%u
+
+    # ST-F-03/ST-F-04: SFTP is the only permitted operation; a plain
+    # interactive/exec SSH session is refused outright.
+    ForceCommand internal-sftp
+
+    # ST-F-04/ST-F-07: no port/agent forwarding, no X11, no tun-device
+    # tunneling - none of these are SFTP, and each would otherwise be a
+    # way to reach outside this user's isolated space or the mesh network
+    # boundary.
+    AllowTcpForwarding no
+    AllowAgentForwarding no
+    X11Forwarding no
+    PermitTunnel no
+
+    # ST-F-11: on every SFTP connection attempt, sshd invokes this binary
+    # with the connecting username as %u to fetch that user's current
+    # public key from Database-Vault - see
+    # services/storage-service/cmd/authorized-keys-command/main.go's own
+    # fixed config file contract
+    # (/etc/storage-service/authorized-keys-command.conf).
+    AuthorizedKeysCommand /usr/local/bin/authorized-keys-command %u
+    AuthorizedKeysCommandUser sshd-authkeys

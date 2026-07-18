@@ -1,0 +1,9 @@
+#!/command/with-contenv sh
+# with-contenv (not plain #!/bin/sh): S6_KEEP_ENV is left at its default (0)
+# so the sshd longrun does NOT inherit the container's environment, and this
+# is the one process that specifically needs
+# RAM_USB_STORAGE_SERVICE_LISTEN_ADDR/TLS_CERT/TLS_KEY/CLIENT_CA (see
+# services/storage-service/cmd/storage-service/main.go) pushed back into its
+# own environment. exec replaces this shell so the storage-service binary
+# becomes the directly supervised process and receives s6's signals itself.
+exec /usr/local/bin/storage-service
