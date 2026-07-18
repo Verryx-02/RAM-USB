@@ -44,7 +44,7 @@ Four levels, each tied to a granularity of specification, not to a project phase
 
 - **What they cover:** a non-functional requirement (`RNF-*`), measured against the full running stack.
 
-**Functional system tests:** complete scenarios end to end. Example: a registration request entering at Entry-Hub, landing as a row in Database-Vault, and producing a metric in TimescaleDB.
+**Functional system tests:** complete scenarios end to end. Example: a registration request entering at Entry-Hub, landing as a row in Database-Vault, and producing a metric in TimescaleDB. Another worked example: Storage-Service's chroot/SFTP/hardening guarantees (`ST-F-02` through `ST-F-11`), verified against a real running Database-Vault. The concrete procedure lives in `deployments/docker/storage-service/VERIFICATION.md`, with a last-verified date updated each time it's re-run.
 
 **Non-functional system tests:** measured thresholds, not pass/fail booleans.
 
