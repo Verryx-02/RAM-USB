@@ -447,6 +447,7 @@ Requirements/checks knowingly deferred to a later iteration, which **do not** bl
 |---|---|---|
 |RISK-01|RU-09|RU-09 (no one can modify/delete backups) is not covered by any system requirement. It is currently out of scope due to overly tight timelines, but it is a "nice to have."|
 |RISK-02|2.6, DV-F-05, DV-F-18, DV-F-19|The encryption master key resides in an environment variable (2.6), and there is not yet a binding backup procedure (DV-F-18) nor a rotation procedure (DV-F-19); both are currently "should" rather than "must." <br>Loss of the master key would cause irreversible loss of access to all encrypted data; its compromise would break the zero-knowledge guarantee for all users. <br>This is accepted as a risk for v1.0 due to time constraints.|
+|RISK-03|CL-F-06, CL-F-07|The Client is currently designed to run natively on the user's own machine, not as a Docker container (docs/design/diagrams/02-architecture-deployment.puml marks it `<<external>>`). Containerizing it was considered, but rejected for now: a container cannot see arbitrary host paths (e.g. the user's Desktop) unless explicitly bind-mounted, and the set of files a user wants to back up is chosen freely at backup time, not known in advance like every other component's fixed storage paths. Revisit if containerization is later desired — the least-isolation-losing option found so far is a per-invocation bind mount of just the folder being backed up, not mounting the whole home directory.|
 
 ---
 
