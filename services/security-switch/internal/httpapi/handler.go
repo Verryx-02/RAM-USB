@@ -82,7 +82,27 @@ func (h *Handler) logger() *slog.Logger {
 // On failure, SS-F-03 applies: HTTP 400, a generic body, a log line
 // without the email/password/SSH key, and no call to DBVault at all. On
 // success, SS-F-04 applies: log the outcome without identifying the user,
-// then forward to Database-Vault and relay its response.
+// then forward to Database-Vault; once Database-Vault confirms the user
+// was registered, SS-F-09 applies: request Network-Manager to create a
+// dedicated mesh user + pre-auth key and include that key in the response
+// to Entry-Hub (UC-01 steps 7-8).
+//
+// Deliberate design choice, no rollback attempted on a mesh-user-creation
+// failure (a genuinely underspecified case - flagged here, not silently
+// worked around): by the time this call happens, Database-Vault has
+// already created the user record and Storage-Service has already created
+// the POSIX user (DV-F-08/DV-F-09/DV-F-11, both already-persisted,
+// already-successful side effects). There is no existing mechanism to undo
+// either of those specifically for "the mesh-user step that runs after
+// them failed" - DV-F-10's own rollback exists only for "POSIX user
+// creation failed", a different failure a step earlier in the chain, and
+// building a new cross-service rollback path for this one case is out of
+// this task's scope. Responding with a mapped 5xx (mapMeshUserError,
+// mirroring SS-F-06's error-mapping conventions) at least tells the
+// caller registration did not fully succeed, even though the account and
+// POSIX user now exist - accepted as the honest, fail-secure-adjacent
+// outcome (RD-04: on uncertainty, deny/report failure) rather than
+// reporting a false 201 Created with no pre-auth key.
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	h.Metrics.BeginRequest()
@@ -111,7 +131,20 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	switch result.Outcome {
 	case dbvault.OutcomeRegistered:
 		h.logger().Info("register: database-vault reported success")
-		writeJSON(w, http.StatusCreated, registerResponse{PosixUsername: result.PosixUsername})
+
+		preAuthKey, err := h.NetworkManager.CreateMeshUser(r.Context(), req.Email)
+		if err != nil {
+			// See the design-choice comment above Register: the account
+			// and POSIX user already exist at this point, and no
+			// rollback is attempted for this specific failure.
+			isError = true
+			h.logger().Error("register: network-manager mesh user creation failed", "error", err)
+			writeAppError(w, mapMeshUserError(err))
+			return
+		}
+
+		h.logger().Info("register: network-manager mesh user creation succeeded")
+		writeJSON(w, http.StatusCreated, registerResponse{PosixUsername: result.PosixUsername, PreAuthKey: preAuthKey})
 	case dbvault.OutcomeDuplicate:
 		isError = true
 		h.logger().Warn("register: database-vault rejected as duplicate")
@@ -214,6 +247,26 @@ func mapNetworkManagerError(err error) *apperrors.AppError {
 	}
 }
 
+// mapMeshUserError implements SS-F-06 for the outbound call to
+// Network-Manager's mesh-user-creation endpoint (SS-F-09): an explicit
+// denial maps to 403, a timeout to 504, and any other unreachable/
+// unexpected failure to 502 - the same mapping shape as
+// mapNetworkManagerError, over networkmanager.ErrMeshUserCreationDenied
+// instead of ErrGrantDenied (a distinct sentinel for a distinct
+// operation, see networkmanager/client.go's doc comment on that sentinel).
+func mapMeshUserError(err error) *apperrors.AppError {
+	switch {
+	case errors.Is(err, networkmanager.ErrMeshUserCreationDenied):
+		return apperrors.NewForbidden(err)
+	case errors.Is(err, networkmanager.ErrNetworkManagerTimeout):
+		return apperrors.NewGatewayTimeout(err)
+	case errors.Is(err, networkmanager.ErrNetworkManagerUnreachable):
+		return apperrors.NewBadGateway(err)
+	default:
+		return apperrors.NewInternal(err)
+	}
+}
+
 // failValidation implements SS-F-03 for both handlers: respond HTTP 400
 // with a generic body, and log the failure without the email, password,
 // or SSH key. err is always one of pkg/validation's sentinel errors, none
@@ -224,10 +277,16 @@ func (h *Handler) failValidation(w http.ResponseWriter, endpoint string, err err
 	writeAppError(w, apperrors.NewBadRequest(err))
 }
 
-// registerResponse is the JSON body Register writes on success. Mirrors
-// Database-Vault's own registerResponse shape (relayed, not reinvented).
+// registerResponse is the JSON body Register writes on success.
+// PosixUsername mirrors Database-Vault's own registerResponse shape
+// (relayed, not reinvented). PreAuthKey is SS-F-09's addition: the
+// Headscale pre-auth key Network-Manager's CreateMeshUser returned,
+// carrying the exact "pre_auth_key" JSON field name Network-Manager's own
+// handler uses - Entry-Hub relays this response completely unchanged
+// (EH-F-08), and the user-client already expects this exact field name.
 type registerResponse struct {
 	PosixUsername string `json:"posix_username"`
+	PreAuthKey    string `json:"pre_auth_key"`
 }
 
 // loginResponse is the JSON body Login writes on success.

@@ -47,12 +47,23 @@ type fakeNetworkManager struct {
 	err          error
 	grantCalled  bool
 	grantedUsers []string
+
+	meshUserErr      error
+	meshUserPreAuth  string
+	meshUserCalled   bool
+	meshUserRequests []string
 }
 
 func (f *fakeNetworkManager) GrantAccess(_ context.Context, email string) error {
 	f.grantCalled = true
 	f.grantedUsers = append(f.grantedUsers, email)
 	return f.err
+}
+
+func (f *fakeNetworkManager) CreateMeshUser(_ context.Context, email string) (string, error) {
+	f.meshUserCalled = true
+	f.meshUserRequests = append(f.meshUserRequests, email)
+	return f.meshUserPreAuth, f.meshUserErr
 }
 
 // newTestHandler builds a Handler wired to hand-written fakes and a
@@ -91,9 +102,11 @@ func loginRequestBody(email, password string) string {
 }
 
 // Requirement: SS-F-04
+// Requirement: SS-F-09
 func TestHandler_Register_Success(t *testing.T) {
 	dbVault := &fakeDBVault{registerResult: dbvault.Result{Outcome: dbvault.OutcomeRegistered, PosixUsername: "user7k2m9x"}}
-	h, _ := newTestHandler(dbVault, &fakeNetworkManager{})
+	networkManager := &fakeNetworkManager{meshUserPreAuth: "authkey-abc123"}
+	h, _ := newTestHandler(dbVault, networkManager)
 
 	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
@@ -106,6 +119,12 @@ func TestHandler_Register_Success(t *testing.T) {
 	if !dbVault.registerCalled {
 		t.Fatal("expected DBVault.Register to be called on successful validation")
 	}
+	if !networkManager.meshUserCalled {
+		t.Fatal("SS-F-09: a successful registration must request Network-Manager to create a mesh user")
+	}
+	if len(networkManager.meshUserRequests) != 1 || networkManager.meshUserRequests[0] != testEmail {
+		t.Fatalf("meshUserRequests = %v, want [%q]", networkManager.meshUserRequests, testEmail)
+	}
 
 	var resp registerResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -114,9 +133,60 @@ func TestHandler_Register_Success(t *testing.T) {
 	if resp.PosixUsername != "user7k2m9x" {
 		t.Fatalf("PosixUsername = %q, want %q", resp.PosixUsername, "user7k2m9x")
 	}
+	if resp.PreAuthKey != "authkey-abc123" {
+		t.Fatalf("PreAuthKey = %q, want %q", resp.PreAuthKey, "authkey-abc123")
+	}
 
 	if got := h.Metrics.Snapshot(); got.RequestCount != 1 || got.ErrorCount != 0 {
 		t.Fatalf("counters after success = %+v, want RequestCount=1, ErrorCount=0", got)
+	}
+}
+
+// Requirement: SS-F-09
+func TestHandler_Register_MeshUserCreationDeniedMapsToForbidden(t *testing.T) {
+	dbVault := &fakeDBVault{registerResult: dbvault.Result{Outcome: dbvault.OutcomeRegistered, PosixUsername: "user7k2m9x"}}
+	networkManager := &fakeNetworkManager{meshUserErr: fmt.Errorf("%w: simulated denial", networkmanager.ErrMeshUserCreationDenied)}
+	h, _ := newTestHandler(dbVault, networkManager)
+
+	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	rec := httptest.NewRecorder()
+
+	h.Register(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d (a mesh-user creation denial must not still report 201 Created)", rec.Code, http.StatusForbidden)
+	}
+}
+
+// Requirement: SS-F-09
+func TestHandler_Register_MeshUserCreationUnreachableMapsToBadGateway(t *testing.T) {
+	dbVault := &fakeDBVault{registerResult: dbvault.Result{Outcome: dbvault.OutcomeRegistered, PosixUsername: "user7k2m9x"}}
+	networkManager := &fakeNetworkManager{meshUserErr: fmt.Errorf("%w: simulated 503", networkmanager.ErrNetworkManagerUnreachable)}
+	h, _ := newTestHandler(dbVault, networkManager)
+
+	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	rec := httptest.NewRecorder()
+
+	h.Register(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d (Network-Manager's own failure must not be reported as a 403 denial)", rec.Code, http.StatusBadGateway)
+	}
+}
+
+// Requirement: SS-F-09
+func TestHandler_Register_MeshUserCreationTimeoutMapsToGatewayTimeout(t *testing.T) {
+	dbVault := &fakeDBVault{registerResult: dbvault.Result{Outcome: dbvault.OutcomeRegistered, PosixUsername: "user7k2m9x"}}
+	networkManager := &fakeNetworkManager{meshUserErr: fmt.Errorf("%w: simulated timeout", networkmanager.ErrNetworkManagerTimeout)}
+	h, _ := newTestHandler(dbVault, networkManager)
+
+	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	rec := httptest.NewRecorder()
+
+	h.Register(rec, req)
+
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusGatewayTimeout)
 	}
 }
 
