@@ -37,12 +37,14 @@ func (a DBVaultAdapter) Login(ctx context.Context, req validation.LoginRequest) 
 }
 
 // NetworkManagerClient is the narrow interface Handler needs to request a
-// Storage-Service access grant after a successful login (SS-F-05). email
-// is the login request's own email (already in scope at the call site),
-// identifying the user's already-existing mesh node - not a value sourced
-// from Database-Vault's response.
+// Storage-Service access grant after a successful login (SS-F-05), and to
+// request a dedicated mesh user + pre-auth key after a successful
+// registration (SS-F-09). email is the login/registration request's own
+// email (already in scope at the call site), identifying the user's
+// mesh node - not a value sourced from Database-Vault's response.
 type NetworkManagerClient interface {
 	GrantAccess(ctx context.Context, email string) error
+	CreateMeshUser(ctx context.Context, email string) (preAuthKey string, err error)
 }
 
 // NetworkManagerAdapter adapts an mTLS-configured *http.Client (verifying
@@ -55,4 +57,8 @@ type NetworkManagerAdapter struct {
 
 func (a NetworkManagerAdapter) GrantAccess(ctx context.Context, email string) error {
 	return networkmanager.GrantAccess(ctx, a.Client, a.BaseURL, email)
+}
+
+func (a NetworkManagerAdapter) CreateMeshUser(ctx context.Context, email string) (string, error) {
+	return networkmanager.CreateMeshUser(ctx, a.Client, a.BaseURL, email)
 }
