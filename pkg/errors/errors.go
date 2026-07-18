@@ -93,3 +93,76 @@ func NewInternal(internal error) *AppError {
 		Internal: internal,
 	}
 }
+
+// NewForbidden builds an AppError for HTTP 403: a downstream component
+// explicitly refused an otherwise-well-formed, otherwise-authenticated
+// request (SS-F-06), e.g. Network-Manager declining to grant Storage-Service
+// access. The public message deliberately does not say which component or
+// policy refused it.
+func NewForbidden(internal error) *AppError {
+	return &AppError{
+		Status:   http.StatusForbidden,
+		Public:   "the request was refused",
+		Internal: internal,
+	}
+}
+
+// NewNotFound builds an AppError for HTTP 404: a lookup that found no
+// matching record for an internal service-to-service call (e.g. ST-F-11's
+// public-key lookup for a posix_username with no matching user). Unlike
+// NewUnauthorized (DV-F-15, where distinguishing "no such account" from
+// "wrong password" would let an external, potentially adversarial caller
+// enumerate registered emails), this constructor is for a lookup reached
+// only by an already-authenticated internal service over its own
+// dedicated mTLS listener — there is no equivalent enumeration risk to
+// blend this outcome with another one to hide. The public message still
+// gives no operational detail beyond "not found."
+func NewNotFound(internal error) *AppError {
+	return &AppError{
+		Status:   http.StatusNotFound,
+		Public:   "the requested resource was not found",
+		Internal: internal,
+	}
+}
+
+// NewBadGateway builds an AppError for HTTP 502: an outbound mTLS call to a
+// downstream internal service (e.g. Security-Switch calling Database-Vault
+// or Network-Manager, SS-F-04/SS-F-05) did not complete - connection
+// refused, TLS/organization rejection, or a response this service does not
+// recognize - as distinct from that service completing the call and
+// reporting its own failure. The public message deliberately gives no
+// operational detail.
+func NewBadGateway(internal error) *AppError {
+	return &AppError{
+		Status:   http.StatusBadGateway,
+		Public:   "the request could not be completed",
+		Internal: internal,
+	}
+}
+
+// NewGatewayTimeout builds an AppError for HTTP 504: an outbound mTLS call
+// to a downstream internal service did not complete within its deadline
+// (SS-F-06). The public message deliberately gives no operational detail.
+func NewGatewayTimeout(internal error) *AppError {
+	return &AppError{
+		Status:   http.StatusGatewayTimeout,
+		Public:   "the request could not be completed",
+		Internal: internal,
+	}
+}
+
+// NewServiceUnavailable builds an AppError for HTTP 503: an outbound call
+// to a downstream internal service (e.g. Entry-Hub calling Security-Switch,
+// EH-F-09) did not complete before its deadline. EH-F-09's fixed status
+// set (400/401/500/502/503) uses 503 where Security-Switch's own SS-F-06
+// set uses 504 for the same "call timed out" case - a deliberate
+// per-component difference in the SRS, not a typo to reconcile; do not
+// merge this with NewGatewayTimeout. The public message deliberately
+// gives no operational detail.
+func NewServiceUnavailable(internal error) *AppError {
+	return &AppError{
+		Status:   http.StatusServiceUnavailable,
+		Public:   "the request could not be completed",
+		Internal: internal,
+	}
+}

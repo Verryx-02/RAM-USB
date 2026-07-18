@@ -68,11 +68,11 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |**Component**|**Current implementation status**|
 |---|---|
 |User|Not started|
-|Entry-Hub|Not started|
-|Security-Switch|Not started|
-|Database-Vault|Not started|
+|Entry-Hub|Done|
+|Security-Switch|Done|
+|Database-Vault|Done|
 |Storage-Service|Not started|
-|Network-Manager|Not started|
+|Network-Manager|In progress|
 |Mosquitto (MQTT broker)|Not started|
 |Metrics-Collector|Not started|
 |Metrics-Visualizer (Grafana)|Not started|
@@ -99,6 +99,8 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 - **Development and testing:** Docker on macOS
 - **Production target:** Docker on macOS, Docker on Proxmox VE
 - **Network:** Headscale mesh VPN (self-hosted Tailscale)
+
+> [!NOTE] Docker and Proxmox are not alternatives, they serve different purposes: Docker provides ease of deployment and per-service isolation, identical in development and production. Proxmox (KVM for Storage-Service/Database-Vault/Network-Manager, LXC for the rest, per RNF-ORG-04) provides a stronger isolation boundary underneath Docker and, if a hyperconverged cluster is built later, high availability (live migration, failover between physical nodes) that Docker alone cannot provide. Every service's Docker container runs inside its assigned Proxmox VM/container in production.
 
 ### 2.5 Design and implementation constraints
 
@@ -155,17 +157,17 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 
 |**ID**|**Requirement**|**Notes**|
 |---|---|---|
-|EH-F-01|Must expose a public HTTPS health-check endpoint:<br>`POST /api/health`<br>with certificates signed by the **public** Let's Encrypt CA|The public CA is used so that Users can never reach the internal CA that certifies mTLS connections between the system's internal components.|
-|EH-F-02|Must expose a public HTTPS endpoint for user registration:<br>`POST /api/register`,<br>with certificates signed by the **public** Let's Encrypt CA||
-|EH-F-03|Must expose an HTTPS endpoint<br>`POST /api/login`<br>for the authentication of registered users, reachable only by them, <br>with certificates signed by the **public** Let's Encrypt CA||
-|EH-F-04|`/api/register` must accept JSON and validate: presence of `email`, `password`, and SSH public key fields; payload size within a defined limit; no unexpected additional fields; email format (RFC 5322); password length between 8 and 128 characters; password complexity (at least 3 character categories among lowercase, uppercase, digit, symbol); the SSH public key is well-formed.||
-|EH-F-05|`/api/login` must accept JSON and validate: presence of `email` and `password` fields; payload size within a defined limit; no unexpected additional fields; email format (RFC 5322); password length between 8 and 128 characters; password complexity (at least 3 character categories).|Same as register, but without the SSH key|
-|EH-F-06|On validation failure it must:<br>- respond with HTTP 400 (Bad Request) without specifying which problem was encountered,<br>- log the issue found without identifying the user,<br>- not forward the request to any other internal service.||
-|EH-F-07|On successful validation it must:<br>- log the validation outcome without identifying the user,<br>- forward the request to Security-Switch via mTLS,<br>- verify that the certificate **comes from a Security-Switch**,<br>- verify that the X.509 certificate is valid.||
-|EH-F-08|Must forward Security-Switch's response back to the user||
-|EH-F-09|Must map internal errors to HTTP 400/401/500/502/503, returning sanitized messages to the client and detailed logs internally only||
-|EH-F-10|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Entry-Hub`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.||
-|EH-F-11|Metrics must never contain users' personal data, only aggregated statistics||
+|EH-F-01|Must expose a public HTTPS health-check endpoint:<br>`POST /api/health`<br>with certificates signed by the **public** Let's Encrypt CA|The public CA is used so that Users can never reach the internal CA that certifies mTLS connections between the system's internal components. [Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
+|EH-F-02|Must expose a public HTTPS endpoint for user registration:<br>`POST /api/register`,<br>with certificates signed by the **public** Let's Encrypt CA|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
+|EH-F-03|Must expose an HTTPS endpoint<br>`POST /api/login`<br>for the authentication of registered users, reachable only by them, <br>with certificates signed by the **public** Let's Encrypt CA|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
+|EH-F-04|`/api/register` must accept JSON and validate: presence of `email`, `password`, and SSH public key fields; payload size within a defined limit; no unexpected additional fields; email format (RFC 5322); password length between 8 and 128 characters; password complexity (at least 3 character categories among lowercase, uppercase, digit, symbol); the SSH public key is well-formed.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
+|EH-F-05|`/api/login` must accept JSON and validate: presence of `email` and `password` fields; payload size within a defined limit; no unexpected additional fields; email format (RFC 5322); password length between 8 and 128 characters; password complexity (at least 3 character categories).|Same as register, but without the SSH key [Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
+|EH-F-06|On validation failure it must:<br>- respond with HTTP 400 (Bad Request) without specifying which problem was encountered,<br>- log the issue found without identifying the user,<br>- not forward the request to any other internal service.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
+|EH-F-07|On successful validation it must:<br>- log the validation outcome without identifying the user,<br>- forward the request to Security-Switch via mTLS,<br>- verify that the certificate **comes from a Security-Switch**,<br>- verify that the X.509 certificate is valid.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
+|EH-F-08|Must forward Security-Switch's response back to the user|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
+|EH-F-09|Must map internal errors to HTTP 400/401/500/502/503, returning sanitized messages to the client and detailed logs internally only|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
+|EH-F-10|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Entry-Hub`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
+|EH-F-11|Metrics must never contain users' personal data, only aggregated statistics|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
 |EH-F-12|Must act as a reverse proxy for Headscale coordination traffic directed at Network-Manager, routing it over the private mesh network|Users who have just completed registration need to contact Network-Manager to join the private network. But I don't want that exposed to the internet. Since Entry-Hub is already exposed, I route that traffic through it too.|
 
 ---
@@ -174,14 +176,14 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 
 |**ID**|**Requirement**|**Notes**|
 |---|---|---|
-|SS-F-01|Must accept only mTLS connections from clients with:<br>- `organization="EntryHub"`,<br>- a valid X.509 certificate,<br>- access to the private mesh network.||
-|SS-F-02|Must re-validate the received input, independently of the validation already performed by Entry-Hub|Same validation as Entry-Hub|
-|SS-F-03|On validation failure it must:<br>- respond with HTTP 400 (Bad Request) without specifying which problem was encountered,<br>- log the issue found without identifying the user,<br>- not forward the request to any other internal service.||
-|SS-F-04|On successful validation it must:<br>- log the validation outcome without identifying the user,<br>- forward the request to Database-Vault via mTLS, verifying that:<br>  - the certificate comes from a Database-Vault,<br>  - the X.509 certificate is valid.||
-|SS-F-05|After confirmation of successful authentication from Database-Vault, must request Network-Manager (over mTLS) to grant that user access to Storage-Service for 12 hours||
-|SS-F-06|Must map errors to HTTP 400/401/403/500/502/504||
-|SS-F-07|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Security-Switch`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.||
-|SS-F-08|Metrics must never contain users' personal data, only aggregated statistics||
+|SS-F-01|Must accept only mTLS connections from clients with:<br>- `organization="EntryHub"`,<br>- a valid X.509 certificate,<br>- access to the private mesh network.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
+|SS-F-02|Must re-validate the received input, independently of the validation already performed by Entry-Hub|Same validation as Entry-Hub [Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
+|SS-F-03|On validation failure it must:<br>- respond with HTTP 400 (Bad Request) without specifying which problem was encountered,<br>- log the issue found without identifying the user,<br>- not forward the request to any other internal service.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
+|SS-F-04|On successful validation it must:<br>- log the validation outcome without identifying the user,<br>- forward the request to Database-Vault via mTLS, verifying that:<br>  - the certificate comes from a Database-Vault,<br>  - the X.509 certificate is valid.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
+|SS-F-05|After confirmation of successful authentication from Database-Vault, must request Network-Manager (over mTLS) to grant that user access to Storage-Service for 12 hours|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
+|SS-F-06|Must map errors to HTTP 400/401/403/500/502/504|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
+|SS-F-07|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Security-Switch`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
+|SS-F-08|Metrics must never contain users' personal data, only aggregated statistics|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
 
 ---
 
@@ -189,26 +191,26 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 
 |**ID**|**Requirement**|**Notes**|
 |---|---|---|
-|DV-F-01|Must accept only mTLS connections from clients with:<br>- `organization="SecuritySwitch"`,<br>- a valid certificate,<br>- access to the private mesh network.||
-|DV-F-02|Must re-validate the received input, independently of the validation already performed by Security-Switch.||
-|DV-F-03|Must compute the SHA-256 hash of the email for indexing and as primary key, never logging the plaintext email.||
-|DV-F-04|Must encrypt the user's email: derive a per-record encryption key from the master key with HKDF-SHA256 and a random 16-byte salt, then encrypt the email with AES-256-GCM using that derived key and a random 12-byte nonce.||
-|DV-F-05|The master key should come from a configurable source with length validation (32 bytes)||
-|DV-F-06|Must hold a pepper as an environment variable||
-|DV-F-07|Must compute the password hash with Argon2id: memory 47104 KiB (46 MiB), 2 iterations, parallelism 1, 32-byte output, using a random per-record salt and the pepper (DV-F-06).|Stored as a single self-describing string (algorithm, cost parameters, salt, and digest together); no separate salt field is persisted.|
-|DV-F-08|Must save the user record in an atomic transaction||
-|DV-F-09|Must ask Storage-Service to create the unique POSIX user on the server with username `user<xxxxxx>`, where `xxxxxx` are 6 random characters from a base-36 alphabet, and wait for its response|"user<xxxxxx>" all lowercase|
-|DV-F-10|If POSIX user creation fails, must delete the user from the database and inform Security-Switch that user registration failed||
-|DV-F-11|After creating the user record and the POSIX user, must inform Security-Switch that the user was registered||
-|DV-F-12|Must reject (HTTP 409) registrations with an email or SSH key that already exists, without giving details about the error||
-|DV-F-13|During login, must retrieve the salt associated with the email via the SHA-256 hash of the email (DV-F-03)|The salt is retrieved by decoding the stored password hash (DV-F-07), not a separate stored field.|
-|DV-F-14|Must recompute Argon2id on the received password using the retrieved salt and the pepper, and compare the result with the stored hash||
-|DV-F-15|Must respond with the same HTTP 401 status code for both a nonexistent email and an incorrect password, without distinguishing between the two cases either in the response or in the log||
-|DV-F-16|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Database-Vault`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.||
-|DV-F-17|Metrics must never contain users' personal data, only aggregated statistics||
+|DV-F-01|Must accept only mTLS connections from clients with:<br>- `organization="SecuritySwitch"`,<br>- a valid certificate,<br>- access to the private mesh network.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-02|Must re-validate the received input, independently of the validation already performed by Security-Switch.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-03|Must compute the SHA-256 hash of the email for indexing and as primary key, never logging the plaintext email.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-04|Must encrypt the user's email: derive a per-record encryption key from the master key with HKDF-SHA256 and a random 16-byte salt, then encrypt the email with AES-256-GCM using that derived key and a random 12-byte nonce.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-05|The master key should come from a configurable source with length validation (32 bytes)|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-06|Must hold a pepper as an environment variable|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-07|Must compute the password hash with Argon2id: memory 47104 KiB (46 MiB), 2 iterations, parallelism 1, 32-byte output, using a random per-record salt and the pepper (DV-F-06).|Stored as a single self-describing string (algorithm, cost parameters, salt, and digest together); no separate salt field is persisted. [Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-08|Must save the user record in an atomic transaction|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-09|Must ask Storage-Service to create the unique POSIX user on the server with username `user<xxxxxx>`, where `xxxxxx` are 6 random characters from a base-36 alphabet, and wait for its response|"user<xxxxxx>" all lowercase [Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-10|If POSIX user creation fails, must delete the user from the database and inform Security-Switch that user registration failed|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-11|After creating the user record and the POSIX user, must inform Security-Switch that the user was registered|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-12|Must reject (HTTP 409) registrations with an email or SSH key that already exists, without giving details about the error|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-13|During login, must retrieve the salt associated with the email via the SHA-256 hash of the email (DV-F-03)|The salt is retrieved by decoding the stored password hash (DV-F-07), not a separate stored field. [Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-14|Must recompute Argon2id on the received password using the retrieved salt and the pepper, and compare the result with the stored hash|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-15|Must respond with the same HTTP 401 status code for both a nonexistent email and an incorrect password, without distinguishing between the two cases either in the response or in the log|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-16|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Database-Vault`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
+|DV-F-17|Metrics must never contain users' personal data, only aggregated statistics|[Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
 |DV-F-18|A master key backup procedure should exist||
 |DV-F-19|A master key rotation procedure should exist||
-|DV-F-20|On validation failure it must:<br>- respond with HTTP 400 (Bad Request) without specifying which problem was encountered,<br>- log the issue found without identifying the user,<br>- not forward the request to any other internal service.|Same pattern as EH-F-06/SS-F-03, added for Database-Vault|
+|DV-F-20|On validation failure it must:<br>- respond with HTTP 400 (Bad Request) without specifying which problem was encountered,<br>- log the issue found without identifying the user,<br>- not forward the request to any other internal service.|Same pattern as EH-F-06/SS-F-03, added for Database-Vault [Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
 
 ---
 
@@ -255,15 +257,15 @@ Storage-Service directory structure:
 
 |**ID**|**Requirement**|**Notes**|
 |---|---|---|
-|NM-F-01|Must ensure that only Entry-Hub, Database-Vault, Network-Manager, and Certificate-Authority can contact Security-Switch||
-|NM-F-02|Must ensure that only Security-Switch, Storage-Service, and Certificate-Authority can contact Database-Vault||
-|NM-F-03|Must ensure that only Security-Switch and Certificate-Authority can contact Network-Manager||
-|NM-F-04|Must ensure that all internal components of the network, except Users, can contact, and be contacted by, the Certificate-Authority over the mesh network||
-|NM-F-05|Must ensure that **only authenticated users** can see and contact Storage-Service||
-|NM-F-06|Must ensure that **registered but not authenticated Users** can see and contact only Entry-Hub||
-|NM-F-07|Must ensure that **registered and authenticated Users** can see and contact only Entry-Hub and Storage-Service||
-|NM-F-08|On request from Security-Switch, following successful registration, must create a dedicated Headscale user and generate a short-lived pre-auth key for the new account||
-|NM-F-09|After a successful login, on request from Security-Switch, must assign the user's node the ACL tag that enables reachability toward Storage-Service, and record an expiry 12 hours from that point|[[NM-F-09 empirical verification \| Verified]]|
+|NM-F-01|Must ensure that only Entry-Hub, Database-Vault, Network-Manager, and Certificate-Authority can contact Security-Switch|[Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
+|NM-F-02|Must ensure that only Security-Switch, Storage-Service, and Certificate-Authority can contact Database-Vault|[Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
+|NM-F-03|Must ensure that only Security-Switch and Certificate-Authority can contact Network-Manager|[Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
+|NM-F-04|Must ensure that all internal components of the network, except Users, can contact, and be contacted by, the Certificate-Authority over the mesh network|[Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
+|NM-F-05|Must ensure that **only authenticated users** can see and contact Storage-Service|[Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
+|NM-F-06|Must ensure that **registered but not authenticated Users** can see and contact only Entry-Hub|[Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
+|NM-F-07|Must ensure that **registered and authenticated Users** can see and contact only Entry-Hub and Storage-Service|[Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
+|NM-F-08|On request from Security-Switch, following successful registration, must create a dedicated Headscale user and generate a short-lived pre-auth key for the new account|[Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
+|NM-F-09|After a successful login, on request from Security-Switch, must assign the user's node the ACL tag that enables reachability toward Storage-Service, and record an expiry 12 hours from that point|[[NM-F-09 empirical verification \| Verified]] [Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
 |NM-F-10|Must periodically check recorded expiries and remove the ACL tag from expired nodes, automatically and without manual intervention||
 |NM-F-11|The expiry of every grant must be persisted, not kept only in memory, so as not to lose state if Network-Manager restarts||
 |NM-F-12|Must expose an administration interface for creating pre-auth keys and managing ACL tags, reachable **only from the private network**||
@@ -349,7 +351,7 @@ Constraints deriving from the distributed-security domain:
 |RD-01|Any new component introduced in the future must not create a path along which sensitive plaintext data crosses or is logged by a component other than the client or the component strictly necessary for its encryption/decryption|
 |RD-02|Derived keys (via HKDF) must never be persisted: any new key-storage requirement must be evaluated against this constraint before being accepted|
 |RD-03|Argon2id and AES-256-GCM are non-negotiable technology constraints|
-|RD-04|The "fail-secure" principle applies to every component: when there is uncertainty about the validity of a request, the default is to deny access|
+|RD-04|The "fail-secure" principle applies to every component: when there is uncertainty about the validity of a request, the default is to deny access. [Merged](https://github.com/Verryx-02/RAM-USB/commit/528d2e1502ad884645a83d4e7b4c20325db5d63e)|
 
 ---
 
