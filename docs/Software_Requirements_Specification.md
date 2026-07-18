@@ -6,8 +6,8 @@ Indexes: [[RAM-USB]]
 
 ---
 
-**Version:** 1.2  
-**Status:** Amended: CL-F-09 added (client-side pre-validation of registration/login input, mirroring Entry-Hub's rules) 
+**Version:** 1.3  
+**Status:** Amended: SS-F-09 added, closing a gap found while implementing the Client (Security-Switch was never required to ask Network-Manager for a mesh pre-auth key during registration, only at login) 
 **Author:** Francesco Verrengia
 
 > [!NOTE] The level of detail in this document increases with each iteration, following the spiral model of requirements engineering.
@@ -185,6 +185,7 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |SS-F-06|Must map errors to HTTP 400/401/403/500/502/504|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
 |SS-F-07|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Security-Switch`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
 |SS-F-08|Metrics must never contain users' personal data, only aggregated statistics|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
+|SS-F-09|After confirmation of successful registration from Database-Vault, must request Network-Manager (over mTLS) to create a dedicated Headscale user and generate a pre-auth key for the new account, then include that key in the response to Entry-Hub|Mirrors NM-F-08; distinct from SS-F-05, which covers the post-login ACL grant, not registration|
 
 ---
 
@@ -457,7 +458,7 @@ Requirements/checks knowingly deferred to a later iteration, which **do not** bl
 
 | **User requirements** | **Linked system requirements**                                                                                                                                                                                                                                                              |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| RU-01                 | CL-F-01, CL-F-02, CL-F-09, <br>EH-F-02, EH-F-04, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, <br>DV-F-01, DV-F-02, DV-F-03, DV-F-04, DV-F-05, DV-F-06, DV-F-07, <br>DV-F-08, DV-F-09, DV-F-10, DV-F-11, DV-F-12, DV-F-20, <br>ST-F-06, ST-F-08, ST-F-10, <br>NM-F-08, NM-F-13 |
+| RU-01                 | CL-F-01, CL-F-02, CL-F-09, <br>EH-F-02, EH-F-04, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, SS-F-09, <br>DV-F-01, DV-F-02, DV-F-03, DV-F-04, DV-F-05, DV-F-06, DV-F-07, <br>DV-F-08, DV-F-09, DV-F-10, DV-F-11, DV-F-12, DV-F-20, <br>ST-F-06, ST-F-08, ST-F-10, <br>NM-F-08, NM-F-13 |
 | RU-02                 | CL-F-03, CL-F-09, <br>EH-F-03, EH-F-05, EH-F-06, EH-F-07, EH-F-09, <br>SS-F-01, SS-F-02, SS-F-03, SS-F-04, SS-F-06, <br>DV-F-01, DV-F-02, DV-F-13, DV-F-14, DV-F-15, DV-F-20, <br>NM-F-09, NM-F-13                                                                                                            |
 | RU-03                 | CL-F-04, CL-F-05, CL-F-06, <br>ST-F-01, ST-F-02, ST-F-03, ST-F-05, ST-F-07, ST-F-11, <br>NM-F-05, NM-F-09, NM-F-15,                                                                                                                                                                         |
 | RU-04                 | CL-F-03, <br>NM-F-05, NM-F-06, NM-F-07, NM-F-09, NM-F-10, NM-F-11, <br>SS-F-05                                                                                                                                                                                                              |
