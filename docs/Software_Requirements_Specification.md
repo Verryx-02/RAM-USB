@@ -112,7 +112,7 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 ### 2.6 Assumptions and dependencies
 
 - The private network infrastructure is assumed to be available and working
-- Certificate generation (`generate_key.sh`) is assumed to complete correctly before services start
+- Certificate issuance is assumed to be handled by the Certificate-Authority (CA-F-04's bootstrap-token flow)
 - For now, the encryption master key is assumed to reside in an environment variable
 - The user is assumed to have installed the Tailscale client on their system before completing registration
 
