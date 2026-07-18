@@ -67,7 +67,7 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 
 |**Component**|**Current implementation status**|
 |---|---|
-|User|Not started|
+|User|Done|
 |Entry-Hub|Done|
 |Security-Switch|Done|
 |Database-Vault|Done|
@@ -144,15 +144,15 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 
 |**ID**|**Requirement**|**Notes**|
 |---|---|---|
-|CL-F-01|Must autonomously generate an SSH key pair (public/private) before registration, never transmitting the private key to any system component||
-|CL-F-02|Following a user command, must send only the SSH public key to Entry-Hub during registration (`POST /api/register`), together with email and password||
-|CL-F-03|Following a user command, must re-run login (`POST /api/login`) before the 12-hour ACL grant expires, to maintain continuity of access to Storage-Service||
-|CL-F-04|Must configure and start Tailscale using the pre-auth key received in the registration response, in order to join the private mesh network||
-|CL-F-05|Must resolve Storage-Service via MagicDNS on the mesh network, without relying on static IP addresses||
-|CL-F-06|Following a user command, must invoke `restic backup` against Storage-Service via SFTP, authenticating with the SSH private key generated in CL-F-01||
-|CL-F-07|Following a user command, must invoke `restic restore` against Storage-Service via SFTP, using the same authentication method as CL-F-06||
-|CL-F-08|Must handle the HTTP error codes returned by Entry-Hub (400/401/403/500/502/503/504) without exposing internal system details to the end user||
-|CL-F-09|Following a user command, must validate email, password, and (for registration only) the SSH public key locally, using the same rules Entry-Hub enforces (EH-F-04 for registration, EH-F-05 for login), before sending `POST /api/register` or `POST /api/login`; on local validation failure, must not transmit the request|Reduces needless requests; does not replace server-side re-validation (RNF-SEC-02, RNF-SEC-03)|
+|CL-F-01|Must autonomously generate an SSH key pair (public/private) before registration, never transmitting the private key to any system component|[Merged](https://github.com/Verryx-02/RAM-USB/commit/64a7d9ab95edc3608f4dd7e4334756addb742582)|
+|CL-F-02|Following a user command, must send only the SSH public key to Entry-Hub during registration (`POST /api/register`), together with email and password|[Merged](https://github.com/Verryx-02/RAM-USB/commit/64a7d9ab95edc3608f4dd7e4334756addb742582)|
+|CL-F-03|Following a user command, must re-run login (`POST /api/login`) before the 12-hour ACL grant expires, to maintain continuity of access to Storage-Service|[Merged](https://github.com/Verryx-02/RAM-USB/commit/64a7d9ab95edc3608f4dd7e4334756addb742582)|
+|CL-F-04|Must configure and start Tailscale using the pre-auth key received in the registration response, in order to join the private mesh network|[Merged](https://github.com/Verryx-02/RAM-USB/commit/64a7d9ab95edc3608f4dd7e4334756addb742582)|
+|CL-F-05|Must resolve Storage-Service via MagicDNS on the mesh network, without relying on static IP addresses|[Merged](https://github.com/Verryx-02/RAM-USB/commit/64a7d9ab95edc3608f4dd7e4334756addb742582)|
+|CL-F-06|Following a user command, must invoke `restic backup` against Storage-Service via SFTP, authenticating with the SSH private key generated in CL-F-01|[Merged](https://github.com/Verryx-02/RAM-USB/commit/64a7d9ab95edc3608f4dd7e4334756addb742582)|
+|CL-F-07|Following a user command, must invoke `restic restore` against Storage-Service via SFTP, using the same authentication method as CL-F-06|[Merged](https://github.com/Verryx-02/RAM-USB/commit/64a7d9ab95edc3608f4dd7e4334756addb742582)|
+|CL-F-08|Must handle the HTTP error codes returned by Entry-Hub (400/401/403/500/502/503/504) without exposing internal system details to the end user|[Merged](https://github.com/Verryx-02/RAM-USB/commit/64a7d9ab95edc3608f4dd7e4334756addb742582)|
+|CL-F-09|Following a user command, must validate email, password, and (for registration only) the SSH public key locally, using the same rules Entry-Hub enforces (EH-F-04 for registration, EH-F-05 for login), before sending `POST /api/register` or `POST /api/login`; on local validation failure, must not transmit the request|Reduces needless requests; does not replace server-side re-validation (RNF-SEC-02, RNF-SEC-03) [Merged](https://github.com/Verryx-02/RAM-USB/commit/64a7d9ab95edc3608f4dd7e4334756addb742582)|
 
 ### 4.2 Entry-Hub
 
@@ -185,7 +185,7 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |SS-F-06|Must map errors to HTTP 400/401/403/500/502/504|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
 |SS-F-07|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Security-Switch`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
 |SS-F-08|Metrics must never contain users' personal data, only aggregated statistics|[Merged](https://github.com/Verryx-02/RAM-USB/commit/8345069ea1541ebed9986f1873edc84976c04a2f)|
-|SS-F-09|After confirmation of successful registration from Database-Vault, must request Network-Manager (over mTLS) to create a dedicated Headscale user and generate a pre-auth key for the new account, then include that key in the response to Entry-Hub|Mirrors NM-F-08; distinct from SS-F-05, which covers the post-login ACL grant, not registration|
+|SS-F-09|After confirmation of successful registration from Database-Vault, must request Network-Manager (over mTLS) to create a dedicated Headscale user and generate a pre-auth key for the new account, then include that key in the response to Entry-Hub|Mirrors NM-F-08; distinct from SS-F-05, which covers the post-login ACL grant, not registration [Merged](https://github.com/Verryx-02/RAM-USB/commit/11d9e4e7d5aacb895aa297d78fe5bea0a23acc83)|
 
 ---
 

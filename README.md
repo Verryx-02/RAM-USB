@@ -28,7 +28,7 @@ RAM-USB is an [n-tier client-server microservices architecture](https://en.wikip
 
 | Component                                                                                                 | Role                                                                                                       | Status      |
 | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------- |
-| [User-Client](https://github.com/Verryx-02/RAM-USB/tree/main/user-client)                                 | CLI client: registers, authenticates, backs up/restores files via `restic` over SFTP                       | Not started |
+| [User-Client](https://github.com/Verryx-02/RAM-USB/tree/main/user-client)                                 | CLI client: registers, authenticates, backs up/restores files via `restic` over SFTP                       | Done |
 | [Entry-Hub](https://github.com/Verryx-02/RAM-USB/tree/main/services/entry-hub)                            | Public-facing HTTPS gateway; validates and forwards requests                                               | Done |
 | [Security-Switch](https://github.com/Verryx-02/RAM-USB/tree/main/services/security-switch)                | Internal request router and re-validator                                                                   | Done |
 | [Database-Vault](https://github.com/Verryx-02/RAM-USB/tree/main/services/database-vault)                  | User data persistence (PostgreSQL), credential hashing/encryption                                          | Done |
@@ -57,7 +57,7 @@ RAM-USB is an [n-tier client-server microservices architecture](https://en.wikip
 ## Getting started (development)
 
 > [!WARNING] The project is under active implementation.
-> Entry-Hub, Security-Switch, and Database-Vault are implemented and merged; Network-Manager is partially merged.
+> Entry-Hub, Security-Switch, Database-Vault, and the User-Client are implemented and merged; Storage-Service, Network-Manager, and Certificate-Authority are partially merged.
 > None of the services are containerized yet (every Dockerfile is still a placeholder), so the full stack is not runnable via Docker Compose yet.
 > This section will be filled in as containerization lands.
 
