@@ -151,13 +151,14 @@ func NewGatewayTimeout(internal error) *AppError {
 	}
 }
 
-// NewServiceUnavailable builds an AppError for HTTP 503: this service
-// itself could not complete a request because a downstream internal call
-// timed out or the downstream component is temporarily unreachable
-// (EH-F-09's literal status list is 400/401/500/502/503, not 504 -
-// Entry-Hub uses 503 where Security-Switch's own outbound-call mapping
-// uses 504 for the same underlying condition, timeout). The public
-// message deliberately gives no operational detail.
+// NewServiceUnavailable builds an AppError for HTTP 503: an outbound call
+// to a downstream internal service (e.g. Entry-Hub calling Security-Switch,
+// EH-F-09) did not complete before its deadline. EH-F-09's fixed status
+// set (400/401/500/502/503) uses 503 where Security-Switch's own SS-F-06
+// set uses 504 for the same "call timed out" case - a deliberate
+// per-component difference in the SRS, not a typo to reconcile; do not
+// merge this with NewGatewayTimeout. The public message deliberately
+// gives no operational detail.
 func NewServiceUnavailable(internal error) *AppError {
 	return &AppError{
 		Status:   http.StatusServiceUnavailable,
