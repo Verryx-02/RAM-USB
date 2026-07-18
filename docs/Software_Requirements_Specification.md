@@ -255,6 +255,11 @@ Storage-Service directory structure:
 
 ---
 
+> [!NOTE] Storage-Service container architecture:
+> the container runs two independent long-lived processes: a hardened `sshd` (ST-F-03/04/07/08/09) and a Go mTLS HTTP server (ST-F-06/10), supervised by `s6-overlay` on a `debian:bookworm-slim` base image. This lets the container create a new POSIX user per registration, on demand, satisfying ST-F-06. POSIX users are created via explicit `useradd` and `groupadd` calls. The container runs with `cap_drop: ALL` plus a minimal added set (`CAP_CHOWN`, `CAP_SETUID`, `CAP_SETGID`, `CAP_SYS_CHROOT`), needed by both the user-creation code and by sshd's own per-connection setuid and chroot operations, per RNF-SEC-03 and RNF-REL-01. ST-F-11's `AuthorizedKeysCommand` is a dedicated Go binary, per RNF-ORG-01, running as a dedicated unprivileged system account with no other role on the host. Any failure of its call to Database-Vault (timeout, lookup error, malformed response) denies the SSH connection, per RD-04's fail-secure principle.
+
+---
+
 ### 4.6 Network Manager
 
 |**ID**|**Requirement**|**Notes**|
