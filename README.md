@@ -32,12 +32,12 @@ RAM-USB is an [n-tier client-server microservices architecture](https://en.wikip
 | [Entry-Hub](https://github.com/Verryx-02/RAM-USB/tree/main/services/entry-hub)                            | Public-facing HTTPS gateway; validates and forwards requests                                               | Done |
 | [Security-Switch](https://github.com/Verryx-02/RAM-USB/tree/main/services/security-switch)                | Internal request router and re-validator                                                                   | Done |
 | [Database-Vault](https://github.com/Verryx-02/RAM-USB/tree/main/services/database-vault)                  | User data persistence (PostgreSQL), credential hashing/encryption                                          | Done |
-| [Storage-Service](https://github.com/Verryx-02/RAM-USB/tree/main/services/storage-service)                | Per-user isolated, chrooted SFTP storage for encrypted backups                                             | Not started |
+| [Storage-Service](https://github.com/Verryx-02/RAM-USB/tree/main/services/storage-service)                | Per-user isolated, chrooted SFTP storage for encrypted backups                                             | In progress |
 | [Network-Manager](https://github.com/Verryx-02/RAM-USB/tree/main/services/network-manager)                | Headscale ACL and mesh access control                                                                      | In progress |
 | [Mosquitto (MQTT broker)](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/mosquitto)           | Metrics transport between services and the collector                                                       | Not started |
 | [Metrics-Collector](https://github.com/Verryx-02/RAM-USB/tree/main/services/metrics-collector)            | Ingests and stores metrics (TimescaleDB)                                                                   | Not started |
 | [Metrics-Visualizer (Grafana)](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/grafana)        | Operational dashboards                                                                                     | Not started |
-| [Certificate-Authority](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/certificate-authority) | Issues and rotates mTLS certificates ([smallstep/certificates](https://github.com/smallstep/certificates)) | Not started |
+| [Certificate-Authority](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/certificate-authority) | Issues and rotates mTLS certificates ([smallstep/certificates](https://github.com/smallstep/certificates)) | In progress |
 
 ---
 

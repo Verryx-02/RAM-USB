@@ -71,12 +71,12 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |Entry-Hub|Done|
 |Security-Switch|Done|
 |Database-Vault|Done|
-|Storage-Service|Not started|
+|Storage-Service|In progress|
 |Network-Manager|In progress|
 |Mosquitto (MQTT broker)|Not started|
 |Metrics-Collector|Not started|
 |Metrics-Visualizer (Grafana)|Not started|
-|[Certificate-Authority](https://github.com/smallstep/certificates)|Not started|
+|[Certificate-Authority](https://github.com/smallstep/certificates)|In progress|
 
 ### 2.2 Main product functions
 
@@ -218,16 +218,16 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 
 |**ID**|**Requirement**|**Notes**|
 |---|---|---|
-|ST-F-01|Must accept mTLS connections only from clients with:<br>- `organization="DatabaseVault"`,<br>- a valid certificate,<br>- access to the private mesh network.|Accepts both mTLS (Database-Vault) and SFTP (Users)|
+|ST-F-01|Must accept mTLS connections only from clients with:<br>- `organization="DatabaseVault"`,<br>- a valid certificate,<br>- access to the private mesh network.|Accepts both mTLS (Database-Vault) and SFTP (Users) [Merged](https://github.com/Verryx-02/RAM-USB/commit/ff3c0d637333f2ae08534eaeaa034a8096146ab3)|
 |ST-F-02|Must provide upload/download of client-side-encrypted files, never processing plaintext content|Files are encrypted client-side|
 |ST-F-03|Access must occur exclusively via SFTP authenticated with the user's registered SSH public key||
 |ST-F-04|Must explicitly forbid any other form of SSH connection besides SFTP||
 |ST-F-05|Each user must have an isolated storage space, not accessible by other users||
-|ST-F-06|Following a request from Database-Vault over mTLS, must create a POSIX user on the system with username `user<xxxxxx>`, where `xxxxxx` are 6 random characters from a base-36 alphabet|"user<xxxxxx>" all lowercase|
+|ST-F-06|Following a request from Database-Vault over mTLS, must create a POSIX user on the system with username `user<xxxxxx>`, where `xxxxxx` are 6 random characters from a base-36 alphabet|"user<xxxxxx>" all lowercase [Merged](https://github.com/Verryx-02/RAM-USB/commit/ff3c0d637333f2ae08534eaeaa034a8096146ab3)|
 |ST-F-07|Must ensure the POSIX user can never leave their own directory||
 |ST-F-08|The created POSIX account must not have a traditional home directory or an interactive shell; the only writable space is the dedicated subdirectory inside the chroot||
 |ST-F-09|Storage-Service's sshd configuration must have `PasswordAuthentication no` and `PermitRootLogin no`, regardless of the fact that the created accounts have no password set||
-|ST-F-10|Following successful or failed creation of the POSIX user, must report the outcome back to Database-Vault.||
+|ST-F-10|Following successful or failed creation of the POSIX user, must report the outcome back to Database-Vault.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/ff3c0d637333f2ae08534eaeaa034a8096146ab3)|
 |ST-F-11|On every user SFTP connection attempt, must retrieve the user's current public key from Database-Vault via `AuthorizedKeysCommand`||
 |ST-F-12|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Storage-Service`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.||
 |ST-F-13|Metrics must never contain users' personal data, only aggregated statistics||
@@ -283,7 +283,7 @@ Storage-Service directory structure:
 |CA-F-01|Must guarantee that components presenting certificates for mTLS are truly who they claim to be|The private CA exists because services not exposed to the internet cannot be reached by a public CA such as Let's Encrypt.|
 |CA-F-02|Must guarantee the issuance, rotation, revocation, and verification of mTLS certificates||
 |CA-F-03|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Certificate-Authority`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.||
-|CA-F-04|Must accept a single-use bootstrap token, distributed out-of-band to each service, for issuing the initial certificate; subsequent renewals must occur via the current mTLS certificate, not via the token||
+|CA-F-04|Must accept a single-use bootstrap token, distributed out-of-band to each service, for issuing the initial certificate; subsequent renewals must occur via the current mTLS certificate, not via the token|[Merged](https://github.com/Verryx-02/RAM-USB/commit/d01e06c22997ff328b97786b8ae75765826fc233)|
 
 ---
 
