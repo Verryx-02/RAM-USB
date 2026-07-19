@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/mail"
+	"time"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
@@ -53,6 +54,21 @@ type Handler struct {
 	// typically a HeadscaleAdapter wrapping a headscale.Service backed by
 	// a real gRPC connection (headscale.Dial). Must not be nil.
 	Mesh MeshProvisioner
+
+	// Grants persists NM-F-09's grant (NM-F-11: node, tag, expiry) so
+	// NM-F-10's sweep survives a Network-Manager restart. If nil, Grant
+	// still performs the real Headscale reachability grant but skips
+	// persistence, logging that fact loudly - see Grant's own doc
+	// comment for why a persistence failure does not itself fail the
+	// request.
+	Grants GrantRecorder
+
+	// Metrics accumulates request/error/response-time counts feeding
+	// NM-F-17/NM-F-18's periodic MQTT publish (internal/metrics.Run,
+	// wired in cmd/network-manager/main.go). Must not be nil - same
+	// "always required, wired by every constructor" convention as
+	// Database-Vault's own Handler.Metrics.
+	Metrics *Counters
 
 	// Logger receives every structured log line this handler writes. If
 	// nil, slog.Default() is used - same injectable-logger pattern as
@@ -91,14 +107,23 @@ type meshUserResponse struct {
 // relays it all the way back to the client, the one credential in this
 // codebase that does so.
 func (h *Handler) CreateMeshUser(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	h.Metrics.BeginRequest()
+	isError := false
+	defer func() {
+		h.Metrics.EndRequest(time.Since(start), isError)
+	}()
+
 	req, err := decodeMeshUserRequest(r.Body)
 	if err != nil {
+		isError = true
 		h.logger().Warn("mesh-user creation: decode failed", "endpoint", "mesh-users", "error", err)
 		writeAppError(w, apperrors.NewBadRequest(err))
 		return
 	}
 
 	if err := validateEmail(req.Email); err != nil {
+		isError = true
 		h.logger().Warn("mesh-user creation: validation failed", "endpoint", "mesh-users", "error", err)
 		writeAppError(w, apperrors.NewBadRequest(err))
 		return
@@ -106,6 +131,7 @@ func (h *Handler) CreateMeshUser(w http.ResponseWriter, r *http.Request) {
 
 	key, err := h.Mesh.CreateMeshUser(r.Context(), req.Email)
 	if err != nil {
+		isError = true
 		h.logger().Error("mesh-user creation: headscale call failed", "error", err)
 		writeAppError(w, mapHeadscaleError(err))
 		return
@@ -147,23 +173,49 @@ type grantResponse struct {
 // this field exists purely for wire-contract compatibility with
 // Security-Switch's already-committed client.
 func (h *Handler) Grant(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	h.Metrics.BeginRequest()
+	isError := false
+	defer func() {
+		h.Metrics.EndRequest(time.Since(start), isError)
+	}()
+
 	req, err := decodeGrantRequest(r.Body)
 	if err != nil {
+		isError = true
 		h.logger().Warn("grant: decode failed", "endpoint", "grants", "error", err)
 		writeAppError(w, apperrors.NewBadRequest(err))
 		return
 	}
 
 	if err := validateEmail(req.Email); err != nil {
+		isError = true
 		h.logger().Warn("grant: validation failed", "endpoint", "grants", "error", err)
 		writeAppError(w, apperrors.NewBadRequest(err))
 		return
 	}
 
-	if err := h.Mesh.GrantStorageAccess(r.Context(), req.Email); err != nil {
+	nodeID, err := h.Mesh.GrantStorageAccess(r.Context(), req.Email)
+	if err != nil {
+		isError = true
 		h.logger().Error("grant: headscale call failed", "error", err)
 		writeAppError(w, mapHeadscaleError(err))
 		return
+	}
+
+	// NM-F-11: persist the grant's expiry so NM-F-10's sweep can find and
+	// revoke it even across a Network-Manager restart. The real
+	// reachability grant above already succeeded - a persistence
+	// failure here is an operational/durability problem (the grant
+	// might outlive GrantDuration if the sweep never learns about it),
+	// not a reason to tell the caller the grant itself failed, so it is
+	// logged loudly rather than turned into a 5xx response. Nil Grants
+	// (no store configured) is treated the same way, loudly, not
+	// silently - see the Handler field's own doc comment.
+	if h.Grants == nil {
+		h.logger().Error("grant: no grant store configured, NM-F-11 persistence skipped", "node_id", nodeID)
+	} else if err := h.Grants.RecordGrant(r.Context(), req.Email, nodeID, headscale.TagStorageAccess, time.Now().Add(headscale.GrantDuration)); err != nil {
+		h.logger().Error("grant: failed to persist grant expiry (NM-F-11)", "node_id", nodeID, "error", err)
 	}
 
 	h.logger().Info("grant: succeeded")

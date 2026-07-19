@@ -1,9 +1,22 @@
 // Command network-manager wires Network-Manager's already-implemented
-// packages into a running mTLS HTTP server: NM-F-03's connection-acceptance
-// TLS config (only Security-Switch may reach the HTTP API this process
-// exposes), the httpapi handlers for NM-F-08 (mesh-user + pre-auth-key
-// creation) and NM-F-09 (storage-access ACL grant), and the outbound gRPC
-// connection to Headscale those handlers call through internal/headscale.
+// packages into a running mTLS HTTP server (NM-F-03's connection-
+// acceptance TLS config, NM-F-08's mesh-user creation, NM-F-09's
+// storage-access grant), plus the outbound gRPC connection to Headscale
+// those handlers call through internal/headscale, the SQLite-backed grant
+// store (NM-F-11), its periodic expiry sweep (NM-F-10), and the periodic
+// MQTT metrics publish (NM-F-17, NM-F-18).
+//
+// NM-F-12 ("expose an administration interface for creating pre-auth keys
+// and managing ACL tags, reachable only from the private network") needs
+// no RAM-USB code: Headscale's own CLI, already running inside the
+// network-manager-headscale container, provides this exact capability
+// (`docker exec <container> headscale preauthkeys create --user <ID>`,
+// `docker exec <container> headscale nodes tag -i <NODE_ID> -t <TAG>`)
+// over a local Unix socket with no network listener at all - satisfying
+// "reachable only from the private network" more strictly than a second
+// mTLS listener would, with zero new attack surface. A prior session built
+// a separate admin mTLS listener for this; it was removed after
+// confirming with the user that Headscale's CLI already covers it.
 //
 // Every configuration value is read from an environment variable, per
 // CONTRIBUTING.md §7's "cmd/<service>/main.go: wiring, config loading,
@@ -13,35 +26,24 @@
 // constant below - revisit if a future deployment/ops document fixes
 // different names.
 //
-// TLS/mTLS setup (PKI-F-01/PKI-F-02, CA-F-04): this server's one identity -
-// its single inbound listener, organization=SecuritySwitch (NM-F-03) - is
-// obtained from the Certificate-Authority via pkg/pki's bootstrap-token
-// flow, not from pre-existing cert/key files on disk. pkg/pki's *tls.Config
-// is not composable with pkg/mtls.ServerConfig/ClientConfig's
+// TLS/mTLS setup (PKI-F-01/PKI-F-02, CA-F-04): this server's one identity
+// is obtained from the Certificate-Authority via pkg/pki's bootstrap-token
+// flow, not from pre-existing cert/key files on disk. pkg/pki's
+// *tls.Config is not composable with pkg/mtls.ServerConfig/ClientConfig's
 // handshake-level VerifyConnection organization check (see pkg/pki's
 // package doc comment: ca.BootstrapServer hard-errors if
-// TLSConfig.VerifyConnection is already set, and exposes no hook to install
-// one) - so PKI-F-02's organization check runs at the HTTP-request level
-// instead, via pkg/mtls.RequireOrganization wrapping this process's one
-// mux. This is the same pattern Database-Vault's cmd/database-vault/main.go
-// established first (PKI-F-01, PKI-F-02, CA-F-04 session).
+// TLSConfig.VerifyConnection is already set, and exposes no hook to
+// install one) - so PKI-F-02's organization check runs at the HTTP-request
+// level instead, via pkg/mtls.RequireOrganization wrapping the listener's
+// mux with server.AllowedClientOrganization. This is the same pattern
+// Database-Vault's cmd/database-vault/main.go established first
+// (PKI-F-01, PKI-F-02, CA-F-04 session).
 //
-// No outbound mTLS client role exists in this file. Confirmed against the
-// SRS before writing this: NM-F-03 only names Network-Manager as an mTLS
-// *server* ("only Security-Switch and Certificate-Authority can contact
-// Network-Manager" - Certificate-Authority's own contact is the separate
-// bootstrap-token flow, not an mTLS client of this HTTP API, per
-// internal/server's own doc comment). No other built NM-F-* requirement has
-// Network-Manager call out, over mTLS, to another RAM-USB service; NM-F-08/
-// NM-F-09 are both requests Network-Manager *receives* from Security-Switch
-// and answers synchronously - Network-Manager's own outbound work for them
-// is entirely toward Headscale (buildHeadscaleConn, below), a third-party
-// mesh-coordination server, not a RAM-USB peer under PKI-F-01/PKI-F-02's
-// mTLS rules (see internal/headscale/client.go's package doc comment: a
-// gRPC bearer-API-key credential, not a client certificate). Revisit this
-// note if a future NM-F-* requirement (e.g. NM-F-10's expiry sweep, or an
-// admin interface) is ever built such that Network-Manager itself becomes
-// an outbound mTLS caller of another RAM-USB service.
+// Headscale (internal/headscale.Dial) remains Network-Manager's one
+// outbound dependency that is NOT a RAM-USB mTLS peer under
+// PKI-F-01/PKI-F-02's rules (a gRPC bearer-API-key credential instead -
+// see internal/headscale/client.go's package doc comment). NM-F-10's
+// sweep calls back into internal/headscale through that same connection.
 //
 // See also deployments/docker-compose.dev.yml's certificate-authority-init
 // service: the dev Certificate-Authority container needs a one-time,
@@ -54,6 +56,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -64,23 +67,25 @@ import (
 	"syscall"
 	"time"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
 	"google.golang.org/grpc"
 
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
+	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/grants"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/httpapi"
+	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/metrics"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/server"
 )
 
 // Env var names for values this task introduces. pki.BootstrapTokenEnvVar
 // (RAM_USB_CA_BOOTSTRAP_TOKEN) is already established by CA-F-04 and is not
-// redefined here - it is this server's single-use bootstrap token, used
-// for its one inbound listener.
+// redefined here - it is this server's single-use bootstrap token.
 const (
-	// envListenAddr is the address this server listens on for incoming
-	// mTLS connections from Security-Switch (NM-F-03).
+	// envListenAddr is the address the listener accepts incoming
+	// mTLS connections from Security-Switch on (NM-F-03).
 	envListenAddr = "RAM_USB_NETWORK_MANAGER_LISTEN_ADDR"
 
 	// envHeadscaleAddr is Headscale's gRPC coordination endpoint address
@@ -102,7 +107,47 @@ const (
 	// deployment uses a self-signed certificate not chained to any
 	// trusted root - never appropriate for a real deployment.
 	envHeadscaleInsecureSkipVerify = "RAM_USB_HEADSCALE_INSECURE_SKIP_VERIFY"
+
+	// envGrantsDBPath is the filesystem path to NM-F-11's SQLite grant
+	// store (internal/grants.Open). Required, not optional: NM-F-11 is a
+	// hard requirement, so this process refuses to start without an
+	// explicit, operator-chosen path (RD-04, fail-secure) rather than
+	// silently defaulting to some in-container path that may not survive
+	// a restart. See internal/grants' own package doc comment for why
+	// this path's durability (surviving a *container* restart, not just
+	// a process restart) is the caller's/deployment's responsibility,
+	// not this package's.
+	envGrantsDBPath = "RAM_USB_NETWORK_MANAGER_GRANTS_DB_PATH"
+
+	// envMQTTBrokerURL/envMQTTClientCert/envMQTTClientKey/envMQTTCA are
+	// NM-F-17's metrics-publish MQTT connection - same four env vars,
+	// same optional-if-envMQTTBrokerURL-unset convention, as Database-
+	// Vault's own cmd/database-vault/main.go (DV-F-16/17 session).
+	envMQTTBrokerURL  = "RAM_USB_MQTT_BROKER_URL"
+	envMQTTClientCert = "RAM_USB_MQTT_CLIENT_CERT"
+	envMQTTClientKey  = "RAM_USB_MQTT_CLIENT_KEY"
+	envMQTTCA         = "RAM_USB_MQTT_CA"
 )
+
+// metricsClientID is the MQTT client identifier this process connects
+// with (NM-F-17).
+const metricsClientID = "network-manager"
+
+// metricsPublishInterval is NM-F-17's "every minute, and only."
+const metricsPublishInterval = time.Minute
+
+// connectTimeout bounds how long this process waits for the MQTT broker
+// connection (metrics) to complete.
+const connectTimeout = 10 * time.Second
+
+// sweepInterval is NM-F-10's "periodically check recorded expiries."
+// NM-F-10 gives no concrete number - this session's judgment call: short
+// enough that an expired grant's real-world exposure window past its
+// 12-hour NM-F-09 expiry stays small, long enough not to hammer Headscale
+// with an ExpiredGrants query far more often than any grant could
+// plausibly expire. Revisit if a human/ops decision fixes a different
+// value.
+const sweepInterval = 5 * time.Minute
 
 func main() {
 	if err := run(); err != nil {
@@ -119,12 +164,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	grantsDBPath, err := requireEnv(envGrantsDBPath)
+	if err != nil {
+		return err
+	}
 
-	// serverTLSConfig is this server's one bootstrapped TLS identity
-	// (PKI-F-01, CA-F-04), used only by its one inbound listener - see
-	// this file's package doc comment for why no outbound mTLS role
-	// exists here, unlike Database-Vault's own buildServerTLSConfig
-	// (which is also reused as an outbound Storage-Service client).
+	// serverTLSConfig is this process's one bootstrapped TLS identity
+	// (PKI-F-01, CA-F-04) - see this file's package doc comment for why
+	// no outbound RAM-USB mTLS client role exists here.
 	serverTLSConfig, err := buildServerTLSConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("build server tls config: %w", err)
@@ -136,8 +183,20 @@ func run() error {
 	}
 	defer func() { _ = conn.Close() }()
 
+	headscaleService := v1.NewHeadscaleServiceClient(conn)
+
+	grantStore, err := grants.Open(grantsDBPath)
+	if err != nil {
+		return fmt.Errorf("open grants store (NM-F-11): %w", err)
+	}
+	defer func() { _ = grantStore.Close() }()
+
+	counters := &httpapi.Counters{}
+
 	handler := &httpapi.Handler{
-		Mesh: httpapi.HeadscaleAdapter{Service: v1.NewHeadscaleServiceClient(conn)},
+		Mesh:    httpapi.HeadscaleAdapter{Service: headscaleService},
+		Grants:  grantStore,
+		Metrics: counters,
 	}
 
 	mux := http.NewServeMux()
@@ -152,6 +211,24 @@ func run() error {
 		Handler:           mtls.RequireOrganization(server.AllowedClientOrganization, mux),
 		TLSConfig:         serverTLSConfig,
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// NM-F-10's sweep: periodically revoke every expired grant
+	// (grantStore.ExpiredGrants) via Headscale (headscaleRevoker) and
+	// delete its persisted row.
+	sweepCtx, stopSweep := context.WithCancel(ctx)
+	defer stopSweep()
+	go grants.Run(sweepCtx, sweepInterval, grantStore, headscaleRevoker{svc: headscaleService})
+
+	metricsClient, err := buildMetricsClient()
+	if err != nil {
+		return fmt.Errorf("build metrics client: %w", err)
+	}
+	if metricsClient != nil {
+		defer metricsClient.Disconnect(250)
+		go metrics.Run(ctx, metricsPublishInterval, func(publishCtx context.Context) error {
+			return metrics.PublishOnce(publishCtx, metricsClient, counters.Snapshot())
+		})
 	}
 
 	serveErr := make(chan error, 1)
@@ -178,6 +255,20 @@ func run() error {
 		}
 		return fmt.Errorf("serve listener: %w", err)
 	}
+}
+
+// headscaleRevoker adapts internal/headscale's free functions into
+// grants.Revoker, letting NM-F-10's sweep call back into Headscale
+// without internal/grants needing to depend on internal/headscale's
+// types directly - see grants.Revoker's own doc comment for why this
+// adapter lives in main.go (dependency construction/wiring), not in
+// internal/grants itself.
+type headscaleRevoker struct {
+	svc headscale.Service
+}
+
+func (r headscaleRevoker) Revoke(ctx context.Context, nodeID uint64, tag string) error {
+	return headscale.RemoveNodeTag(ctx, r.svc, nodeID, tag)
 }
 
 // requireEnv reads name from the environment, failing closed (RD-04) if
@@ -207,22 +298,20 @@ func getEnvBool(name string) (bool, error) {
 	return parsed, nil
 }
 
-// buildServerTLSConfig bootstraps this server's one TLS identity from the
+// buildServerTLSConfig bootstraps this process's one TLS identity from the
 // Certificate-Authority (CA-F-04, PKI-F-01), using pki.LoadBootstrapToken's
 // single-use token exactly once. The returned *tls.Config carries no
 // organization restriction of its own (that runs at the HTTP-request
-// level, via mtls.RequireOrganization in run); ca.BootstrapServer's
-// default (tls.RequireAndVerifyClientCert) still ensures only a
-// certificate this CA itself issued can complete an inbound handshake at
-// all.
+// level, via mtls.RequireOrganization in run); ca.BootstrapServer's default
+// (tls.RequireAndVerifyClientCert) still ensures only a certificate this CA
+// itself issued can complete an inbound handshake at all.
 //
 // base is a throwaway *http.Server: pki.NewServer only ever reads/writes
 // its TLSConfig field (confirmed by reading
-// github.com/smallstep/certificates/ca/bootstrap.go's BootstrapServer, per
-// this session's memory of Database-Vault's identical prior finding), so a
-// minimal value discarded immediately after extracting TLSConfig is
-// sufficient - the real *http.Server run actually serves (httpServer) is
-// constructed separately in run.
+// github.com/smallstep/certificates/ca/bootstrap.go's BootstrapServer),
+// so a minimal value discarded immediately after extracting TLSConfig is
+// sufficient - the real *http.Server value run actually serves
+// (httpServer) is constructed separately in run.
 func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 	token, err := pki.LoadBootstrapToken()
 	if err != nil {
@@ -240,8 +329,8 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 
 // buildHeadscaleConn dials Headscale's gRPC coordination endpoint
 // (internal/headscale.Dial), the private, non-RAM-USB dependency NM-F-08/
-// NM-F-09's handlers call through - not a PKI-F-01/PKI-F-02 mTLS role, see
-// this file's package doc comment.
+// NM-F-09's handlers and NM-F-10's sweep call through - not a
+// PKI-F-01/PKI-F-02 mTLS role, see this file's package doc comment.
 func buildHeadscaleConn() (*grpc.ClientConn, error) {
 	addr, err := requireEnv(envHeadscaleAddr)
 	if err != nil {
@@ -259,4 +348,63 @@ func buildHeadscaleConn() (*grpc.ClientConn, error) {
 	tlsConfig := &tls.Config{InsecureSkipVerify: insecureSkipVerify} //nolint:gosec // operator-controlled dev-only toggle (envHeadscaleInsecureSkipVerify), defaults to false; see third-party/network-manager/headscale/dev-tls/README.txt
 
 	return headscale.Dial(addr, apiKey, tlsConfig)
+}
+
+// loadCertPool reads a PEM certificate bundle from path and returns a
+// pool containing it. Same shape as Database-Vault's identically-named
+// helper.
+func loadCertPool(path string) (*x509.CertPool, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from this process's own operator-controlled env var config, not from any request input
+	if err != nil {
+		return nil, fmt.Errorf("read CA bundle %s: %w", path, err)
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(data) {
+		return nil, fmt.Errorf("no certificates found in CA bundle %s", path)
+	}
+	return pool, nil
+}
+
+// buildMetricsClient assembles and connects the mTLS MQTT client
+// NM-F-17/NM-F-18's periodic publish uses. A nil, nil return (no error)
+// means metrics publishing is not configured (envMQTTBrokerURL unset) -
+// this process still serves mesh-provisioning traffic without it.
+// Same shape as Database-Vault's identically-named helper.
+func buildMetricsClient() (mqtt.Client, error) {
+	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
+	if !ok || brokerURL == "" {
+		slog.Warn("network-manager: metrics publishing disabled, " + envMQTTBrokerURL + " is not set")
+		return nil, nil
+	}
+
+	certPath, err := requireEnv(envMQTTClientCert)
+	if err != nil {
+		return nil, err
+	}
+	keyPath, err := requireEnv(envMQTTClientKey)
+	if err != nil {
+		return nil, err
+	}
+	caPath, err := requireEnv(envMQTTCA)
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("load mqtt client certificate/key: %w", err)
+	}
+
+	rootCAs, err := loadCertPool(caPath)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := metrics.NewClient(brokerURL, cert, rootCAs, metricsClientID, connectTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }

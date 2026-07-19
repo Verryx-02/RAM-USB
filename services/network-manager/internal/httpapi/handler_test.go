@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
 )
@@ -21,6 +23,7 @@ type fakeMesh struct {
 	createKey   string
 	createErr   error
 	grantErr    error
+	grantNodeID uint64
 	createCalls []string
 	grantCalls  []string
 }
@@ -33,18 +36,47 @@ func (f *fakeMesh) CreateMeshUser(_ context.Context, email string) (string, erro
 	return f.createKey, nil
 }
 
-func (f *fakeMesh) GrantStorageAccess(_ context.Context, email string) error {
+func (f *fakeMesh) GrantStorageAccess(_ context.Context, email string) (uint64, error) {
 	f.grantCalls = append(f.grantCalls, email)
-	return f.grantErr
+	if f.grantErr != nil {
+		return 0, f.grantErr
+	}
+	return f.grantNodeID, nil
+}
+
+// fakeGrantRecorder is a hand-written fake implementing GrantRecorder
+// (CONTRIBUTING.md §7.5), letting tests assert NM-F-11's persistence call
+// without a real SQLite store.
+type fakeGrantRecorder struct {
+	err   error
+	calls []recordedGrant
+}
+
+type recordedGrant struct {
+	email     string
+	nodeID    uint64
+	tag       string
+	expiresAt time.Time
+}
+
+func (f *fakeGrantRecorder) RecordGrant(_ context.Context, email string, nodeID uint64, tag string, expiresAt time.Time) error {
+	f.calls = append(f.calls, recordedGrant{email: email, nodeID: nodeID, tag: tag, expiresAt: expiresAt})
+	return f.err
 }
 
 func newTestHandler(mesh MeshProvisioner) (*Handler, *bytes.Buffer) {
+	return newTestHandlerWithGrants(mesh, nil)
+}
+
+func newTestHandlerWithGrants(mesh MeshProvisioner, grants GrantRecorder) (*Handler, *bytes.Buffer) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	h := &Handler{
-		Mesh:   mesh,
-		Logger: logger,
+		Mesh:    mesh,
+		Grants:  grants,
+		Metrics: &Counters{},
+		Logger:  logger,
 	}
 	return h, &logBuf
 }
@@ -221,6 +253,66 @@ func TestHandler_Grant_IgnoresCallerSuppliedDuration(t *testing.T) {
 	}
 	if len(mesh.grantCalls) != 1 || mesh.grantCalls[0] != testEmail {
 		t.Fatalf("grantCalls = %v, want [%s]", mesh.grantCalls, testEmail)
+	}
+}
+
+// Requirement: NM-F-11
+func TestHandler_Grant_PersistsExpiry(t *testing.T) {
+	mesh := &fakeMesh{grantNodeID: 42}
+	grants := &fakeGrantRecorder{}
+	h, _ := newTestHandlerWithGrants(mesh, grants)
+
+	before := time.Now()
+	req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
+	w := httptest.NewRecorder()
+
+	h.Grant(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", w.Code, w.Body.String())
+	}
+	if len(grants.calls) != 1 {
+		t.Fatalf("RecordGrant called %d times, want 1", len(grants.calls))
+	}
+	call := grants.calls[0]
+	if call.email != testEmail {
+		t.Fatalf("RecordGrant email = %q, want %q", call.email, testEmail)
+	}
+	if call.nodeID != 42 {
+		t.Fatalf("RecordGrant nodeID = %d, want 42", call.nodeID)
+	}
+	if call.tag != headscale.TagStorageAccess {
+		t.Fatalf("RecordGrant tag = %q, want %q", call.tag, headscale.TagStorageAccess)
+	}
+	// NM-F-09's literal "12 hours from that point" - RecordGrant's
+	// expiry must reflect the moment the grant actually happened, not a
+	// caller-supplied value (same zero-trust reasoning as
+	// TestHandler_Grant_IgnoresCallerSuppliedDuration).
+	wantExpiry := before.Add(headscale.GrantDuration)
+	if call.expiresAt.Before(wantExpiry.Add(-time.Second)) || call.expiresAt.After(wantExpiry.Add(time.Minute)) {
+		t.Fatalf("RecordGrant expiresAt = %v, want close to %v", call.expiresAt, wantExpiry)
+	}
+}
+
+// Requirement: NM-F-11
+func TestHandler_Grant_PersistenceFailureStillReturnsSuccess(t *testing.T) {
+	// A durability-layer failure must not turn an already-successful
+	// Headscale reachability grant into a client-visible failure - see
+	// Handler.Grant's own doc comment for the reasoning.
+	mesh := &fakeMesh{grantNodeID: 42}
+	grants := &fakeGrantRecorder{err: errors.New("disk full")}
+	h, logBuf := newTestHandlerWithGrants(mesh, grants)
+
+	req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
+	w := httptest.NewRecorder()
+
+	h.Grant(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(logBuf.String(), "NM-F-11") {
+		t.Fatalf("expected the persistence failure to be logged loudly, log=%s", logBuf.String())
 	}
 }
 

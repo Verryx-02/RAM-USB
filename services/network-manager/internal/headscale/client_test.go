@@ -29,6 +29,10 @@ type fakeService struct {
 
 	setTagsErr error
 	gotSetTags *v1.SetTagsRequest
+
+	getNodeResp *v1.GetNodeResponse
+	getNodeErr  error
+	gotGetNode  *v1.GetNodeRequest
 }
 
 func (f *fakeService) CreateUser(_ context.Context, in *v1.CreateUserRequest, _ ...grpc.CallOption) (*v1.CreateUserResponse, error) {
@@ -67,6 +71,14 @@ func (f *fakeService) SetTags(_ context.Context, in *v1.SetTagsRequest, _ ...grp
 		return nil, f.setTagsErr
 	}
 	return &v1.SetTagsResponse{Node: &v1.Node{Id: in.GetNodeId(), Tags: in.GetTags()}}, nil
+}
+
+func (f *fakeService) GetNode(_ context.Context, in *v1.GetNodeRequest, _ ...grpc.CallOption) (*v1.GetNodeResponse, error) {
+	f.gotGetNode = in
+	if f.getNodeErr != nil {
+		return nil, f.getNodeErr
+	}
+	return f.getNodeResp, nil
 }
 
 // Requirement: NM-F-08
@@ -195,6 +207,7 @@ func TestGrantStorageAccess(t *testing.T) {
 		setTagsErr    error
 		wantErr       error
 		wantTags      []string
+		wantNodeID    uint64
 	}{
 		{
 			name: "success adds TagStorageAccess alongside the existing TagMeshMember",
@@ -204,7 +217,8 @@ func TestGrantStorageAccess(t *testing.T) {
 			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
 				{Id: 42, Tags: []string{TagMeshMember}},
 			}},
-			wantTags: []string{TagMeshMember, TagStorageAccess},
+			wantTags:   []string{TagMeshMember, TagStorageAccess},
+			wantNodeID: 42,
 		},
 		{
 			name: "already-granted node is not given a duplicate tag",
@@ -214,7 +228,8 @@ func TestGrantStorageAccess(t *testing.T) {
 			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
 				{Id: 42, Tags: []string{TagMeshMember, TagStorageAccess}},
 			}},
-			wantTags: []string{TagMeshMember, TagStorageAccess},
+			wantTags:   []string{TagMeshMember, TagStorageAccess},
+			wantNodeID: 42,
 		},
 		{
 			name:         "ListUsers failure is wrapped in ErrHeadscaleRequestFailed",
@@ -273,16 +288,22 @@ func TestGrantStorageAccess(t *testing.T) {
 				setTagsErr:    tt.setTagsErr,
 			}
 
-			err := GrantStorageAccess(context.Background(), fake, "user@example.com")
+			nodeID, err := GrantStorageAccess(context.Background(), fake, "user@example.com")
 
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("GrantStorageAccess() error = %v, want %v", err, tt.wantErr)
 				}
+				if nodeID != 0 {
+					t.Fatalf("GrantStorageAccess() nodeID = %d on failure, want 0", nodeID)
+				}
 				return
 			}
 			if err != nil {
 				t.Fatalf("GrantStorageAccess() unexpected error = %v", err)
+			}
+			if nodeID != tt.wantNodeID {
+				t.Fatalf("GrantStorageAccess() nodeID = %d, want %d", nodeID, tt.wantNodeID)
 			}
 			if fake.gotSetTags == nil {
 				t.Fatal("SetTags was not called")
@@ -310,6 +331,103 @@ func TestGrantDuration_Is12Hours(t *testing.T) {
 	}
 }
 
+// Requirement: NM-F-10
+func TestRemoveNodeTag(t *testing.T) {
+	tests := []struct {
+		name        string
+		getNodeResp *v1.GetNodeResponse
+		getNodeErr  error
+		setTagsErr  error
+		tag         string
+		wantErr     error
+		wantTags    []string
+	}{
+		{
+			name:        "removes the tag, keeping the rest",
+			getNodeResp: &v1.GetNodeResponse{Node: &v1.Node{Id: 42, Tags: []string{TagMeshMember, TagStorageAccess}}},
+			tag:         TagStorageAccess,
+			wantTags:    []string{TagMeshMember},
+		},
+		{
+			name:        "removing the only tag fails closed, SetTags is never called",
+			getNodeResp: &v1.GetNodeResponse{Node: &v1.Node{Id: 42, Tags: []string{TagStorageAccess}}},
+			tag:         TagStorageAccess,
+			wantErr:     ErrCannotRemoveLastTag,
+		},
+		{
+			name:       "GetNode failure is wrapped in ErrHeadscaleRequestFailed",
+			getNodeErr: errors.New("boom"),
+			tag:        TagStorageAccess,
+			wantErr:    ErrHeadscaleRequestFailed,
+		},
+		{
+			name:        "nil node in response is a fail-secure ErrMeshUserNotFound",
+			getNodeResp: &v1.GetNodeResponse{Node: nil},
+			tag:         TagStorageAccess,
+			wantErr:     ErrMeshUserNotFound,
+		},
+		{
+			name:        "SetTags failure is wrapped in ErrHeadscaleRequestFailed",
+			getNodeResp: &v1.GetNodeResponse{Node: &v1.Node{Id: 42, Tags: []string{TagMeshMember, TagStorageAccess}}},
+			tag:         TagStorageAccess,
+			setTagsErr:  errors.New("boom"),
+			wantErr:     ErrHeadscaleRequestFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeService{
+				getNodeResp: tt.getNodeResp,
+				getNodeErr:  tt.getNodeErr,
+				setTagsErr:  tt.setTagsErr,
+			}
+
+			err := RemoveNodeTag(context.Background(), fake, 42, tt.tag)
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("RemoveNodeTag() error = %v, want %v", err, tt.wantErr)
+				}
+				if tt.wantErr == ErrCannotRemoveLastTag && fake.gotSetTags != nil {
+					t.Fatal("SetTags was called despite the last-tag guard")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RemoveNodeTag() unexpected error = %v", err)
+			}
+			gotTags := fake.gotSetTags.GetTags()
+			if len(gotTags) != len(tt.wantTags) {
+				t.Fatalf("SetTags Tags = %v, want %v", gotTags, tt.wantTags)
+			}
+			for i, tag := range tt.wantTags {
+				if gotTags[i] != tag {
+					t.Fatalf("SetTags Tags = %v, want %v", gotTags, tt.wantTags)
+				}
+			}
+		})
+	}
+}
+
+// Requirement: NM-F-10
+func TestRevokeStorageAccess_RemovesOnlyTheStorageTag(t *testing.T) {
+	fake := &fakeService{
+		getNodeResp: &v1.GetNodeResponse{Node: &v1.Node{Id: 7, Tags: []string{TagMeshMember, TagStorageAccess}}},
+	}
+
+	if err := RevokeStorageAccess(context.Background(), fake, 7); err != nil {
+		t.Fatalf("RevokeStorageAccess() unexpected error = %v", err)
+	}
+	if fake.gotGetNode.GetNodeId() != 7 {
+		t.Fatalf("GetNode NodeId = %d, want 7", fake.gotGetNode.GetNodeId())
+	}
+	gotTags := fake.gotSetTags.GetTags()
+	if len(gotTags) != 1 || gotTags[0] != TagMeshMember {
+		t.Fatalf("SetTags Tags = %v, want [%s]", gotTags, TagMeshMember)
+	}
+}
+
 // Requirement: NM-F-09
 func TestUnionTag(t *testing.T) {
 	tests := []struct {
@@ -331,6 +449,34 @@ func TestUnionTag(t *testing.T) {
 			for i := range got {
 				if got[i] != tt.want[i] {
 					t.Fatalf("unionTag() = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// Requirement: NM-F-10
+func TestRemoveTag(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing []string
+		tag      string
+		want     []string
+	}{
+		{name: "removes the only matching tag", existing: []string{TagMeshMember, TagStorageAccess}, tag: TagStorageAccess, want: []string{TagMeshMember}},
+		{name: "no-op if not present", existing: []string{TagMeshMember}, tag: TagStorageAccess, want: []string{TagMeshMember}},
+		{name: "removing the last tag yields an empty set", existing: []string{TagStorageAccess}, tag: TagStorageAccess, want: []string{}},
+		{name: "empty existing set", existing: nil, tag: TagStorageAccess, want: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := removeTag(tt.existing, tt.tag)
+			if len(got) != len(tt.want) {
+				t.Fatalf("removeTag() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("removeTag() = %v, want %v", got, tt.want)
 				}
 			}
 		})
