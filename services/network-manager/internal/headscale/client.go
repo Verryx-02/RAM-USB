@@ -135,6 +135,10 @@ type Service interface {
 	CreatePreAuthKey(ctx context.Context, in *v1.CreatePreAuthKeyRequest, opts ...grpc.CallOption) (*v1.CreatePreAuthKeyResponse, error)
 	ListNodes(ctx context.Context, in *v1.ListNodesRequest, opts ...grpc.CallOption) (*v1.ListNodesResponse, error)
 	SetTags(ctx context.Context, in *v1.SetTagsRequest, opts ...grpc.CallOption) (*v1.SetTagsResponse, error)
+	// GetNode is added for NM-F-10 (the expiry sweep needs to read a
+	// node's current tag set before removing one) - neither of
+	// NM-F-08/NM-F-09's original handlers needed it.
+	GetNode(ctx context.Context, in *v1.GetNodeRequest, opts ...grpc.CallOption) (*v1.GetNodeResponse, error)
 }
 
 // tokenAuth implements grpc/credentials.PerRPCCredentials, carrying
@@ -235,33 +239,24 @@ func CreateMeshUser(ctx context.Context, svc Service, email string) (string, err
 // GrantDuration is fixed by this package, not taken from a caller-supplied
 // value - see the constant's own doc comment.
 //
-// No expiry is persisted by this call (NM-F-11, out of this task's
-// scope): a caller wanting the 12-hour window actually enforced later
-// (NM-F-10) must record it themselves for now.
-func GrantStorageAccess(ctx context.Context, svc Service, email string) error {
-	users, err := svc.ListUsers(ctx, &v1.ListUsersRequest{Email: email})
+// Returns the granted node's Headscale node ID so a caller can persist it
+// (NM-F-11: internal/grants.Store keys a grant by node ID + tag, needed by
+// NM-F-10's sweep to call RevokeStorageAccess on the exact same node
+// without repeating this lookup at sweep time). No expiry is persisted by
+// this call itself - that remains the caller's responsibility (see
+// internal/httpapi.Handler.Grant).
+func GrantStorageAccess(ctx context.Context, svc Service, email string) (uint64, error) {
+	user, err := lookupUserByEmail(ctx, svc, email)
 	if err != nil {
-		return fmt.Errorf("%w: list users: %v", ErrHeadscaleRequestFailed, err)
+		return 0, err
 	}
-	if len(users.GetUsers()) == 0 {
-		return fmt.Errorf("%w: no headscale user for this email", ErrMeshUserNotFound)
-	}
-	// Headscale's own ListUsersWithFilter(Email:...) is an equality
-	// filter, not fuzzy matching - more than one result would mean two
-	// Headscale users share an email, which NM-F-08 never creates
-	// deliberately. Treat it the same as "not found" (RD-04, fail-secure)
-	// rather than guessing which one is the real account.
-	if len(users.GetUsers()) > 1 {
-		return fmt.Errorf("%w: multiple headscale users share this email", ErrMeshUserNotFound)
-	}
-	username := users.GetUsers()[0].GetName()
 
-	nodes, err := svc.ListNodes(ctx, &v1.ListNodesRequest{User: username})
+	nodes, err := svc.ListNodes(ctx, &v1.ListNodesRequest{User: user.GetName()})
 	if err != nil {
-		return fmt.Errorf("%w: list nodes: %v", ErrHeadscaleRequestFailed, err)
+		return 0, fmt.Errorf("%w: list nodes: %v", ErrHeadscaleRequestFailed, err)
 	}
 	if len(nodes.GetNodes()) == 0 {
-		return fmt.Errorf("%w: no mesh node for this user", ErrMeshUserNotFound)
+		return 0, fmt.Errorf("%w: no mesh node for this user", ErrMeshUserNotFound)
 	}
 
 	node := nodes.GetNodes()[0]
@@ -271,10 +266,71 @@ func GrantStorageAccess(ctx context.Context, svc Service, email string) error {
 		NodeId: node.GetId(),
 		Tags:   tags,
 	}); err != nil {
+		return 0, fmt.Errorf("%w: set tags: %v", ErrHeadscaleRequestFailed, err)
+	}
+
+	return node.GetId(), nil
+}
+
+// RevokeStorageAccess implements NM-F-10's tag-removal half: remove
+// TagStorageAccess from nodeID, leaving TagMeshMember (and any other tag
+// the node carries) untouched. A thin, named wrapper over RemoveNodeTag so
+// call sites (the sweep loop) read as "revoke the grant", not "remove this
+// specific string".
+func RevokeStorageAccess(ctx context.Context, svc Service, nodeID uint64) error {
+	return RemoveNodeTag(ctx, svc, nodeID, TagStorageAccess)
+}
+
+// RemoveNodeTag removes tag from nodeID's tag set (NM-F-10's revoke path),
+// fetching the node's current tags first since SetTags replaces the whole
+// set, never patches
+// it (same constraint unionTag/GrantStorageAccess already document). If
+// tag is the node's only remaining tag, this call fails with
+// ErrCannotRemoveLastTag instead of ever calling SetTags with an empty
+// list - Headscale's own SetTags handler rejects that outright ("cannot
+// remove all tags from a node"), and failing here first (RD-04,
+// fail-secure) gives a caller a clearer, package-specific error than a raw
+// gRPC failure would.
+func RemoveNodeTag(ctx context.Context, svc Service, nodeID uint64, tag string) error {
+	resp, err := svc.GetNode(ctx, &v1.GetNodeRequest{NodeId: nodeID})
+	if err != nil {
+		return fmt.Errorf("%w: get node: %v", ErrHeadscaleRequestFailed, err)
+	}
+	if resp.GetNode() == nil {
+		return fmt.Errorf("%w: node %d not found", ErrMeshUserNotFound, nodeID)
+	}
+
+	remaining := removeTag(resp.GetNode().GetTags(), tag)
+	if len(remaining) == 0 {
+		return ErrCannotRemoveLastTag
+	}
+
+	if _, err := svc.SetTags(ctx, &v1.SetTagsRequest{
+		NodeId: nodeID,
+		Tags:   remaining,
+	}); err != nil {
 		return fmt.Errorf("%w: set tags: %v", ErrHeadscaleRequestFailed, err)
 	}
 
 	return nil
+}
+
+// lookupUserByEmail is GrantStorageAccess's "find the one Headscale user
+// for this email" step (RD-04, fail-secure: zero or more-than-one match is
+// treated identically to "not found", never a guess at which record is the
+// real one).
+func lookupUserByEmail(ctx context.Context, svc Service, email string) (*v1.User, error) {
+	users, err := svc.ListUsers(ctx, &v1.ListUsersRequest{Email: email})
+	if err != nil {
+		return nil, fmt.Errorf("%w: list users: %v", ErrHeadscaleRequestFailed, err)
+	}
+	if len(users.GetUsers()) == 0 {
+		return nil, fmt.Errorf("%w: no headscale user for this email", ErrMeshUserNotFound)
+	}
+	if len(users.GetUsers()) > 1 {
+		return nil, fmt.Errorf("%w: multiple headscale users share this email", ErrMeshUserNotFound)
+	}
+	return users.GetUsers()[0], nil
 }
 
 // unionTag returns existing with tag appended if not already present -
@@ -289,4 +345,17 @@ func unionTag(existing []string, tag string) []string {
 		}
 	}
 	return append(append([]string{}, existing...), tag)
+}
+
+// removeTag returns existing with every occurrence of tag removed -
+// RemoveNodeTag's counterpart to unionTag, same "SetTags replaces, never
+// patches" reasoning.
+func removeTag(existing []string, tag string) []string {
+	out := make([]string, 0, len(existing))
+	for _, t := range existing {
+		if t != tag {
+			out = append(out, t)
+		}
+	}
+	return out
 }
