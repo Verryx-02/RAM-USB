@@ -23,7 +23,7 @@ entity "User" as User {
   email_encrypted : BYTEA
   password_hash : VARCHAR(255)
   ssh_public_key : TEXT <<unique>>
-  posix_username : CHAR(10)
+  posix_username : CHAR(10) <<unique>>
   registered_at : TIMESTAMP
 }
 
