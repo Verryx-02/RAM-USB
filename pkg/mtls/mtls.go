@@ -60,17 +60,43 @@ func ClientConfig(clientCert tls.Certificate, rootCAs *x509.CertPool, allowedOrg
 // (zero-trust, RNF-SEC-02/03; fail-secure on any gap, RD-04).
 func verifyOrganization(allowedOrganization string) func(cs tls.ConnectionState) error {
 	return func(cs tls.ConnectionState) error {
-		if len(cs.VerifiedChains) == 0 || len(cs.VerifiedChains[0]) == 0 {
-			return fmt.Errorf("mtls: no verified peer certificate chain")
+		leaf, err := verifiedLeaf(cs)
+		if err != nil {
+			return err
 		}
-
-		leaf := cs.VerifiedChains[0][0]
-		for _, org := range leaf.Subject.Organization {
-			if org == allowedOrganization {
-				return nil
-			}
-		}
-
-		return fmt.Errorf("mtls: peer certificate organization %v does not match required organization %q", leaf.Subject.Organization, allowedOrganization)
+		return checkOrganization(leaf, allowedOrganization)
 	}
+}
+
+// verifiedLeaf returns the peer leaf certificate from cs.VerifiedChains -
+// the certificate crypto/tls has already cryptographically verified against
+// the configured trust pool (Config.ClientCAs on a server, Config.RootCAs
+// on a client) - or an error if no verified chain is present. cs.PeerCertificates
+// is deliberately not used here: it is populated with whatever the peer
+// sent, not necessarily with what has been verified (see the doc comment on
+// crypto/tls.ConnectionState.VerifiedChains: on the server side it is only
+// set when Config.ClientAuth is VerifyClientCertIfGiven or
+// RequireAndVerifyClientCert). Shared by verifyOrganization
+// (tls.Config.VerifyConnection, the handshake-level check) and by
+// RequireOrganization/WrapRoundTripper (organization_http.go, the
+// HTTP-request-level check used by services built on pkg/pki, whose
+// *tls.Config is not composable with VerifyConnection - see pkg/pki's
+// package doc comment).
+func verifiedLeaf(cs tls.ConnectionState) (*x509.Certificate, error) {
+	if len(cs.VerifiedChains) == 0 || len(cs.VerifiedChains[0]) == 0 {
+		return nil, fmt.Errorf("mtls: no verified peer certificate chain")
+	}
+	return cs.VerifiedChains[0][0], nil
+}
+
+// checkOrganization reports whether leaf's Subject.Organization contains
+// allowedOrganization, returning nil if so and a descriptive error
+// otherwise (PKI-F-02).
+func checkOrganization(leaf *x509.Certificate, allowedOrganization string) error {
+	for _, org := range leaf.Subject.Organization {
+		if org == allowedOrganization {
+			return nil
+		}
+	}
+	return fmt.Errorf("mtls: peer certificate organization %v does not match required organization %q", leaf.Subject.Organization, allowedOrganization)
 }
