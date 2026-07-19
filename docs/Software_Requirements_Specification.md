@@ -102,6 +102,8 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 
 > [!NOTE] Docker and Proxmox are not alternatives, they serve different purposes: Docker provides ease of deployment and per-service isolation, identical in development and production. Proxmox (KVM for Storage-Service/Database-Vault/Network-Manager, LXC for the rest, per RNF-ORG-04) provides a stronger isolation boundary underneath Docker and, if a hyperconverged cluster is built later, high availability (live migration, failover between physical nodes) that Docker alone cannot provide. Every service's Docker container runs inside its assigned Proxmox VM/container in production.
 
+> [!NOTE] Container base image policy: every service's Dockerfile defaults to `gcr.io/distroless/static-debian12:nonroot` (no shell, no package manager, runs as a fixed non-root UID) rather than a general-purpose Linux base. This is the default because most services are a single static Go binary with no OS-level requirement beyond running that binary, and a minimal runtime narrows the attack surface available to anyone who reaches the process (RNF-SEC-03). `debian:bookworm-slim` is used only where a service has a genuine OS-level requirement a distroless image cannot satisfy, such as Storage-Service's need for `sshd`, POSIX user creation, and chroot (see the container-architecture note after §4.5).
+
 ### 2.5 Design and implementation constraints
 
 - **Language:** Go
