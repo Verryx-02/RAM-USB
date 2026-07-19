@@ -5,3 +5,8 @@ RAM-USB/
 .claude/
 CLAUDE.md
 graphify-out/
+
+# Generated dev-only TLS key material (third-party/entry-hub/generate-dev-cert.sh) -
+# real key bytes, regenerated on demand, never committed (unlike the
+# zero-entropy *.dev-only.txt placeholder files elsewhere under third-party/).
+third-party/entry-hub/config/*.dev-only.*
