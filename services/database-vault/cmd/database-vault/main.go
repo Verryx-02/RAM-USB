@@ -13,6 +13,60 @@
 // RAM_USB_PASSWORD_PEPPER) are this session's invented judgment call,
 // documented on each constant below — revisit if a future
 // deployment/ops document fixes different names.
+//
+// TLS/mTLS setup (PKI-F-01/PKI-F-02, CA-F-04): this server's own identity
+// - both its inbound listeners (the register/login one, organization=
+// SecuritySwitch, and ST-F-11's public-key one, organization=
+// StorageService) and its outbound call to Storage-Service (DV-F-09,
+// organization=StorageService) - is obtained from the Certificate-Authority
+// via pkg/pki's bootstrap-token flow (CA-F-04), not from pre-existing
+// cert/key files on disk. pkg/pki's *tls.Config is not composable with
+// pkg/mtls.ServerConfig/ClientConfig's handshake-level VerifyConnection
+// organization check (see pkg/pki's package doc comment: ca.BootstrapServer
+// hard-errors if TLSConfig.VerifyConnection is already set, and exposes no
+// hook to install one) - so PKI-F-02's organization check runs at the
+// HTTP-request level instead, via pkg/mtls.RequireOrganization (wrapping
+// each listener's handler) and pkg/mtls.WrapRoundTripper (wrapping the
+// outbound Storage-Service client's Transport). Both rely on
+// net/http.Request.TLS/Response.TLS, which net/http populates from the
+// completed handshake regardless of which library built the tls.Config.
+//
+// One bootstrap token only, per SRS §2.6 ("a single-use bootstrap token,"
+// singular, one per service): this server's single identity is
+// bootstrapped once (pki.BootstrapTokenEnvVar, via pki.NewServer, see
+// buildServerTLSConfig) and its resulting *tls.Config is reused for three
+// purposes - both inbound listeners (the same service identity regardless
+// of which listener presents it) and the outbound Storage-Service client's
+// Transport.TLSClientConfig (buildStorageServiceClient). This is safe
+// because github.com/smallstep/certificates/ca.Client.GetServerTLSConfig
+// (what pki.NewServer calls internally, confirmed by reading
+// ca/tls.go/ca/bootstrap.go/ca/tls_options.go in the vendored module)
+// unconditionally sets both GetCertificate and GetClientCertificate on the
+// same *tls.Config, wired to the same certificate renewer - so the
+// resulting value already presents this server's own certificate whether
+// it is dialed as a TLS server or dials out as a TLS client. It also
+// carries a populated RootCAs (verified empirically against the real
+// Certificate-Authority container, see
+// TestBuildServerTLSConfigReusedAsOutboundClient_RealCA in
+// main_integration_test.go): TLSOptionCtx.apply, called by
+// GetServerTLSConfig internally, unconditionally adds the CA's root
+// certificate (extracted from the sign response's own verified chain) to
+// tlsConfig.RootCAs before returning - not merely when the "add all
+// supported roots" option is applied, so it does not depend on this
+// deployment's CA provisioner requiring client authentication for its own
+// API. RAM-USB's CA template
+// (third-party/certificate-authority/config/organization.x509.tpl) issues
+// every certificate with both serverAuth and clientAuth EKU, so there is
+// no EKU-based obstacle to reuse either.
+//
+// See also deployments/docker-compose.dev.yml's certificate-authority-init
+// service: the dev Certificate-Authority container needs a one-time,
+// idempotent setup step (a custom x509 template on its bootstrap-token
+// provisioner, third-party/certificate-authority/config/
+// organization.x509.tpl) before any certificate it issues carries a
+// non-empty Subject.Organization at all - without it, PKI-F-02's
+// organization check would reject every connection. `docker compose up`
+// applies it automatically now; no manual step is required.
 package main
 
 import (
@@ -33,6 +87,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
+	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/encryption"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/httpapi"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/login"
@@ -47,39 +102,25 @@ import (
 // Env var names for values this task introduces. RAM_USB_MASTER_KEY
 // (encryption.LoadMasterKey) and RAM_USB_PASSWORD_PEPPER
 // (password.LoadPepper) are already established by DV-F-05/DV-F-06 and
-// are not redefined here.
+// are not redefined here. pki.BootstrapTokenEnvVar
+// (RAM_USB_CA_BOOTSTRAP_TOKEN) is already established by CA-F-04 and is
+// not redefined here either - it is this server's own single-use
+// bootstrap token, used for both inbound listeners (see
+// buildServerTLSConfig).
 const (
 	// envListenAddr is the address this server listens on for incoming
 	// mTLS connections from Security-Switch (DV-F-01).
 	envListenAddr = "RAM_USB_DATABASE_VAULT_LISTEN_ADDR"
 
-	// envServerCert/envServerKey locate this server's own TLS certificate
-	// and private key, presented to Security-Switch during the mTLS
-	// handshake.
-	envServerCert = "RAM_USB_DATABASE_VAULT_TLS_CERT"
-	envServerKey  = "RAM_USB_DATABASE_VAULT_TLS_KEY"
-
-	// envClientCA locates the CA certificate bundle (PEM) trusted to have
-	// issued incoming clients' certificates - used to verify
-	// Security-Switch's certificate (DV-F-01) and, on the separate
-	// public-key listener below, Storage-Service's certificate (ST-F-11).
-	// Reused for both listeners rather than duplicated: this codebase's
-	// PKI is a single CA (CA-F-01..CA-F-04) issuing every service's
-	// certificate, so the pool trusted to verify one caller's certificate
-	// is the same pool trusted to verify any other's - the organization
-	// check inside server.NewTLSConfig/NewPublicKeyTLSConfig, not a
-	// different trusted-CA set, is what actually distinguishes the two
-	// listeners' allowed callers.
-	envClientCA = "RAM_USB_DATABASE_VAULT_CLIENT_CA"
-
 	// envPublicKeyListenAddr is the address Database-Vault listens on for
 	// ST-F-11's public-key lookup, a separate mTLS listener from
 	// envListenAddr's register/login one (see internal/server's
 	// pubkey_server.go doc comment for why this is a second listener
-	// rather than a shared one). It presents the same server
-	// certificate/key as the register/login listener (envServerCert/
-	// envServerKey) - both represent the one "DatabaseVault" server
-	// identity, only the allowed caller organization differs per listener.
+	// rather than a shared one). It shares this server's one bootstrapped
+	// TLS identity with the register/login listener (see
+	// buildServerTLSConfig) - only the allowed caller organization,
+	// enforced by RequireOrganization at the HTTP-request level, differs
+	// per listener.
 	envPublicKeyListenAddr = "RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR"
 
 	// envDatabaseURL is the Postgres connection string pgxpool.New
@@ -101,23 +142,16 @@ const (
 	// "https://storage-service.internal:8443".
 	envStorageServiceURL = "RAM_USB_STORAGE_SERVICE_URL"
 
-	// envStorageServiceClientCert/envStorageServiceClientKey locate the
-	// client certificate/key this server presents when calling
-	// Storage-Service over mTLS (DV-F-09).
-	envStorageServiceClientCert = "RAM_USB_STORAGE_SERVICE_CLIENT_CERT"
-	envStorageServiceClientKey  = "RAM_USB_STORAGE_SERVICE_CLIENT_KEY"
-
-	// envStorageServiceCA locates the CA certificate bundle (PEM) trusted
-	// to have issued Storage-Service's server certificate.
-	envStorageServiceCA = "RAM_USB_STORAGE_SERVICE_CA"
-
 	// envMQTTBrokerURL is the MQTT broker's address (DV-F-16), e.g.
 	// "tls://mqtt-broker.internal:8883".
 	envMQTTBrokerURL = "RAM_USB_MQTT_BROKER_URL"
 
 	// envMQTTClientCert/envMQTTClientKey locate the client
 	// certificate/key this server presents when connecting to the MQTT
-	// broker over mTLS (DV-F-16).
+	// broker over mTLS (DV-F-16). MQTT metrics publishing is
+	// deliberately out of this task's scope (CA-F-03, step-ca's own
+	// bootstrap flow has no native MQTT publish) and keeps its existing
+	// file-based cert/key/CA convention.
 	envMQTTClientCert = "RAM_USB_MQTT_CLIENT_CERT"
 	envMQTTClientKey  = "RAM_USB_MQTT_CLIENT_KEY"
 
@@ -182,14 +216,15 @@ func run() error {
 		return err
 	}
 
-	serverTLSConfig, err := buildServerTLSConfig()
+	// serverTLSConfig is this server's one bootstrapped TLS identity
+	// (PKI-F-01, CA-F-04), shared by both inbound listeners below - see
+	// buildServerTLSConfig and this file's package doc comment for why one
+	// bootstrap exchange, reused, is correct here (as opposed to
+	// buildStorageServiceClient's separate exchange for the outbound
+	// client identity).
+	serverTLSConfig, err := buildServerTLSConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("build server tls config: %w", err)
-	}
-
-	publicKeyServerTLSConfig, err := buildPublicKeyServerTLSConfig()
-	if err != nil {
-		return fmt.Errorf("build public-key server tls config: %w", err)
 	}
 
 	databaseURL, err := requireEnv(envDatabaseURL)
@@ -217,7 +252,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	storageServiceClient, storageServiceURL, err := buildStorageServiceClient()
+	storageServiceClient, storageServiceURL, err := buildStorageServiceClient(serverTLSConfig)
 	if err != nil {
 		return fmt.Errorf("build storage-service client: %w", err)
 	}
@@ -247,16 +282,21 @@ func run() error {
 	mux.HandleFunc(httpapi.LoginPath, handler.Login)
 
 	httpServer := &http.Server{
-		Addr:              listenAddr,
-		Handler:           mux,
+		Addr: listenAddr,
+		// PKI-F-02's organization check runs here, at the HTTP-request
+		// level (mtls.RequireOrganization), not inside serverTLSConfig's
+		// handshake - see this file's package doc comment for why.
+		Handler:           mtls.RequireOrganization(server.AllowedClientOrganization, mux),
 		TLSConfig:         serverTLSConfig,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	// publicKeyMux/publicKeyHTTPServer are ST-F-11's separate mux/listener
-	// pair, bound to publicKeyListenAddr and publicKeyServerTLSConfig
-	// (organization="StorageService"), entirely distinct from httpServer's
-	// register/login mux/listener (organization="SecuritySwitch") - see
+	// pair, bound to publicKeyListenAddr and sharing serverTLSConfig's one
+	// bootstrapped TLS identity, entirely distinct from httpServer's
+	// register/login mux/listener only in the organization
+	// RequireOrganization requires (organization="StorageService" here,
+	// vs organization="SecuritySwitch" above) - see
 	// internal/server/pubkey_server.go for why these are two listeners,
 	// not one.
 	publicKeyMux := http.NewServeMux()
@@ -264,8 +304,8 @@ func run() error {
 
 	publicKeyHTTPServer := &http.Server{
 		Addr:              publicKeyListenAddr,
-		Handler:           publicKeyMux,
-		TLSConfig:         publicKeyServerTLSConfig,
+		Handler:           mtls.RequireOrganization(server.AllowedPublicKeyClientOrganization, publicKeyMux),
+		TLSConfig:         serverTLSConfig,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -283,8 +323,9 @@ func run() error {
 	serveErr := make(chan error, 1)
 	go func() {
 		slog.Info("database-vault: listening", "addr", listenAddr)
-		// TLSConfig already carries the certificate/key pair (via
-		// server.NewTLSConfig), so ListenAndServeTLS is called with empty
+		// TLSConfig already carries the bootstrapped certificate (via
+		// buildServerTLSConfig's GetCertificate callback, not a static
+		// Certificates slice), so ListenAndServeTLS is called with empty
 		// file paths per net/http's documented convention for that case.
 		serveErr <- httpServer.ListenAndServeTLS("", "")
 	}()
@@ -363,107 +404,56 @@ func loadCertPool(path string) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-// buildServerTLSConfig assembles DV-F-01's mTLS server configuration from
-// this server's own certificate/key and the CA pool trusted to have
-// issued Security-Switch's certificate.
-func buildServerTLSConfig() (*tls.Config, error) {
-	certPath, err := requireEnv(envServerCert)
+// buildServerTLSConfig bootstraps this server's one TLS identity from the
+// Certificate-Authority (CA-F-04, PKI-F-01), using pki.LoadBootstrapToken's
+// single-use token exactly once. The returned *tls.Config is shared by
+// both inbound listeners and by buildStorageServiceClient's outbound
+// Storage-Service call (see run and this file's package doc comment for
+// why reusing it for the outbound call is safe) - it carries no
+// organization restriction of its own (that runs at the HTTP-request
+// level, via mtls.RequireOrganization/mtls.WrapRoundTripper in run);
+// ca.BootstrapServer's default (tls.RequireAndVerifyClientCert) still
+// ensures only a certificate this CA itself issued can complete an
+// inbound handshake at all.
+//
+// base is a throwaway *http.Server: pki.NewServer only ever reads/writes
+// its TLSConfig field (confirmed by reading
+// github.com/smallstep/certificates/ca/bootstrap.go's BootstrapServer),
+// so a minimal value discarded immediately after extracting TLSConfig is
+// sufficient - the two real *http.Server values run actually serves
+// (httpServer, publicKeyHTTPServer) are constructed separately in run.
+func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
+	token, err := pki.LoadBootstrapToken()
 	if err != nil {
-		return nil, err
-	}
-	keyPath, err := requireEnv(envServerKey)
-	if err != nil {
-		return nil, err
-	}
-	caPath, err := requireEnv(envClientCA)
-	if err != nil {
-		return nil, err
-	}
-
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load server certificate/key: %w", err)
-	}
-
-	clientCAs, err := loadCertPool(caPath)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load ca bootstrap token: %w", err)
 	}
 
-	return server.NewTLSConfig(cert, clientCAs), nil
+	base := &http.Server{ReadHeaderTimeout: 10 * time.Second}
+	bootstrapped, err := pki.NewServer(ctx, token, base)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap server identity from certificate-authority: %w", err)
+	}
+
+	return bootstrapped.TLSConfig, nil
 }
 
-// buildPublicKeyServerTLSConfig assembles ST-F-11's mTLS server
-// configuration for the separate public-key lookup listener: the same
-// server certificate/key as buildServerTLSConfig (both represent the one
-// "DatabaseVault" server identity) and the same trusted client-CA pool
-// (see envClientCA's doc comment for why one CA bundle serves both
-// listeners), but paired with server.NewPublicKeyTLSConfig instead of
-// server.NewTLSConfig - so this listener requires
-// organization="StorageService" instead of organization="SecuritySwitch".
-func buildPublicKeyServerTLSConfig() (*tls.Config, error) {
-	certPath, err := requireEnv(envServerCert)
-	if err != nil {
-		return nil, err
-	}
-	keyPath, err := requireEnv(envServerKey)
-	if err != nil {
-		return nil, err
-	}
-	caPath, err := requireEnv(envClientCA)
-	if err != nil {
-		return nil, err
-	}
-
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load server certificate/key: %w", err)
-	}
-
-	clientCAs, err := loadCertPool(caPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return server.NewPublicKeyTLSConfig(cert, clientCAs), nil
-}
-
-// buildStorageServiceClient assembles the *http.Client DV-F-09 uses to
-// call Storage-Service over mTLS, verifying organization="StorageService"
-// on Storage-Service's certificate.
-func buildStorageServiceClient() (*http.Client, string, error) {
+// buildStorageServiceClient builds the outbound *http.Client DV-F-09 uses
+// to call Storage-Service (CA-F-04, PKI-F-01), reusing serverTLSConfig -
+// this server's one bootstrapped TLS identity (see buildServerTLSConfig
+// and this file's package doc comment for why one bootstrap token, reused,
+// is correct here rather than a second independent bootstrap exchange) -
+// as the outbound Transport.TLSClientConfig, then wraps the resulting
+// *http.Client's Transport with mtls.WrapRoundTripper so PKI-F-02's
+// organization check (organization=StorageService) runs at the
+// HTTP-response level.
+func buildStorageServiceClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
 	baseURL, err := requireEnv(envStorageServiceURL)
 	if err != nil {
 		return nil, "", err
 	}
-	certPath, err := requireEnv(envStorageServiceClientCert)
-	if err != nil {
-		return nil, "", err
-	}
-	keyPath, err := requireEnv(envStorageServiceClientKey)
-	if err != nil {
-		return nil, "", err
-	}
-	caPath, err := requireEnv(envStorageServiceCA)
-	if err != nil {
-		return nil, "", err
-	}
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, "", fmt.Errorf("load storage-service client certificate/key: %w", err)
-	}
-
-	rootCAs, err := loadCertPool(caPath)
-	if err != nil {
-		return nil, "", err
-	}
-
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: mtls.ClientConfig(cert, rootCAs, organizationStorageService),
-		},
-	}
+	transport := &http.Transport{TLSClientConfig: serverTLSConfig}
+	client := &http.Client{Transport: mtls.WrapRoundTripper(transport, organizationStorageService)}
 	return client, baseURL, nil
 }
 
