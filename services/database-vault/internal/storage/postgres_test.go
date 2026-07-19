@@ -2,21 +2,16 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
-	migratepgx5 "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	"github.com/golang-migrate/migrate/v4"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
-
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/encryption"
+	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/schema"
 )
 
 // databaseURLEnvVar names the environment variable that points this test at
@@ -42,23 +37,12 @@ func TestSaveUser_Postgres(t *testing.T) {
 		t.Fatalf("resolve migrations directory: %v", err)
 	}
 
-	sqlDB, err := sql.Open("pgx", databaseURL)
+	m, err := schema.New(databaseURL, migrationsDir)
 	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
+		t.Fatalf("schema.New: %v", err)
 	}
-	t.Cleanup(func() { _ = sqlDB.Close() })
-
-	driver, err := migratepgx5.WithInstance(sqlDB, &migratepgx5.Config{})
-	if err != nil {
-		t.Fatalf("migratepgx5.WithInstance: %v", err)
-	}
-
-	m, err := migrate.NewWithDatabaseInstance("file://"+migrationsDir, "pgx5", driver)
-	if err != nil {
-		t.Fatalf("migrate.NewWithDatabaseInstance: %v", err)
-	}
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		t.Fatalf("apply migrations: %v", err)
+	if err := schema.Apply(m); err != nil {
+		t.Fatalf("schema.Apply: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := m.Down(); err != nil && !errors.Is(err, migrate.ErrNoChange) {

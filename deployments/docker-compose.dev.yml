@@ -69,6 +69,15 @@ services:
   # password.dev-only.txt) is a throwaway placeholder for the intermediate
   # key's password, same dev-only convention as database-vault-postgres's
   # POSTGRES_PASSWORD above — never a production secret.
+  #
+  # step-ca's default x509 template never sets a certificate's
+  # Subject.Organization, which PKI-F-02's organization check (pkg/mtls)
+  # requires - see third-party/certificate-authority/config/
+  # organization.x509.tpl's own doc comment for the full reasoning
+  # (confirmed empirically, not just inferred, in the session that added
+  # pkg/mtls's HTTP-boundary organization check). The fix is applied
+  # automatically, every `docker compose up`, by the certificate-authority-init
+  # service below - no manual step required.
   certificate-authority:
     image: smallstep/step-ca:latest
     environment:
@@ -81,11 +90,45 @@ services:
     volumes:
       - certificate-authority-data:/home/step
       - ../third-party/certificate-authority/config/password.dev-only.txt:/run/secrets/ca-password.dev-only:ro
+      - ../third-party/certificate-authority/config/organization.x509.tpl:/run/secrets/organization.x509.tpl:ro
     healthcheck:
       test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # One-shot init service: applies config/organization.x509.tpl to the
+  # "admin" JWK provisioner over the network, then exits 0. Waits for
+  # certificate-authority to report healthy (its own DOCKER_STEPCA_INIT_*
+  # first-boot bootstrap, which creates the root+intermediate CA and the
+  # admin provisioner, must complete first) before running. Runs on every
+  # `docker compose up`, including a genuinely fresh bring-up after
+  # `docker compose down -v`; idempotent on a stack that was already
+  # templated (see init-organization-template.sh's own doc comment), so it
+  # never blocks a normal restart.
+  #
+  # Any future service that bootstraps its own certificate via pkg/pki
+  # (PKI-F-01/PKI-F-02, CA-F-04) must declare, in its own compose entry:
+  #   depends_on:
+  #     certificate-authority-init:
+  #       condition: service_completed_successfully
+  # so it never requests a certificate before the organization template is
+  # in place - otherwise it would receive a certificate with an empty
+  # Subject.Organization (PKI-F-02 unenforceable, see
+  # organization.x509.tpl's doc comment). No such service exists in this
+  # compose file yet (see this file's own top comment).
+  certificate-authority-init:
+    image: smallstep/step-ca:latest
+    entrypoint: ["/bin/sh", "/scripts/init-organization-template.sh"]
+    depends_on:
+      certificate-authority:
+        condition: service_healthy
+    volumes:
+      - certificate-authority-data:/home/step:ro
+      - ../third-party/certificate-authority/config/password.dev-only.txt:/run/secrets/ca-password.dev-only:ro
+      - ../third-party/certificate-authority/config/organization.x509.tpl:/run/secrets/organization.x509.tpl:ro
+      - ../third-party/certificate-authority/init-organization-template.sh:/scripts/init-organization-template.sh:ro
+    restart: "no"
 
 volumes:
   database-vault-postgres-data:
