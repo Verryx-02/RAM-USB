@@ -18,6 +18,35 @@
 // is explicitly out of scope for this entrypoint - it is a distinct,
 // not-yet-built requirement, not part of the request-relay flow wired
 // here.
+//
+// mTLS to Security-Switch (EH-F-07, PKI-F-01/PKI-F-02, CA-F-04): unlike
+// every other service in this codebase, Entry-Hub has no inbound mTLS
+// listener at all - its public endpoints (EH-F-01/02/03) are served over a
+// separate, unrelated Let's Encrypt-issued HTTPS certificate
+// (buildServerTLSConfig/envServerCert/envServerKey below, untouched by
+// this change). Entry-Hub therefore needs exactly one identity role: an
+// outbound mTLS client. It obtains that identity from the
+// Certificate-Authority via pkg/pki's bootstrap-token flow
+// (pki.LoadBootstrapToken + pki.NewClient), the same CA-F-04 mechanism
+// Database-Vault uses, but calling pki.NewClient directly rather than
+// reusing a pki.NewServer-bootstrapped *tls.Config - see pkg/pki's package
+// doc comment and Database-Vault's own main.go doc comment: reusing a
+// server identity for an outbound call is only the right pattern when a
+// corresponding inbound listener already exists for that identity: none
+// does here. The resulting *http.Client's Transport is wrapped with
+// mtls.WrapRoundTripper for PKI-F-02's organization check
+// (organization=securityswitch.OrganizationSecuritySwitch) at the
+// HTTP-response level, since pkg/pki's *tls.Config is not composable with
+// pkg/mtls.ClientConfig's handshake-level VerifyConnection check (see
+// pkg/pki's package doc comment).
+//
+// See also deployments/docker-compose.dev.yml's certificate-authority-init
+// service: the dev Certificate-Authority container needs a one-time,
+// idempotent setup step (a custom x509 template on its bootstrap-token
+// provisioner) before any certificate it issues carries a non-empty
+// Subject.Organization at all - without it, PKI-F-02's organization check
+// would reject every connection. `docker compose up` applies it
+// automatically; no manual step is required.
 package main
 
 import (
@@ -36,6 +65,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
+	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/httpapi"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/metrics"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/securityswitch"
@@ -59,18 +89,13 @@ const (
 	envServerKey  = "RAM_USB_ENTRY_HUB_TLS_KEY"
 
 	// envSecuritySwitchURL is Security-Switch's base URL (EH-F-07), e.g.
-	// "https://security-switch.internal:8443".
+	// "https://security-switch.internal:8443". This server's mTLS client
+	// identity itself is no longer read from cert/key/CA files - see this
+	// file's package doc comment - it comes from
+	// pki.LoadBootstrapToken/pki.BootstrapTokenEnvVar
+	// (RAM_USB_CA_BOOTSTRAP_TOKEN), already established by CA-F-04 and not
+	// redefined here.
 	envSecuritySwitchURL = "RAM_USB_SECURITY_SWITCH_URL"
-
-	// envSecuritySwitchClientCert/envSecuritySwitchClientKey locate the
-	// client certificate/key this server presents when calling
-	// Security-Switch over mTLS (EH-F-07).
-	envSecuritySwitchClientCert = "RAM_USB_SECURITY_SWITCH_CLIENT_CERT"
-	envSecuritySwitchClientKey  = "RAM_USB_SECURITY_SWITCH_CLIENT_KEY"
-
-	// envSecuritySwitchCA locates the CA certificate bundle (PEM) trusted
-	// to have issued Security-Switch's server certificate.
-	envSecuritySwitchCA = "RAM_USB_SECURITY_SWITCH_CA"
 
 	// envMQTTBrokerURL/envMQTTClientCert/envMQTTClientKey/envMQTTCA reuse
 	// the exact same env var names Database-Vault's and Security-Switch's
@@ -121,7 +146,7 @@ func run() error {
 		return fmt.Errorf("build server tls config: %w", err)
 	}
 
-	securitySwitchClient, securitySwitchURL, err := buildSecuritySwitchClient()
+	securitySwitchClient, securitySwitchURL, err := buildSecuritySwitchClient(ctx)
 	if err != nil {
 		return fmt.Errorf("build security-switch client: %w", err)
 	}
@@ -227,42 +252,35 @@ func buildServerTLSConfig() (*tls.Config, error) {
 }
 
 // buildSecuritySwitchClient assembles the *http.Client EH-F-07 uses to
-// call Security-Switch over mTLS, verifying
+// call Security-Switch over mTLS (PKI-F-01, CA-F-04), verifying
 // organization=securityswitch.OrganizationSecuritySwitch on
-// Security-Switch's certificate.
-func buildSecuritySwitchClient() (*http.Client, string, error) {
+// Security-Switch's certificate (PKI-F-02).
+//
+// This is Entry-Hub's one and only mTLS identity (see this file's package
+// doc comment: Entry-Hub has no inbound mTLS listener to reuse an
+// identity from), so it bootstraps it directly via pki.NewClient rather
+// than deriving it from a pki.NewServer call the way Database-Vault's
+// buildStorageServiceClient does.
+func buildSecuritySwitchClient(ctx context.Context) (*http.Client, string, error) {
 	baseURL, err := requireEnv(envSecuritySwitchURL)
 	if err != nil {
 		return nil, "", err
 	}
-	certPath, err := requireEnv(envSecuritySwitchClientCert)
+
+	token, err := pki.LoadBootstrapToken()
 	if err != nil {
-		return nil, "", err
-	}
-	keyPath, err := requireEnv(envSecuritySwitchClientKey)
-	if err != nil {
-		return nil, "", err
-	}
-	caPath, err := requireEnv(envSecuritySwitchCA)
-	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("load ca bootstrap token: %w", err)
 	}
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	client, err := pki.NewClient(ctx, token)
 	if err != nil {
-		return nil, "", fmt.Errorf("load security-switch client certificate/key: %w", err)
+		return nil, "", fmt.Errorf("bootstrap security-switch client identity from certificate-authority: %w", err)
 	}
 
-	rootCAs, err := loadCertPool(caPath)
-	if err != nil {
-		return nil, "", err
-	}
-
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: mtls.ClientConfig(cert, rootCAs, securityswitch.OrganizationSecuritySwitch),
-		},
-	}
+	// PKI-F-02's organization check runs here, at the HTTP-response
+	// level (mtls.WrapRoundTripper), not inside client's *tls.Config's
+	// handshake - see this file's package doc comment for why.
+	client.Transport = mtls.WrapRoundTripper(client.Transport, securityswitch.OrganizationSecuritySwitch)
 	return client, baseURL, nil
 }
 
