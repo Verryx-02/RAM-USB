@@ -39,6 +39,7 @@ import (
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/metrics"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/password"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/registration"
+	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/schema"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/server"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/storage"
 )
@@ -84,6 +85,17 @@ const (
 	// envDatabaseURL is the Postgres connection string pgxpool.New
 	// parses (DV-F-08).
 	envDatabaseURL = "RAM_USB_DATABASE_VAULT_DATABASE_URL"
+
+	// envMigrationsDir locates the directory of SQL migration files
+	// (internal/schema.Apply) applied once at startup, before this
+	// process starts accepting connections. Optional: defaults to
+	// defaultMigrationsDir, the checked-in relative path from this
+	// repository's root, so a local/bare-metal run (e.g. `go run
+	// ./services/database-vault/cmd/database-vault` from the repo
+	// root) works without extra setup. Not part of any earlier
+	// requirement's env var list; this session's judgment call, same
+	// pattern as every other unestablished env var name in this file.
+	envMigrationsDir = "RAM_USB_DATABASE_VAULT_MIGRATIONS_DIR"
 
 	// envStorageServiceURL is Storage-Service's base URL (DV-F-09), e.g.
 	// "https://storage-service.internal:8443".
@@ -135,6 +147,10 @@ const metricsPublishInterval = time.Minute
 // broker's connection handshake at startup.
 const connectTimeout = 10 * time.Second
 
+// defaultMigrationsDir is envMigrationsDir's fallback: the migrations
+// directory's checked-in location relative to this repository's root.
+const defaultMigrationsDir = "services/database-vault/migrations"
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("database-vault: fatal startup error", "error", err)
@@ -179,6 +195,20 @@ func run() error {
 	databaseURL, err := requireEnv(envDatabaseURL)
 	if err != nil {
 		return err
+	}
+
+	migrationsDir := getEnvOrDefault(envMigrationsDir, defaultMigrationsDir)
+	migration, err := schema.New(databaseURL, migrationsDir)
+	if err != nil {
+		return fmt.Errorf("build schema migration: %w", err)
+	}
+	// Up() only, never Down() - Down() is test-cleanup-only (see
+	// internal/schema's package doc comment) and must never run against
+	// a real database. A failed migration fails this process's startup
+	// (RD-04, fail-secure): it never starts serving requests against a
+	// schema that might not match what the code expects.
+	if err := schema.Apply(migration); err != nil {
+		return fmt.Errorf("apply database migrations: %w", err)
 	}
 
 	pool, err := pgxpool.New(ctx, databaseURL)
@@ -302,6 +332,20 @@ func requireEnv(name string) (string, error) {
 		return "", fmt.Errorf("required environment variable %s is not set", name)
 	}
 	return value, nil
+}
+
+// getEnvOrDefault reads name from the environment, returning fallback if it
+// is unset or empty. Unlike requireEnv, an unset value here is not a
+// startup failure - only envMigrationsDir uses this, since it has a
+// sensible checked-in-path default (see defaultMigrationsDir), unlike
+// every other value in this file, which has no safe default and so must
+// come from requireEnv.
+func getEnvOrDefault(name, fallback string) string {
+	value, ok := os.LookupEnv(name)
+	if !ok || value == "" {
+		return fallback
+	}
+	return value
 }
 
 // loadCertPool reads a PEM certificate bundle from path and returns a
