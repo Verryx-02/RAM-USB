@@ -60,7 +60,7 @@ node "Proxmox VE Host" as Proxmox {
         node "**Security-Switch**\n[Go]" as SecuritySwitch <<service>>
       }
       node " " as CADocker <<docker>> {
-        node "**Certificate-Authority**\n[smallstep/certificates]" as CA <<infra>>
+        node "**Certificate-Authority**\n[smallstep/certificates]" as CA <<certAuthority>>
       }
       node " " as MosquittoDocker <<docker>> {
         node "**Mosquitto**\n[MQTT broker]" as Mosquitto <<infra>>
