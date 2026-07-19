@@ -21,7 +21,7 @@ rectangle "RAM-USB System" {
 
   database "<$postgresql>\n**PostgreSQL**\nUser identity records" as Postgres
 
-  component "**Certificate-Authority**\n[smallstep/certificates]\nmTLS issuance & rotation" as CA <<infra>>
+  component "**Certificate-Authority**\n[smallstep/certificates]\nmTLS issuance & rotation" as CA <<certAuthority>>
   component "**Observability**\n[Mosquitto, Metrics-Collector,\nGrafana, TimescaleDB]\nMetrics pipeline & dashboards" as Observability <<infra>>
 }
 

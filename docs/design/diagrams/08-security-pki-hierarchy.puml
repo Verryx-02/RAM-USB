@@ -13,19 +13,15 @@ skinparam component<<publicCA>> {
   BorderColor #5A6B78
   FontColor #14202B
 }
-' privateCA: teal family, same as <<infra>> but a distinct lighter variant —
-' the private CA is support infrastructure, conceptually close to <<infra>>.
-skinparam component<<privateCA>> {
-  BackgroundColor #A9CDD6/#7FB0BC
-  BorderColor #3D6570
-  FontColor #0A1B22
-}
+' <<certAuthority>> (component/node) is centralized in _style.puml: the
+' Certificate-Authority component uses that shared identity everywhere it
+' appears, not a locally redefined color here.
 ' <<service>> intentionally NOT redefined here: inherited as-is from
 ' _style.puml (navy blue family). Do not add a local block for it — see
 ' _style.puml comment on skinparam merging per-selector, not per-block.
 
 component "**Let's Encrypt**" as LetsEncrypt <<publicCA>>
-component "**Certificate-Authority**\n[smallstep/certificates]" as PrivateCA <<privateCA>>
+component "**Certificate-Authority**\n[smallstep/certificates]" as PrivateCA <<certAuthority>>
 
 package "Core request path" {
   together {

@@ -34,6 +34,16 @@ skinparam node<<infra>> {
   BorderColor #2F5A66
   FontColor #0A1B22
 }
+skinparam component<<certAuthority>> {
+  BackgroundColor #8B6FB0/#6B4F94
+  BorderColor #4A2E68
+  FontColor #F0F0F0
+}
+skinparam node<<certAuthority>> {
+  BackgroundColor #8B6FB0/#6B4F94
+  BorderColor #4A2E68
+  FontColor #F0F0F0
+}
 skinparam participant<<service>> {
   BackgroundColor #2A4A7F/#1B3A6B
   BorderColor #0A1B36

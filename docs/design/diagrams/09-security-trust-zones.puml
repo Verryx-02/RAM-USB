@@ -24,14 +24,9 @@ skinparam node<<userFull>> {
 ' _style.puml (navy blue family). Do not add a local block for it — see
 ' _style.puml comment on skinparam merging per-selector, not per-block.
 
-' privateCA: same teal family/values as 08-pki-hierarchy.puml's <<privateCA>>
-' (component selector there, node selector here — PlantUML skinparam
-' selectors are scoped per element type, so the block must be repeated).
-skinparam node<<privateCA>> {
-  BackgroundColor #A9CDD6/#7FB0BC
-  BorderColor #3D6570
-  FontColor #0A1B22
-}
+' <<certAuthority>> (component/node) is centralized in _style.puml: the
+' Certificate-Authority node uses that shared identity everywhere it
+' appears, not a locally redefined color here.
 
 package "Unauthenticated User Zone" {
   node "**User**\nregistered,\nnot logged in" as UnauthUser <<userLimited>>
@@ -49,7 +44,7 @@ package "Internal Mesh" {
   node "**Security-Switch**" as SecuritySwitch <<service>>
   node "**Database-Vault**" as DatabaseVault <<service>>
   node "**Network-Manager**" as NetworkManager <<service>>
-  node "**Certificate-Authority**" as CA <<privateCA>>
+  node "**Certificate-Authority**" as CA <<certAuthority>>
 
   EntryHub -[hidden]right- StorageService
   SecuritySwitch -[hidden]right- DatabaseVault
