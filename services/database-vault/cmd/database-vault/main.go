@@ -446,13 +446,22 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 // *http.Client's Transport with mtls.WrapRoundTripper so PKI-F-02's
 // organization check (organization=StorageService) runs at the
 // HTTP-response level.
+//
+// pki.ClientTLSConfig clones serverTLSConfig (never mutating the shared
+// object itself - see this file's package doc comment on why
+// serverTLSConfig is reused across the inbound listeners and this
+// outbound client) and forces this handshake's ServerName to
+// organizationStorageService instead of the dialed network address
+// (envStorageServiceURL's host, which differs between dev/compose and
+// production) - see pkg/pki's package doc comment for why this is
+// required, not merely defensive.
 func buildStorageServiceClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
 	baseURL, err := requireEnv(envStorageServiceURL)
 	if err != nil {
 		return nil, "", err
 	}
 
-	transport := &http.Transport{TLSClientConfig: serverTLSConfig}
+	transport := &http.Transport{TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, organizationStorageService)}
 	client := &http.Client{Transport: mtls.WrapRoundTripper(transport, organizationStorageService)}
 	return client, baseURL, nil
 }

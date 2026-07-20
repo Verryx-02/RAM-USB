@@ -10,3 +10,8 @@ graphify-out/
 # real key bytes, regenerated on demand, never committed (unlike the
 # zero-entropy *.dev-only.txt placeholder files elsewhere under third-party/).
 third-party/entry-hub/config/*.dev-only.*
+
+# Real dev-only master key/pepper/CA bootstrap tokens generated while
+# manually verifying the full stack against a real running Certificate-
+# Authority (2026-07-20 real-CA end-to-end test) - never committed.
+deployments/.env.realca-test

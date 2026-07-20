@@ -310,13 +310,21 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 // *http.Client's Transport with mtls.WrapRoundTripper so PKI-F-02's
 // organization check (organization=dbvault.OrganizationDatabaseVault)
 // runs at the HTTP-response level.
+//
+// pki.ClientTLSConfig clones serverTLSConfig (never mutating the shared
+// object itself - see this file's package doc comment on why
+// serverTLSConfig is reused for three roles at once) and forces this
+// handshake's ServerName to dbvault.OrganizationDatabaseVault instead of
+// the dialed network address (envDatabaseVaultURL's host, which differs
+// between dev/compose and production) - see pkg/pki's package doc comment
+// for why this is required, not merely defensive.
 func buildDatabaseVaultClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
 	baseURL, err := requireEnv(envDatabaseVaultURL)
 	if err != nil {
 		return nil, "", err
 	}
 
-	transport := &http.Transport{TLSClientConfig: serverTLSConfig}
+	transport := &http.Transport{TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, dbvault.OrganizationDatabaseVault)}
 	client := &http.Client{Transport: mtls.WrapRoundTripper(transport, dbvault.OrganizationDatabaseVault)}
 	return client, baseURL, nil
 }
@@ -328,13 +336,17 @@ func buildDatabaseVaultClient(serverTLSConfig *tls.Config) (*http.Client, string
 // organization check (organization=
 // networkmanager.OrganizationNetworkManager) runs at the HTTP-response
 // level.
+//
+// pki.ClientTLSConfig clones serverTLSConfig and forces this handshake's
+// ServerName to networkmanager.OrganizationNetworkManager, same reasoning
+// as buildDatabaseVaultClient above.
 func buildNetworkManagerClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
 	baseURL, err := requireEnv(envNetworkManagerURL)
 	if err != nil {
 		return nil, "", err
 	}
 
-	transport := &http.Transport{TLSClientConfig: serverTLSConfig}
+	transport := &http.Transport{TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, networkmanager.OrganizationNetworkManager)}
 	client := &http.Client{Transport: mtls.WrapRoundTripper(transport, networkmanager.OrganizationNetworkManager)}
 	return client, baseURL, nil
 }

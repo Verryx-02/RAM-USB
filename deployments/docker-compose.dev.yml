@@ -1,12 +1,70 @@
 # Development Docker Compose stack (docs/Test_Plan.md §4: integration and
 # system tests run against this stack).
 #
-# Database-Vault's Postgres datastore, Network-Manager's Headscale backend,
-# and the Certificate-Authority (official smallstep/step-ca image,
-# CA-F-01..CA-F-04, PKI-F-01/02) are defined so far. Every other service
-# listed in deployments/docker/ still has an empty Dockerfile and no
-# main.go yet; add its compose entry in the task that gives it a working
-# binary, rather than stubbing one out here ahead of time.
+# All 5 Go services (Entry-Hub, Security-Switch, Database-Vault,
+# Storage-Service, Network-Manager) plus their infrastructure dependencies
+# (Postgres, Headscale, the Certificate-Authority) are defined below.
+#
+# Each Go service needs a real, single-use CA bootstrap token
+# (RAM_USB_CA_BOOTSTRAP_TOKEN, CA-F-04) minted fresh before every
+# `docker compose up` — tokens are default 5-minute TTL and are not
+# reusable across restarts, so mint them immediately before bringing the
+# stack up, not while images are still building.
+#
+# One thing is easy to get wrong here, confirmed by actually running this
+# stack end-to-end against a real CA (2026-07-20):
+#
+# --ca-url MUST be the in-network hostname ("certificate-authority"), NOT
+# "localhost". The CA URL becomes the token's "aud" claim, which
+# pki.NewServer/NewClient later use to fetch the root cert - a token
+# minted with --ca-url https://localhost:9000 works when consumed by a
+# process on the host (e.g. pkg/pki's own _RealCA_ tests, via the
+# published port), but every other container's "localhost" is itself,
+# not the certificate-authority container, so it fails with
+# "connect: connection refused".
+#
+# The token's subject must be the PascalCase-no-hyphen organization
+# string each service's code actually checks (EntryHub, SecuritySwitch,
+# DatabaseVault, StorageService, NetworkManager - see
+# third-party/certificate-authority/config/organization.x509.tpl's own
+# doc comment), NOT this file's hyphenated compose service name:
+#
+#   docker exec deployments-certificate-authority-1 step ca token SecuritySwitch \
+#       --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt \
+#       --provisioner admin --password-file /run/secrets/ca-password.dev-only
+#
+# (substitute each service's own PascalCase name)
+#
+# No --san flag is needed for the compose hostname (e.g. "security-switch")
+# despite it differing from the token's PascalCase subject: RAM-USB's
+# inter-service identity model deliberately relies solely on PKI-F-02's
+# organization check, not on TLS hostname/SAN verification (see pkg/pki's
+# package doc comment, pkg/pki/servername.go, and the SRS's PKI-F-01/
+# PKI-F-02 note for the full architecture decision and why it's safe -
+# confirmed 2026-07-20 by re-running this exact registration end-to-end
+# with single-SAN tokens after that fix landed).
+#
+# Database-Vault also needs RAM_USB_MASTER_KEY (32 random bytes, base64:
+# `openssl rand -base64 32`) and RAM_USB_PASSWORD_PEPPER (any string).
+# Network-Manager needs RAM_USB_HEADSCALE_API_KEY, minted via
+# `docker exec deployments-network-manager-headscale-1 /ko-app/headscale
+# apikeys create --expiration 24h`. None of these belong in this file —
+# supply them via an untracked env file (e.g. `docker compose --env-file
+# deployments/.env.local -f deployments/docker-compose.dev.yml up`).
+#
+# Storage-Service's own SFTP/AuthorizedKeysCommand identity
+# (/etc/storage-service/authorized-keys-command.conf, ST-F-11's consumer
+# side) is deliberately NOT wired here yet — see
+# services/storage-service/cmd/authorized-keys-command/main.go's own doc
+# comment: it reads a persistent cert/key/CA bundle from a file, not a
+# live pkg/pki bootstrap exchange (it runs once per SSH connection, so it
+# cannot safely consume a single-use token that way), and provisioning
+# that persistent identity is its own not-yet-scoped task. What IS wired
+# below is Storage-Service's mTLS HTTP server (ST-F-01/06/10), sufficient
+# for Database-Vault to create the POSIX user (DV-F-09) during
+# registration — just not yet sufficient for an actual SFTP login
+# (ST-F-02/03/04/05/07/08/09), which deployments/docker/storage-service/
+# VERIFICATION.md already covers manually with dev-only certs.
 services:
   database-vault-postgres:
     image: postgres:17
@@ -129,6 +187,94 @@ services:
       - ../third-party/certificate-authority/config/organization.x509.tpl:/run/secrets/organization.x509.tpl:ro
       - ../third-party/certificate-authority/init-organization-template.sh:/scripts/init-organization-template.sh:ro
     restart: "no"
+
+  entry-hub:
+    build:
+      context: ..
+      dockerfile: deployments/docker/entry-hub/Dockerfile
+    depends_on:
+      certificate-authority-init:
+        condition: service_completed_successfully
+    environment:
+      RAM_USB_ENTRY_HUB_LISTEN_ADDR: "0.0.0.0:8443"
+      RAM_USB_ENTRY_HUB_TLS_CERT: /certs/server.dev-only.crt
+      RAM_USB_ENTRY_HUB_TLS_KEY: /certs/server.dev-only.key
+      RAM_USB_SECURITY_SWITCH_URL: "https://security-switch:8444"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${TOKEN_ENTRY_HUB:?generate via step ca token entry-hub, see this file's top comment}"
+    volumes:
+      - ../third-party/entry-hub/config:/certs:ro
+    ports:
+      - "8443:8443"
+
+  security-switch:
+    build:
+      context: ..
+      dockerfile: deployments/docker/security-switch/Dockerfile
+    depends_on:
+      certificate-authority-init:
+        condition: service_completed_successfully
+    environment:
+      RAM_USB_SECURITY_SWITCH_LISTEN_ADDR: "0.0.0.0:8444"
+      RAM_USB_DATABASE_VAULT_URL: "https://database-vault:8445"
+      RAM_USB_NETWORK_MANAGER_URL: "https://network-manager:8447"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${TOKEN_SECURITY_SWITCH:?generate via step ca token security-switch, see this file's top comment}"
+
+  database-vault:
+    build:
+      context: ..
+      dockerfile: deployments/docker/database-vault/Dockerfile
+    depends_on:
+      certificate-authority-init:
+        condition: service_completed_successfully
+      database-vault-postgres:
+        condition: service_healthy
+    environment:
+      RAM_USB_DATABASE_VAULT_LISTEN_ADDR: "0.0.0.0:8445"
+      RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR: "0.0.0.0:8446"
+      RAM_USB_DATABASE_VAULT_DATABASE_URL: "postgres://database_vault:database_vault_dev_only@database-vault-postgres:5432/database_vault?sslmode=disable"
+      RAM_USB_STORAGE_SERVICE_URL: "https://storage-service:8448"
+      RAM_USB_MASTER_KEY: "${RAM_USB_MASTER_KEY:?generate via: openssl rand -base64 32}"
+      RAM_USB_PASSWORD_PEPPER: "${RAM_USB_PASSWORD_PEPPER:?set any dev-only string}"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${TOKEN_DATABASE_VAULT:?generate via step ca token database-vault, see this file's top comment}"
+
+  storage-service:
+    build:
+      context: ..
+      dockerfile: deployments/docker/storage-service/Dockerfile
+    depends_on:
+      certificate-authority-init:
+        condition: service_completed_successfully
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - SYS_CHROOT
+    environment:
+      RAM_USB_STORAGE_SERVICE_LISTEN_ADDR: "0.0.0.0:8448"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${TOKEN_STORAGE_SERVICE:?generate via step ca token storage-service, see this file's top comment}"
+    ports:
+      - "2222:2222"
+
+  network-manager:
+    build:
+      context: ..
+      dockerfile: deployments/docker/network-manager/Dockerfile
+    depends_on:
+      certificate-authority-init:
+        condition: service_completed_successfully
+      network-manager-headscale:
+        condition: service_healthy
+    environment:
+      RAM_USB_NETWORK_MANAGER_LISTEN_ADDR: "0.0.0.0:8447"
+      RAM_USB_HEADSCALE_ADDR: "network-manager-headscale:50443"
+      RAM_USB_HEADSCALE_API_KEY: "${HEADSCALE_API_KEY:?generate via: docker exec deployments-network-manager-headscale-1 /ko-app/headscale apikeys create --expiration 24h}"
+      # dev-tls is self-signed and not in network-manager's trust store;
+      # see third-party/network-manager/headscale/dev-tls/README.txt.
+      RAM_USB_HEADSCALE_INSECURE_SKIP_VERIFY: "true"
+      RAM_USB_NETWORK_MANAGER_GRANTS_DB_PATH: "/tmp/grants.db"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${TOKEN_NETWORK_MANAGER:?generate via step ca token network-manager, see this file's top comment}"
 
 volumes:
   database-vault-postgres-data:
