@@ -277,6 +277,17 @@ func buildSecuritySwitchClient(ctx context.Context) (*http.Client, string, error
 		return nil, "", fmt.Errorf("bootstrap security-switch client identity from certificate-authority: %w", err)
 	}
 
+	// Force this handshake's ServerName to the organization Security-Switch
+	// is expected to present, instead of the dialed network address
+	// (envSecuritySwitchURL's host, which differs between dev/compose and
+	// production) - see pkg/pki's package doc comment and
+	// pki.ForceServerName's own doc comment for why this is required (not
+	// merely defensive) and verified safe (chain validation against the
+	// bootstrapped RootCAs, and certificate renewal, are both unaffected).
+	if err := pki.ForceServerName(client, securityswitch.OrganizationSecuritySwitch); err != nil {
+		return nil, "", fmt.Errorf("force security-switch client TLS server name: %w", err)
+	}
+
 	// PKI-F-02's organization check runs here, at the HTTP-response
 	// level (mtls.WrapRoundTripper), not inside client's *tls.Config's
 	// handshake - see this file's package doc comment for why.
