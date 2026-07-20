@@ -3,8 +3,11 @@
 // acceptance TLS config, NM-F-08's mesh-user creation, NM-F-09's
 // storage-access grant), plus the outbound gRPC connection to Headscale
 // those handlers call through internal/headscale, the SQLite-backed grant
-// store (NM-F-11), its periodic expiry sweep (NM-F-10), and the periodic
-// MQTT metrics publish (NM-F-17, NM-F-18).
+// store (NM-F-11) - which also backs the permanent email -> Headscale
+// pre-auth-key-ID mapping a later bug fix session added (see
+// internal/grants' own doc comment and internal/headscale/client.go's
+// "Bug fix" section) - its periodic expiry sweep (NM-F-10), and the
+// periodic MQTT metrics publish (NM-F-17, NM-F-18).
 //
 // NM-F-12 ("expose an administration interface for creating pre-auth keys
 // and managing ACL tags, reachable only from the private network") needs
@@ -185,6 +188,32 @@ func run() error {
 
 	headscaleService := v1.NewHeadscaleServiceClient(conn)
 
+	// pushStartupPolicy applies NM-F-01/02/03/04/05/06/07's static ACL
+	// policy to Headscale exactly once, before this process serves any
+	// mesh-provisioning traffic. Fatal on failure, same as every other
+	// startup dependency above (buildServerTLSConfig, buildHeadscaleConn):
+	// Headscale's ACL model is default-allow (open, unrestricted mesh
+	// reachability) until a policy is actively pushed, and only becomes
+	// default-deny once one exists - so a process that started serving
+	// without a successfully-applied policy would leave the mesh network
+	// with NONE of NM-F-01 through NM-F-07's reachability restrictions
+	// enforced, which is a worse outcome than refusing to start at all
+	// (RD-04, fail-secure). This is corroborated by this session's own
+	// live reproduction: with no active policy, Headscale's CreatePreAuthKey
+	// still silently succeeds in tagging a new node (NM-F-08 keeps
+	// "working" in a broken, unenforced state), while the separate
+	// SetTags admin call NM-F-09 depends on is rejected outright - neither
+	// behavior is safe to serve traffic under, so this failure aborts run()
+	// exactly like the other three startup dependencies above it.
+	if err := pushStartupPolicy(ctx, headscaleService); err != nil {
+		return fmt.Errorf("push headscale acl policy (NM-F-01/02/03/04/05/06/07): %w", err)
+	}
+
+	// grantStore backs both NM-F-11's grants table and the mesh_users
+	// table this session's bug fix adds (permanent email -> Headscale
+	// pre-auth-key-ID mapping, internal/grants/meshusers.go) - one SQLite
+	// file, one Store, two conceptually distinct tables with different
+	// row lifecycles. See that package's own doc comment for why.
 	grantStore, err := grants.Open(grantsDBPath)
 	if err != nil {
 		return fmt.Errorf("open grants store (NM-F-11): %w", err)
@@ -194,9 +223,10 @@ func run() error {
 	counters := &httpapi.Counters{}
 
 	handler := &httpapi.Handler{
-		Mesh:    httpapi.HeadscaleAdapter{Service: headscaleService},
-		Grants:  grantStore,
-		Metrics: counters,
+		Mesh:      httpapi.HeadscaleAdapter{Service: headscaleService},
+		Grants:    grantStore,
+		MeshUsers: grantStore,
+		Metrics:   counters,
 	}
 
 	mux := http.NewServeMux()
@@ -348,6 +378,18 @@ func buildHeadscaleConn() (*grpc.ClientConn, error) {
 	tlsConfig := &tls.Config{InsecureSkipVerify: insecureSkipVerify} //nolint:gosec // operator-controlled dev-only toggle (envHeadscaleInsecureSkipVerify), defaults to false; see third-party/network-manager/headscale/dev-tls/README.txt
 
 	return headscale.Dial(addr, apiKey, tlsConfig)
+}
+
+// pushStartupPolicy is a thin, separately-testable wrapper over
+// headscale.PushPolicy - same "small named function wrapping one startup
+// dependency" shape as buildServerTLSConfig/buildHeadscaleConn/
+// buildMetricsClient above, so a unit test can exercise it against a
+// hand-written fake without needing run()'s full real-listener/real-CA
+// setup. svc is typed as headscale.PolicyPusher (not the concrete
+// *v1.HeadscaleServiceClient run() passes in) precisely so a test can
+// substitute a fake here.
+func pushStartupPolicy(ctx context.Context, svc headscale.PolicyPusher) error {
+	return headscale.PushPolicy(ctx, svc)
 }
 
 // loadCertPool reads a PEM certificate bundle from path and returns a

@@ -13,10 +13,11 @@ var (
 	// API returned an error - unreachable server, an explicit RPC
 	// error/status, or a malformed response.
 	ErrHeadscaleRequestFailed = errors.New("headscale: request failed")
-	// ErrMeshUserNotFound means GrantStorageAccess could not find a
-	// Headscale user or mesh node for the given email - it does not
-	// distinguish "user was never registered" from "node not yet
-	// joined", so no distinguishing detail is leaked further up either.
+	// ErrMeshUserNotFound means GrantStorageAccess could not find a mesh
+	// node whose PreAuthKey.Id matches the caller-supplied pre-auth-key
+	// ID - it does not distinguish "this user never registered a
+	// pre-auth key" from "the client never actually joined the mesh
+	// with it", so no distinguishing detail is leaked further up either.
 	// RemoveNodeTag reuses it identically for "no node with this ID",
 	// the same non-distinguishing rationale.
 	ErrMeshUserNotFound = errors.New("headscale: mesh user or node not found")

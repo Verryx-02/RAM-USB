@@ -37,12 +37,16 @@ const defaultHeadscaleTestContainer = "deployments-network-manager-headscale-1"
 //
 // Confirms internal/headscale.CreateMeshUser/GrantStorageAccess against a
 // real Headscale server end to end: real gRPC dial (TLS, bearer API key),
-// real CreateUser/CreatePreAuthKey, real ListUsers-by-email lookup. What
-// this test does NOT cover, and could not practically cover in this
-// session: GrantStorageAccess's success path requires an already-
-// registered mesh *node* (a real Tailscale/Headscale client consuming the
-// pre-auth key and joining), which this test has no client to do - see
-// the test's own final assertion for exactly how far verification goes.
+// real CreateUser/CreatePreAuthKey, real ListUsers-by-email lookup (still
+// exercised here as an independent sanity check that CreateUser's Email
+// field really is queryable, even though GrantStorageAccess itself no
+// longer performs this lookup - see internal/headscale/client.go's
+// package doc comment, "Bug fix" section). What this test does NOT cover,
+// and could not practically cover in this session: GrantStorageAccess's
+// success path requires an already-registered mesh *node* (a real
+// Tailscale/Headscale client consuming the pre-auth key and joining),
+// which this test has no client to do - see the test's own final
+// assertion for exactly how far verification goes.
 func TestCreateMeshUser_AndGrantStorageAccess_RealHeadscale(t *testing.T) {
 	addr := os.Getenv(headscaleTestAddrEnvVar)
 	if addr == "" {
@@ -69,18 +73,23 @@ func TestCreateMeshUser_AndGrantStorageAccess_RealHeadscale(t *testing.T) {
 
 	email := fmt.Sprintf("nm-integration-test-%d@example.com", time.Now().UnixNano())
 
-	key, err := hs.CreateMeshUser(ctx, client, email)
+	key, keyID, err := hs.CreateMeshUser(ctx, client, email)
 	if err != nil {
 		t.Fatalf("CreateMeshUser() error = %v", err)
 	}
 	if key == "" {
 		t.Fatal("CreateMeshUser() returned an empty pre-auth key")
 	}
+	if keyID == 0 {
+		t.Fatal("CreateMeshUser() returned a zero pre-auth key id, want the real Headscale-assigned id")
+	}
 
-	// Confirms NM-F-08's real user creation and the Email-based lookup
-	// NM-F-09 depends on (internal/headscale's own doc comment) -
-	// ListUsers(Email:...) must find exactly the user CreateMeshUser just
-	// created.
+	// Independent sanity check that CreateUser's Email field really is
+	// queryable via Headscale's own ListUsers(Email:...) - GrantStorageAccess
+	// itself no longer performs this lookup (see internal/headscale's
+	// package doc comment, "Bug fix" section), but confirming the field is
+	// set correctly is still a meaningful assertion about NM-F-08's real
+	// user creation.
 	users, err := client.ListUsers(ctx, &v1.ListUsersRequest{Email: email})
 	if err != nil {
 		t.Fatalf("ListUsers() error = %v", err)
@@ -96,7 +105,7 @@ func TestCreateMeshUser_AndGrantStorageAccess_RealHeadscale(t *testing.T) {
 	// branch: ErrMeshUserNotFound, not ErrHeadscaleRequestFailed or a
 	// silent success. This is the practical ceiling for this task's
 	// real-server verification, flagged rather than skipped outright.
-	_, err = hs.GrantStorageAccess(ctx, client, email)
+	_, err = hs.GrantStorageAccess(ctx, client, keyID)
 	if !errors.Is(err, hs.ErrMeshUserNotFound) {
 		t.Fatalf("GrantStorageAccess() error = %v, want ErrMeshUserNotFound (no real mesh node has joined in this test)", err)
 	}

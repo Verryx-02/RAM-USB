@@ -21,27 +21,68 @@ const testEmail = "user@example.com"
 // (CONTRIBUTING.md §7.5).
 type fakeMesh struct {
 	createKey   string
+	createKeyID uint64
 	createErr   error
 	grantErr    error
 	grantNodeID uint64
 	createCalls []string
-	grantCalls  []string
+	grantCalls  []uint64
 }
 
-func (f *fakeMesh) CreateMeshUser(_ context.Context, email string) (string, error) {
+func (f *fakeMesh) CreateMeshUser(_ context.Context, email string) (string, uint64, error) {
 	f.createCalls = append(f.createCalls, email)
 	if f.createErr != nil {
-		return "", f.createErr
+		return "", 0, f.createErr
 	}
-	return f.createKey, nil
+	return f.createKey, f.createKeyID, nil
 }
 
-func (f *fakeMesh) GrantStorageAccess(_ context.Context, email string) (uint64, error) {
-	f.grantCalls = append(f.grantCalls, email)
+func (f *fakeMesh) GrantStorageAccess(_ context.Context, preAuthKeyID uint64) (uint64, error) {
+	f.grantCalls = append(f.grantCalls, preAuthKeyID)
 	if f.grantErr != nil {
 		return 0, f.grantErr
 	}
 	return f.grantNodeID, nil
+}
+
+// fakeMeshUserStore is a hand-written fake implementing MeshUserStore
+// (CONTRIBUTING.md §7.5), letting tests assert the new persisted
+// email -> pre-auth-key-ID mapping without a real SQLite store.
+type fakeMeshUserStore struct {
+	recordErr error
+	lookupErr error
+	// keyIDs simulates rows already persisted (e.g. by an earlier
+	// CreateMeshUser call) before the test's Grant call runs.
+	keyIDs map[string]uint64
+
+	recordCalls []recordedPreAuthKeyID
+	lookupCalls []string
+}
+
+type recordedPreAuthKeyID struct {
+	email        string
+	preAuthKeyID uint64
+}
+
+func (f *fakeMeshUserStore) RecordPreAuthKeyID(_ context.Context, email string, preAuthKeyID uint64) error {
+	f.recordCalls = append(f.recordCalls, recordedPreAuthKeyID{email: email, preAuthKeyID: preAuthKeyID})
+	if f.recordErr != nil {
+		return f.recordErr
+	}
+	if f.keyIDs == nil {
+		f.keyIDs = make(map[string]uint64)
+	}
+	f.keyIDs[email] = preAuthKeyID
+	return nil
+}
+
+func (f *fakeMeshUserStore) PreAuthKeyIDForEmail(_ context.Context, email string) (uint64, bool, error) {
+	f.lookupCalls = append(f.lookupCalls, email)
+	if f.lookupErr != nil {
+		return 0, false, f.lookupErr
+	}
+	id, ok := f.keyIDs[email]
+	return id, ok, nil
 }
 
 // fakeGrantRecorder is a hand-written fake implementing GrantRecorder
@@ -64,21 +105,39 @@ func (f *fakeGrantRecorder) RecordGrant(_ context.Context, email string, nodeID 
 	return f.err
 }
 
+// newTestHandler wires a Handler with a MeshUsers store pre-populated with
+// testEmail -> a fixed pre-auth-key ID, so Grant's new
+// PreAuthKeyIDForEmail lookup succeeds by default for every test that
+// exercises Grant against testEmail without caring about the mapping
+// itself (see TestHandler_MeshUsersLookup* below for tests that do).
 func newTestHandler(mesh MeshProvisioner) (*Handler, *bytes.Buffer) {
-	return newTestHandlerWithGrants(mesh, nil)
+	return newTestHandlerFull(mesh, nil, defaultMeshUserStore())
 }
 
 func newTestHandlerWithGrants(mesh MeshProvisioner, grants GrantRecorder) (*Handler, *bytes.Buffer) {
+	return newTestHandlerFull(mesh, grants, defaultMeshUserStore())
+}
+
+func newTestHandlerFull(mesh MeshProvisioner, grants GrantRecorder, meshUsers MeshUserStore) (*Handler, *bytes.Buffer) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	h := &Handler{
-		Mesh:    mesh,
-		Grants:  grants,
-		Metrics: &Counters{},
-		Logger:  logger,
+		Mesh:      mesh,
+		Grants:    grants,
+		MeshUsers: meshUsers,
+		Metrics:   &Counters{},
+		Logger:    logger,
 	}
 	return h, &logBuf
+}
+
+// defaultMeshUserStoreKeyID is the pre-auth-key ID newTestHandler's default
+// MeshUsers store already has on record for testEmail.
+const defaultMeshUserStoreKeyID = 7
+
+func defaultMeshUserStore() *fakeMeshUserStore {
+	return &fakeMeshUserStore{keyIDs: map[string]uint64{testEmail: defaultMeshUserStoreKeyID}}
 }
 
 // Requirement: NM-F-08
@@ -168,6 +227,60 @@ func TestHandler_CreateMeshUser(t *testing.T) {
 	}
 }
 
+// Requirement: NM-F-08
+//
+// Proves the new persistence step this fix introduces: after a successful
+// Headscale call, the generated pre-auth key's numeric ID must be recorded
+// against the submitted email via h.MeshUsers, since that is the only
+// thing GrantStorageAccess can use to find this user's node at any future
+// login.
+func TestHandler_CreateMeshUser_PersistsPreAuthKeyID(t *testing.T) {
+	mesh := &fakeMesh{createKey: "authkey-generated", createKeyID: 99}
+	meshUsers := &fakeMeshUserStore{}
+	h, _ := newTestHandlerFull(mesh, nil, meshUsers)
+
+	req := httptest.NewRequest(http.MethodPost, MeshUserPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
+	w := httptest.NewRecorder()
+
+	h.CreateMeshUser(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body=%s)", w.Code, w.Body.String())
+	}
+	if len(meshUsers.recordCalls) != 1 {
+		t.Fatalf("RecordPreAuthKeyID called %d times, want 1", len(meshUsers.recordCalls))
+	}
+	call := meshUsers.recordCalls[0]
+	if call.email != testEmail || call.preAuthKeyID != 99 {
+		t.Fatalf("RecordPreAuthKeyID call = %+v, want email=%s preAuthKeyID=99", call, testEmail)
+	}
+}
+
+// Requirement: NM-F-08
+//
+// Unlike NM-F-11's grant-expiry persistence (best-effort, logged loudly
+// but does not fail the request), a MeshUsers persistence failure here
+// must fail the whole request: without this row, every future login for
+// this account would fail forever, silently, if this handler reported
+// success anyway.
+func TestHandler_CreateMeshUser_PersistenceFailureFailsTheRequest(t *testing.T) {
+	mesh := &fakeMesh{createKey: "authkey-generated", createKeyID: 99}
+	meshUsers := &fakeMeshUserStore{recordErr: errors.New("disk full")}
+	h, logBuf := newTestHandlerFull(mesh, nil, meshUsers)
+
+	req := httptest.NewRequest(http.MethodPost, MeshUserPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
+	w := httptest.NewRecorder()
+
+	h.CreateMeshUser(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body=%s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(logBuf.String(), "every future login") {
+		t.Fatalf("expected the fatal persistence failure to be logged clearly, log=%s", logBuf.String())
+	}
+}
+
 // Requirement: NM-F-09
 func TestHandler_Grant(t *testing.T) {
 	tests := []struct {
@@ -230,14 +343,61 @@ func TestHandler_Grant(t *testing.T) {
 }
 
 // Requirement: NM-F-09
+//
+// This is the handler-level proof of the bug fix's fail-secure path: an
+// email with no persisted pre-auth-key-ID row (e.g. never registered
+// through NM-F-08) must be denied with the same 403 ErrMeshUserNotFound
+// response Headscale itself would produce - h.Mesh.GrantStorageAccess must
+// never even be called, since there is no ID to pass it.
+func TestHandler_Grant_NoPreAuthKeyIDRecorded_Denies(t *testing.T) {
+	mesh := &fakeMesh{}
+	meshUsers := &fakeMeshUserStore{} // empty: no row for testEmail
+	h, _ := newTestHandlerFull(mesh, nil, meshUsers)
+
+	req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`","duration_seconds":43200}`))
+	w := httptest.NewRecorder()
+
+	h.Grant(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (body=%s)", w.Code, w.Body.String())
+	}
+	if len(mesh.grantCalls) != 0 {
+		t.Fatalf("mesh.GrantStorageAccess called %d times, want 0 (no pre-auth key id to pass it)", len(mesh.grantCalls))
+	}
+	if len(meshUsers.lookupCalls) != 1 || meshUsers.lookupCalls[0] != testEmail {
+		t.Fatalf("MeshUsers.PreAuthKeyIDForEmail calls = %v, want [%s]", meshUsers.lookupCalls, testEmail)
+	}
+}
+
+// Requirement: NM-F-09
+func TestHandler_Grant_MeshUsersLookupFailure_Returns500(t *testing.T) {
+	mesh := &fakeMesh{}
+	meshUsers := &fakeMeshUserStore{lookupErr: errors.New("disk error")}
+	h, _ := newTestHandlerFull(mesh, nil, meshUsers)
+
+	req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`","duration_seconds":43200}`))
+	w := httptest.NewRecorder()
+
+	h.Grant(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body=%s)", w.Code, w.Body.String())
+	}
+	if len(mesh.grantCalls) != 0 {
+		t.Fatalf("mesh.GrantStorageAccess called %d times, want 0", len(mesh.grantCalls))
+	}
+}
+
+// Requirement: NM-F-09
 func TestHandler_Grant_IgnoresCallerSuppliedDuration(t *testing.T) {
 	// Zero-trust (RNF-SEC-02/03): the wire-compatible duration_seconds
-	// field must not influence which email gets granted, or bypass
-	// validation - only the mesh.GrantStorageAccess call (which itself
-	// uses headscale.GrantDuration, a Network-Manager-owned constant) can
-	// determine the real grant length. This test only proves the
-	// handler still calls through correctly regardless of what
-	// duration_seconds carries; the fixed-12h behavior itself is
+	// field must not influence which pre-auth-key ID gets granted, or
+	// bypass validation - only the mesh.GrantStorageAccess call (which
+	// itself uses headscale.GrantDuration, a Network-Manager-owned
+	// constant) can determine the real grant length. This test only
+	// proves the handler still calls through correctly regardless of
+	// what duration_seconds carries; the fixed-12h behavior itself is
 	// unit-tested in internal/headscale (TestGrantDuration_Is12Hours).
 	mesh := &fakeMesh{}
 	h, _ := newTestHandler(mesh)
@@ -251,8 +411,8 @@ func TestHandler_Grant_IgnoresCallerSuppliedDuration(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", w.Code, w.Body.String())
 	}
-	if len(mesh.grantCalls) != 1 || mesh.grantCalls[0] != testEmail {
-		t.Fatalf("grantCalls = %v, want [%s]", mesh.grantCalls, testEmail)
+	if len(mesh.grantCalls) != 1 || mesh.grantCalls[0] != defaultMeshUserStoreKeyID {
+		t.Fatalf("grantCalls = %v, want [%d]", mesh.grantCalls, defaultMeshUserStoreKeyID)
 	}
 }
 
