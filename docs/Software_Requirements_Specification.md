@@ -275,15 +275,15 @@ Storage-Service directory structure:
 |NM-F-07|Must ensure that **registered and authenticated Users** can see and contact only Entry-Hub and Storage-Service|[Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
 |NM-F-08|On request from Security-Switch, following successful registration, must create a dedicated Headscale user and generate a short-lived pre-auth key for the new account|[Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
 |NM-F-09|After a successful login, on request from Security-Switch, must assign the user's node the ACL tag that enables reachability toward Storage-Service, and record an expiry 12 hours from that point|[[NM-F-09 empirical verification \| Verified]] [Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
-|NM-F-10|Must periodically check recorded expiries and remove the ACL tag from expired nodes, automatically and without manual intervention||
-|NM-F-11|The expiry of every grant must be persisted, not kept only in memory, so as not to lose state if Network-Manager restarts||
+|NM-F-10|Must periodically check recorded expiries and remove the ACL tag from expired nodes, automatically and without manual intervention|[Merged](https://github.com/Verryx-02/RAM-USB/commit/2213099b9cbdefe453c67afc43baa09b1acb0c5c)|
+|NM-F-11|The expiry of every grant must be persisted, not kept only in memory, so as not to lose state if Network-Manager restarts|[Merged](https://github.com/Verryx-02/RAM-USB/commit/2213099b9cbdefe453c67afc43baa09b1acb0c5c)|
 |NM-F-12|Must expose an administration interface for creating pre-auth keys and managing ACL tags, reachable **only from the private network**||
 |NM-F-13|The pre-auth key serves solely to register the node as a mesh member; it does not, by itself, grant reachability toward Storage-Service||
 |NM-F-14|The Headscale coordination endpoint must be reachable only from the private network||
 |NM-F-15|Must configure MagicDNS with a dedicated base domain, so that Storage-Service can be resolved by all mesh nodes via a stable name rather than an IP||
 |NM-F-16|Network-Manager's mesh node must not accept the DNS configuration distributed by Headscale, to avoid a circular reference in its own host's DNS resolution||
-|NM-F-17|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Network-Manager`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.||
-|NM-F-18|Metrics must never contain users' personal data, only aggregated statistics||
+|NM-F-17|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Network-Manager`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/2213099b9cbdefe453c67afc43baa09b1acb0c5c)|
+|NM-F-18|Metrics must never contain users' personal data, only aggregated statistics|[Merged](https://github.com/Verryx-02/RAM-USB/commit/2213099b9cbdefe453c67afc43baa09b1acb0c5c)|
 
 ### 4.7 Certificate-Authority
 
@@ -311,8 +311,8 @@ Storage-Service directory structure:
 
 |**ID**|**Requirement**|**Notes**|
 |---|---|---|
-|PKI-F-01|Every service must mutually authenticate with X.509 certificates issued by a [valid CA](https://github.com/smallstep/certificates)||
-|PKI-F-02|Every service must verify the certificate's `organization` field, not merely its validity||
+|PKI-F-01|Every service must mutually authenticate with X.509 certificates issued by a [valid CA](https://github.com/smallstep/certificates)|[Merged](https://github.com/Verryx-02/RAM-USB/commit/c8239a8941c9b83728ff562cc4c0fae2be6a204c)|
+|PKI-F-02|Every service must verify the certificate's `organization` field, not merely its validity|[Merged](https://github.com/Verryx-02/RAM-USB/commit/c8239a8941c9b83728ff562cc4c0fae2be6a204c)|
 |PKI-F-03|A certificate rotation and revocation procedure **should** exist||
 |NET-F-01|Inter-service communication must occur over the private network; the only exposed public port is Entry-Hub's, which also acts as a reverse proxy for coordination traffic toward Network-Manager||
 |NET-F-02|TLS must be v1.3||
