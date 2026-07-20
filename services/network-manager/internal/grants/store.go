@@ -2,6 +2,25 @@
 // grant expiries, so a Network-Manager restart does not lose them) and
 // NM-F-10 (the periodic sweep that finds expired grants and revokes them).
 //
+// This package also owns a second, unrelated table (meshusers.go):
+// mesh_users, a permanent email -> Headscale-pre-auth-key-ID mapping,
+// added to fix a real bug reproduced live against a running Headscale
+// instance (see internal/headscale/client.go's package doc comment,
+// "Bug fix" section, for the full root cause). GrantStorageAccess (NM-F-09)
+// needs this ID at every login to find a user's mesh node, since
+// Headscale's own per-user node ownership cannot be used for that lookup.
+// This table shares the Store's SQLite connection/schema-application
+// machinery (opened once, by the same Open call) purely because it is
+// already the right, already-wired infrastructure for a small durable
+// table - it is NOT a grant, and its rows have a fundamentally different
+// lifecycle from the grants table above: a grants row is deliberately
+// time-limited and deleted by NM-F-10's sweep once expired, while a
+// mesh_users row is written once at NM-F-08 (registration) time and never
+// expires or gets swept - it must survive for the lifetime of the user's
+// account, since every future login depends on it. Do not add expiry/sweep
+// logic to mesh_users; do not fold NM-F-11's grant rows and this mapping
+// into one table.
+//
 // Storage choice: embedded SQLite (modernc.org/sqlite - a CGo-free port,
 // matching Network-Manager's existing CGO_ENABLED=0 distroless build,
 // see deployments/docker/network-manager/Dockerfile), not a new Postgres
@@ -69,7 +88,9 @@ type Store struct {
 }
 
 // Open opens (creating if absent) the SQLite database at path and applies
-// schema. path is any value database/sql's "sqlite" driver
+// both schema (the grants table, NM-F-11) and meshUsersSchema (the
+// mesh_users table - see this package's own doc comment for why it lives
+// here). path is any value database/sql's "sqlite" driver
 // (modernc.org/sqlite) accepts as a filesystem path - see this package's
 // doc comment for why the durability guarantee NM-F-11 needs comes from
 // where the caller points path, not from anything this function does.
@@ -84,12 +105,17 @@ func Open(path string) (*Store, error) {
 	// concurrent access from this process's own HTTP handler goroutines
 	// and sweep loop, at the cost of serializing writes - an acceptable
 	// trade for this table's tiny write volume (one row write per
-	// login-time grant, one row per expiry per sweep tick).
+	// login-time grant, one row per expiry per sweep tick, one row per
+	// registration for mesh_users).
 	db.SetMaxOpenConns(1)
 
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("grants: apply schema: %w", err)
+	}
+	if _, err := db.Exec(meshUsersSchema); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("grants: apply mesh_users schema: %w", err)
 	}
 
 	return &Store{db: db}, nil

@@ -63,6 +63,15 @@ type Handler struct {
 	// request.
 	Grants GrantRecorder
 
+	// MeshUsers persists (CreateMeshUser) and looks up (Grant) the
+	// permanent email -> Headscale-pre-auth-key-ID mapping this fix
+	// introduces (see internal/headscale/client.go's "Bug fix" section
+	// and internal/grants' package doc comment). Must not be nil -
+	// unlike Grants above, there is no meaningful degraded mode: without
+	// this store, GrantStorageAccess has no way to find a user's mesh
+	// node at all, ever.
+	MeshUsers MeshUserStore
+
 	// Metrics accumulates request/error/response-time counts feeding
 	// NM-F-17/NM-F-18's periodic MQTT publish (internal/metrics.Run,
 	// wired in cmd/network-manager/main.go). Must not be nil - same
@@ -106,6 +115,19 @@ type meshUserResponse struct {
 // key travels back in the response - per UC-01 step 7-8, Security-Switch
 // relays it all the way back to the client, the one credential in this
 // codebase that does so.
+//
+// After the real Headscale call succeeds, the generated pre-auth key's
+// numeric ID is persisted against email via h.MeshUsers (NM-F-09 needs it
+// at every future login - see MeshUserStore's own doc comment). Unlike
+// Grant's NM-F-11 persistence below, a MeshUsers failure here fails the
+// whole request (500): the Headscale side already succeeded, but without
+// this row GrantStorageAccess can never find this user's node again, at
+// any future login, for the lifetime of the account - reporting success
+// to the caller would be actively misleading, not merely a durability
+// nicety. This does leave the just-created Headscale user/pre-auth key
+// orphaned in that failure case; cleaning that up is an operational
+// concern out of this fix's scope, not something RD-04's fail-secure
+// principle requires undoing here.
 func (h *Handler) CreateMeshUser(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	h.Metrics.BeginRequest()
@@ -129,11 +151,18 @@ func (h *Handler) CreateMeshUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, err := h.Mesh.CreateMeshUser(r.Context(), req.Email)
+	key, preAuthKeyID, err := h.Mesh.CreateMeshUser(r.Context(), req.Email)
 	if err != nil {
 		isError = true
 		h.logger().Error("mesh-user creation: headscale call failed", "error", err)
 		writeAppError(w, mapHeadscaleError(err))
+		return
+	}
+
+	if err := h.MeshUsers.RecordPreAuthKeyID(r.Context(), req.Email, preAuthKeyID); err != nil {
+		isError = true
+		h.logger().Error("mesh-user creation: failed to persist pre-auth key id mapping, every future login for this account will fail", "error", err)
+		writeAppError(w, apperrors.NewInternal(err))
 		return
 	}
 
@@ -160,6 +189,21 @@ type grantResponse struct {
 // Grant implements NM-F-09's receiving side: after a successful login, on
 // request from Security-Switch, assign the user's already-existing mesh
 // node the ACL tag enabling reachability toward Storage-Service.
+//
+// The node is found by first looking up email's persisted Headscale
+// pre-auth-key ID via h.MeshUsers (recorded by CreateMeshUser at
+// registration time), then passing that ID into h.Mesh.GrantStorageAccess
+// - not by looking the user up in Headscale directly. See
+// internal/headscale/client.go's package doc comment ("Bug fix" section)
+// for the full root cause this replaced: Headscale's own per-user node
+// ownership cannot be used for this lookup, because every node this
+// package creates registers via a tagged pre-auth key and is therefore
+// owned by Headscale's synthetic "tagged-devices" pseudo-user, never by
+// the specific per-user account. A missing MeshUsers row (email never
+// registered through NM-F-08, or its persistence failed at registration
+// time) is treated identically to Headscale reporting no matching node -
+// the same 403 ErrMeshUserNotFound denial, RD-04 fail-secure, no
+// distinguishing detail leaked either way.
 //
 // DurationSeconds in the request is decoded but deliberately NOT used to
 // compute the actual grant window: NM-F-09's literal text fixes the
@@ -195,7 +239,21 @@ func (h *Handler) Grant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodeID, err := h.Mesh.GrantStorageAccess(r.Context(), req.Email)
+	preAuthKeyID, found, err := h.MeshUsers.PreAuthKeyIDForEmail(r.Context(), req.Email)
+	if err != nil {
+		isError = true
+		h.logger().Error("grant: failed to look up pre-auth key id", "error", err)
+		writeAppError(w, apperrors.NewInternal(err))
+		return
+	}
+	if !found {
+		isError = true
+		h.logger().Warn("grant: no pre-auth key id recorded for this email, denying")
+		writeAppError(w, mapHeadscaleError(headscale.ErrMeshUserNotFound))
+		return
+	}
+
+	nodeID, err := h.Mesh.GrantStorageAccess(r.Context(), preAuthKeyID)
 	if err != nil {
 		isError = true
 		h.logger().Error("grant: headscale call failed", "error", err)

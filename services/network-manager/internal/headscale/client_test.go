@@ -21,9 +21,6 @@ type fakeService struct {
 	createPreAuthKeyErr  error
 	gotCreatePreAuthKey  *v1.CreatePreAuthKeyRequest
 
-	listUsersResp *v1.ListUsersResponse
-	listUsersErr  error
-
 	listNodesResp *v1.ListNodesResponse
 	listNodesErr  error
 
@@ -41,13 +38,6 @@ func (f *fakeService) CreateUser(_ context.Context, in *v1.CreateUserRequest, _ 
 		return nil, f.createUserErr
 	}
 	return &v1.CreateUserResponse{User: &v1.User{Name: in.GetName(), Email: in.GetEmail()}}, nil
-}
-
-func (f *fakeService) ListUsers(_ context.Context, _ *v1.ListUsersRequest, _ ...grpc.CallOption) (*v1.ListUsersResponse, error) {
-	if f.listUsersErr != nil {
-		return nil, f.listUsersErr
-	}
-	return f.listUsersResp, nil
 }
 
 func (f *fakeService) CreatePreAuthKey(_ context.Context, in *v1.CreatePreAuthKeyRequest, _ ...grpc.CallOption) (*v1.CreatePreAuthKeyResponse, error) {
@@ -89,12 +79,14 @@ func TestCreateMeshUser(t *testing.T) {
 		createPreAuthKeyErr error
 		preAuthKeyResp      *v1.CreatePreAuthKeyResponse
 		wantKey             string
+		wantKeyID           uint64
 		wantErr             error
 	}{
 		{
-			name:           "success returns the generated pre-auth key",
-			preAuthKeyResp: &v1.CreatePreAuthKeyResponse{PreAuthKey: &v1.PreAuthKey{Key: "authkey-abc123"}},
+			name:           "success returns the generated pre-auth key and its numeric id",
+			preAuthKeyResp: &v1.CreatePreAuthKeyResponse{PreAuthKey: &v1.PreAuthKey{Key: "authkey-abc123", Id: 42}},
 			wantKey:        "authkey-abc123",
+			wantKeyID:      42,
 		},
 		{
 			name:          "CreateUser failure is wrapped in ErrHeadscaleRequestFailed",
@@ -121,7 +113,7 @@ func TestCreateMeshUser(t *testing.T) {
 				createPreAuthKeyResp: tt.preAuthKeyResp,
 			}
 
-			key, err := CreateMeshUser(context.Background(), fake, "User@Example.com")
+			key, keyID, err := CreateMeshUser(context.Background(), fake, "User@Example.com")
 
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
@@ -134,6 +126,9 @@ func TestCreateMeshUser(t *testing.T) {
 			}
 			if key != tt.wantKey {
 				t.Fatalf("CreateMeshUser() key = %q, want %q", key, tt.wantKey)
+			}
+			if keyID != tt.wantKeyID {
+				t.Fatalf("CreateMeshUser() keyID = %d, want %d", keyID, tt.wantKeyID)
 			}
 
 			// NM-F-13: the pre-auth key is created with only the
@@ -151,8 +146,11 @@ func TestCreateMeshUser(t *testing.T) {
 			// The generated username must be deterministic and
 			// case-insensitive w.r.t. the email (mirrors DV-F-03's
 			// hashing.HashEmail normalization rationale), and the
-			// native Email field must carry the real address so
-			// NM-F-09 can look the user up by it later.
+			// native Email field must carry the real address (still
+			// useful for a human operator inspecting Headscale
+			// directly, even though NM-F-09 no longer looks the user
+			// up by it - see the package doc comment's "Bug fix"
+			// section).
 			if fake.gotCreateUser.GetEmail() != "User@Example.com" {
 				t.Fatalf("CreateUser Email = %q, want the exact caller-supplied email", fake.gotCreateUser.GetEmail())
 			}
@@ -199,79 +197,96 @@ func TestMeshUsername_AlwaysValid(t *testing.T) {
 // Requirement: NM-F-09
 func TestGrantStorageAccess(t *testing.T) {
 	tests := []struct {
-		name          string
-		listUsersResp *v1.ListUsersResponse
-		listUsersErr  error
-		listNodesResp *v1.ListNodesResponse
-		listNodesErr  error
-		setTagsErr    error
-		wantErr       error
-		wantTags      []string
-		wantNodeID    uint64
+		name              string
+		preAuthKeyID      uint64
+		listNodesResp     *v1.ListNodesResponse
+		listNodesErr      error
+		setTagsErr        error
+		wantErr           error
+		wantTags          []string
+		wantNodeID        uint64
+		wantSetTagsNodeID uint64
 	}{
 		{
-			name: "success adds TagStorageAccess alongside the existing TagMeshMember",
-			listUsersResp: &v1.ListUsersResponse{Users: []*v1.User{
-				{Name: "u123", Email: "user@example.com"},
-			}},
+			name:         "success adds TagStorageAccess alongside the existing TagMeshMember",
+			preAuthKeyID: 100,
 			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
-				{Id: 42, Tags: []string{TagMeshMember}},
+				{Id: 42, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 100}},
 			}},
-			wantTags:   []string{TagMeshMember, TagStorageAccess},
-			wantNodeID: 42,
+			wantTags:          []string{TagMeshMember, TagStorageAccess},
+			wantNodeID:        42,
+			wantSetTagsNodeID: 42,
 		},
 		{
-			name: "already-granted node is not given a duplicate tag",
-			listUsersResp: &v1.ListUsersResponse{Users: []*v1.User{
-				{Name: "u123", Email: "user@example.com"},
-			}},
+			name:         "already-granted node is not given a duplicate tag",
+			preAuthKeyID: 100,
 			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
-				{Id: 42, Tags: []string{TagMeshMember, TagStorageAccess}},
+				{Id: 42, Tags: []string{TagMeshMember, TagStorageAccess}, PreAuthKey: &v1.PreAuthKey{Id: 100}},
 			}},
-			wantTags:   []string{TagMeshMember, TagStorageAccess},
-			wantNodeID: 42,
+			wantTags:          []string{TagMeshMember, TagStorageAccess},
+			wantNodeID:        42,
+			wantSetTagsNodeID: 42,
 		},
 		{
-			name:         "ListUsers failure is wrapped in ErrHeadscaleRequestFailed",
-			listUsersErr: errors.New("boom"),
-			wantErr:      ErrHeadscaleRequestFailed,
+			// This is the actual proof this session's live-reproduced
+			// bug is fixed: several other users' nodes are also on the
+			// mesh, each with its own distinct PreAuthKey.Id (none of
+			// them owned by a "user" this package's now-removed
+			// per-user ListUsers/ListNodes(User:...) lookup could ever
+			// have matched anyway, since every node here is tagged, not
+			// user-owned). GrantStorageAccess must select the ONE node
+			// whose PreAuthKey.Id equals the caller-supplied
+			// preAuthKeyID - not the first node in the list, not a
+			// random one.
+			name:         "selects the one node whose pre-auth key id matches, among several other users' nodes",
+			preAuthKeyID: 200,
+			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
+				{Id: 10, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 100}},
+				{Id: 20, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 200}},
+				{Id: 30, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 300}},
+			}},
+			wantTags:          []string{TagMeshMember, TagStorageAccess},
+			wantNodeID:        20,
+			wantSetTagsNodeID: 20,
 		},
 		{
-			name:          "no headscale user for this email is a fail-secure ErrMeshUserNotFound",
-			listUsersResp: &v1.ListUsersResponse{Users: nil},
-			wantErr:       ErrMeshUserNotFound,
-		},
-		{
-			name: "more than one headscale user for this email is a fail-secure ErrMeshUserNotFound",
-			listUsersResp: &v1.ListUsersResponse{Users: []*v1.User{
-				{Name: "u123", Email: "user@example.com"},
-				{Name: "u456", Email: "user@example.com"},
+			// RD-04, fail-secure: the caller's client never actually
+			// joined the mesh with the pre-auth key NM-F-08 generated
+			// (a real, correct failure case, not an edge case) - other
+			// users' nodes exist, but none carries this preAuthKeyID.
+			name:         "no mesh node for this pre-auth key id is a fail-secure ErrMeshUserNotFound",
+			preAuthKeyID: 999,
+			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
+				{Id: 10, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 100}},
+				{Id: 20, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 200}},
 			}},
 			wantErr: ErrMeshUserNotFound,
 		},
 		{
-			name: "no mesh node for this user is a fail-secure ErrMeshUserNotFound",
-			listUsersResp: &v1.ListUsersResponse{Users: []*v1.User{
-				{Name: "u123", Email: "user@example.com"},
-			}},
+			name:          "empty node list is a fail-secure ErrMeshUserNotFound",
+			preAuthKeyID:  100,
 			listNodesResp: &v1.ListNodesResponse{Nodes: nil},
 			wantErr:       ErrMeshUserNotFound,
 		},
 		{
-			name: "ListNodes failure is wrapped in ErrHeadscaleRequestFailed",
-			listUsersResp: &v1.ListUsersResponse{Users: []*v1.User{
-				{Name: "u123", Email: "user@example.com"},
+			name:         "a node with no pre-auth key at all never matches",
+			preAuthKeyID: 100,
+			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
+				{Id: 10, Tags: []string{TagMeshMember}, PreAuthKey: nil},
 			}},
+			wantErr: ErrMeshUserNotFound,
+		},
+		{
+			name:         "ListNodes failure is wrapped in ErrHeadscaleRequestFailed",
+			preAuthKeyID: 100,
 			listNodesErr: errors.New("boom"),
 			wantErr:      ErrHeadscaleRequestFailed,
 		},
 		{
-			name: "SetTags failure is wrapped in ErrHeadscaleRequestFailed",
-			listUsersResp: &v1.ListUsersResponse{Users: []*v1.User{
-				{Name: "u123", Email: "user@example.com"},
-			}},
+			name:         "SetTags failure is wrapped in ErrHeadscaleRequestFailed",
+			preAuthKeyID: 100,
 			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
-				{Id: 42, Tags: []string{TagMeshMember}},
+				{Id: 42, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 100}},
 			}},
 			setTagsErr: errors.New("boom"),
 			wantErr:    ErrHeadscaleRequestFailed,
@@ -281,14 +296,12 @@ func TestGrantStorageAccess(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fake := &fakeService{
-				listUsersResp: tt.listUsersResp,
-				listUsersErr:  tt.listUsersErr,
 				listNodesResp: tt.listNodesResp,
 				listNodesErr:  tt.listNodesErr,
 				setTagsErr:    tt.setTagsErr,
 			}
 
-			nodeID, err := GrantStorageAccess(context.Background(), fake, "user@example.com")
+			nodeID, err := GrantStorageAccess(context.Background(), fake, tt.preAuthKeyID)
 
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
@@ -308,8 +321,8 @@ func TestGrantStorageAccess(t *testing.T) {
 			if fake.gotSetTags == nil {
 				t.Fatal("SetTags was not called")
 			}
-			if fake.gotSetTags.GetNodeId() != 42 {
-				t.Fatalf("SetTags NodeId = %d, want 42", fake.gotSetTags.GetNodeId())
+			if fake.gotSetTags.GetNodeId() != tt.wantSetTagsNodeID {
+				t.Fatalf("SetTags NodeId = %d, want %d", fake.gotSetTags.GetNodeId(), tt.wantSetTagsNodeID)
 			}
 			gotTags := fake.gotSetTags.GetTags()
 			if len(gotTags) != len(tt.wantTags) {
