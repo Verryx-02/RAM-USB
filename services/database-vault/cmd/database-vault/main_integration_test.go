@@ -95,16 +95,13 @@ func generateToken(t *testing.T, caURL, container, subject string) string {
 	// config and call sites, not untrusted request input.
 	cmd := exec.CommandContext(ctx, "docker", "exec", container,
 		"step", "ca", "token", subject,
-		// Every server certificate this test mints is dialed as
-		// https://localhost:<port> (matching mtls.TestCA.IssueLeaf's own
-		// established "use localhost, not 127.0.0.1" convention elsewhere
-		// in this codebase, see pkg/mtls's DV-F-09 test gotcha note), so
-		// "localhost" must be an authorized SAN or the client's own
-		// hostname verification (independent of, and prior to, the
-		// PKI-F-02 organization check this test exists to prove) rejects
-		// the connection before RequireOrganization/WrapRoundTripper ever
-		// run.
-		"--san", "localhost",
+		// subject alone is the only SAN - no "localhost" workaround needed
+		// anymore. buildStorageServiceClient (via pki.ClientTLSConfig) now
+		// forces its handshake's ServerName to the expected peer
+		// organization instead of letting it default to the dialed network
+		// address, and this file's own ad hoc test clients do the same via
+		// pki.ForceServerName/pki.ClientTLSConfig - see pkg/pki's package
+		// doc comment for the full reasoning.
 		"--san", subject,
 		"--ca-url", caURL,
 		"--root", containerRootCert,
@@ -166,6 +163,14 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 		if err != nil {
 			t.Fatalf("pki.NewClient() error = %v, want nil", err)
 		}
+		// Stand-in for what a real caller (Security-Switch's
+		// buildDatabaseVaultClient) does after pki.NewClient: force this
+		// handshake's ServerName to the exact subject serverToken was
+		// minted with, since the server's certificate no longer carries
+		// "localhost" as a SAN.
+		if err := pki.ForceServerName(client, "DatabaseVault-itest-server"); err != nil {
+			t.Fatalf("pki.ForceServerName() error = %v, want nil", err)
+		}
 
 		resp, err := client.Get(baseURL) //nolint:noctx // test, ctx already bounds the token mint above
 		if err != nil {
@@ -188,6 +193,9 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 		client, err := pki.NewClient(ctx, clientToken)
 		if err != nil {
 			t.Fatalf("pki.NewClient() error = %v, want nil", err)
+		}
+		if err := pki.ForceServerName(client, "DatabaseVault-itest-server"); err != nil {
+			t.Fatalf("pki.ForceServerName() error = %v, want nil", err)
 		}
 
 		resp, err := client.Get(baseURL) //nolint:noctx // test, ctx already bounds the token mint above
@@ -343,7 +351,10 @@ func TestBuildServerTLSConfigReusedAsOutboundClient_RealCA(t *testing.T) {
 		t.Fatal("buildServerTLSConfig()'s *tls.Config has a nil RootCAs; cannot verify an outbound peer's server certificate")
 	}
 
-	transport := &http.Transport{TLSClientConfig: callerTLSConfig}
+	// Stand-in for buildStorageServiceClient's own pki.ClientTLSConfig
+	// call: peerTLSConfig's certificate no longer carries "localhost" as a
+	// SAN, only "DatabaseVault-itest-peer-standin".
+	transport := &http.Transport{TLSClientConfig: pki.ClientTLSConfig(callerTLSConfig, "DatabaseVault-itest-peer-standin")}
 	client := &http.Client{Transport: transport}
 
 	peerURL := strings.Replace(peer.URL, "127.0.0.1", "localhost", 1)
