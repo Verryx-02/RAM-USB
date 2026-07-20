@@ -277,7 +277,7 @@ Storage-Service directory structure:
 |NM-F-09|After a successful login, on request from Security-Switch, must assign the user's node the ACL tag that enables reachability toward Storage-Service, and record an expiry 12 hours from that point|[[NM-F-09 empirical verification \| Verified]] [Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
 |NM-F-10|Must periodically check recorded expiries and remove the ACL tag from expired nodes, automatically and without manual intervention|[Merged](https://github.com/Verryx-02/RAM-USB/commit/2213099b9cbdefe453c67afc43baa09b1acb0c5c)|
 |NM-F-11|The expiry of every grant must be persisted, not kept only in memory, so as not to lose state if Network-Manager restarts|[Merged](https://github.com/Verryx-02/RAM-USB/commit/2213099b9cbdefe453c67afc43baa09b1acb0c5c)|
-|NM-F-12|Must expose an administration interface for creating pre-auth keys and managing ACL tags, reachable **only from the private network**||
+|NM-F-12|Creating pre-auth keys and managing ACL tags must be possible only from the private network|Satisfied by Headscale's own administration CLI (`docker exec` against the container, communicating over a local Unix socket with no network listener at all) - no Network-Manager code required.|
 |NM-F-13|The pre-auth key serves solely to register the node as a mesh member; it does not, by itself, grant reachability toward Storage-Service||
 |NM-F-14|The Headscale coordination endpoint must be reachable only from the private network||
 |NM-F-15|Must configure MagicDNS with a dedicated base domain, so that Storage-Service can be resolved by all mesh nodes via a stable name rather than an IP||
