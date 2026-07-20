@@ -29,6 +29,22 @@
 //     Wiring pkg/mtls's organization check into the *tls.Config this
 //     package produces is a follow-up integration task for whichever
 //     service adopts pkg/pki, not built here.
+//
+// A caller building an outbound client from this package's *tls.Config/
+// *http.Client (ClientTLSConfig/ForceServerName in servername.go) must
+// also force that outbound TLS handshake's ServerName to the expected
+// peer organization, not leave it to default to the dialed network
+// address: RAM-USB's identity model (this session's confirmed
+// architecture decision) relies solely on PKI-F-02's organization check,
+// not on crypto/tls's own independent, handshake-level hostname
+// verification, which would otherwise reject a correctly-issued
+// certificate whenever the dialed network name (which differs between
+// dev/compose and production topology) doesn't literally match the
+// certificate's SAN (itself always equal to the requested organization,
+// per third-party/certificate-authority/config/organization.x509.tpl).
+// See servername.go's doc comments for the full reasoning and the
+// verified-safe mechanics of doing this without ever touching
+// InsecureSkipVerify or skipping chain validation.
 package pki
 
 import (
