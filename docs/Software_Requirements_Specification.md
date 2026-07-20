@@ -289,10 +289,12 @@ Storage-Service directory structure:
 
 |**ID**|**Requirement**|**Notes**|
 |---|---|---|
-|CA-F-01|Must guarantee that components presenting certificates for mTLS are truly who they claim to be|The private CA exists because services not exposed to the internet cannot be reached by a public CA such as Let's Encrypt.|
-|CA-F-02|Must guarantee the issuance, rotation, revocation, and verification of mTLS certificates||
+|CA-F-01|Must guarantee that components presenting certificates for mTLS are truly who they claim to be|The private CA exists because services not exposed to the internet cannot be reached by a public CA such as Let's Encrypt. Provided by the underlying product.|
+|CA-F-02|Must guarantee the issuance, rotation, revocation, and verification of mTLS certificates|Provided by the underlying product.|
 |CA-F-03|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Certificate-Authority`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.||
 |CA-F-04|Must accept a single-use bootstrap token, distributed out-of-band to each service, for issuing the initial certificate; subsequent renewals must occur via the current mTLS certificate, not via the token|[Merged](https://github.com/Verryx-02/RAM-USB/commit/d01e06c22997ff328b97786b8ae75765826fc233)|
+
+> [!NOTE] CA-F-01 and CA-F-02 are guarantees of the underlying product, not requirements original RAM-USB code implements from scratch: the official `smallstep/step-ca` image (the `certificate-authority` service in `deployments/docker-compose.dev.yml`) already provides certificate issuance, short-lived-certificate rotation, and revocation as native features. What RAM-USB built is the glue that makes that guarantee actually hold end-to-end for this system: `pkg/pki` (CA-F-04) for bootstrap-token-based initial issuance and automatic renewal, `pkg/mtls`'s organization-field check (PKI-F-02), and a custom certificate template (`third-party/certificate-authority/config/organization.x509.tpl`, applied automatically on every `docker compose up` by the `certificate-authority-init` compose service).
 
 ---
 
