@@ -3,13 +3,19 @@ package grants
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
 
 // fakeSweepStore is a hand-written fake implementing SweepStore
-// (CONTRIBUTING.md §7.5).
+// (CONTRIBUTING.md §7.5). Its fields are guarded by mu because
+// TestRun_TicksAndSweeps drives it from Run's background goroutine while
+// polling/asserting from the test's own goroutine concurrently; every
+// access (including the test's own reads) must go through the accessor
+// methods below, never the raw fields directly.
 type fakeSweepStore struct {
+	mu               sync.Mutex
 	expired          []Grant
 	expiredErr       error
 	deleteErr        error
@@ -18,6 +24,8 @@ type fakeSweepStore struct {
 }
 
 func (f *fakeSweepStore) ExpiredGrants(_ context.Context, _ time.Time) ([]Grant, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.expiredCallCount++
 	if f.expiredErr != nil {
 		return nil, f.expiredErr
@@ -26,8 +34,28 @@ func (f *fakeSweepStore) ExpiredGrants(_ context.Context, _ time.Time) ([]Grant,
 }
 
 func (f *fakeSweepStore) DeleteGrant(_ context.Context, email string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.deletedEmails = append(f.deletedEmails, email)
 	return f.deleteErr
+}
+
+// deletedEmailsSnapshot returns a copy of the deleted-email list so far,
+// safe to call concurrently with ExpiredGrants/DeleteGrant.
+func (f *fakeSweepStore) deletedEmailsSnapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.deletedEmails))
+	copy(out, f.deletedEmails)
+	return out
+}
+
+// expiredCalls returns the current ExpiredGrants call count, safe to call
+// concurrently with ExpiredGrants/DeleteGrant.
+func (f *fakeSweepStore) expiredCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.expiredCallCount
 }
 
 // fakeRevoker is a hand-written fake implementing Revoker.
@@ -144,15 +172,15 @@ func TestRun_TicksAndSweeps(t *testing.T) {
 	// changed" (services/database-vault/internal/metrics.schedule_test.go
 	// uses the identical pattern for DV-F-16's Run).
 	deadline := time.Now().Add(500 * time.Millisecond)
-	for len(store.deletedEmails) == 0 && time.Now().Before(deadline) {
+	for len(store.deletedEmailsSnapshot()) == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	cancel()
 
-	if store.expiredCallCount == 0 {
+	if store.expiredCalls() == 0 {
 		t.Fatal("Run() never called ExpiredGrants")
 	}
-	if len(store.deletedEmails) == 0 {
+	if len(store.deletedEmailsSnapshot()) == 0 {
 		t.Fatal("Run() never swept the expired grant through to DeleteGrant")
 	}
 }
