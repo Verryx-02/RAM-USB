@@ -193,7 +193,7 @@ func TestHandler_CreateMeshUser(t *testing.T) {
 			mesh := &fakeMesh{createKey: tt.createKey, createErr: tt.createErr}
 			h, logBuf := newTestHandler(mesh)
 
-			req := httptest.NewRequest(http.MethodPost, MeshUserPath, strings.NewReader(tt.body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, MeshUserPath, strings.NewReader(tt.body))
 			w := httptest.NewRecorder()
 
 			h.CreateMeshUser(w, req)
@@ -239,7 +239,7 @@ func TestHandler_CreateMeshUser_PersistsPreAuthKeyID(t *testing.T) {
 	meshUsers := &fakeMeshUserStore{}
 	h, _ := newTestHandlerFull(mesh, nil, meshUsers)
 
-	req := httptest.NewRequest(http.MethodPost, MeshUserPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, MeshUserPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
 	w := httptest.NewRecorder()
 
 	h.CreateMeshUser(w, req)
@@ -268,7 +268,7 @@ func TestHandler_CreateMeshUser_PersistenceFailureFailsTheRequest(t *testing.T) 
 	meshUsers := &fakeMeshUserStore{recordErr: errors.New("disk full")}
 	h, logBuf := newTestHandlerFull(mesh, nil, meshUsers)
 
-	req := httptest.NewRequest(http.MethodPost, MeshUserPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, MeshUserPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
 	w := httptest.NewRecorder()
 
 	h.CreateMeshUser(w, req)
@@ -327,7 +327,7 @@ func TestHandler_Grant(t *testing.T) {
 			mesh := &fakeMesh{grantErr: tt.grantErr}
 			h, _ := newTestHandler(mesh)
 
-			req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(tt.body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, GrantPath, strings.NewReader(tt.body))
 			w := httptest.NewRecorder()
 
 			h.Grant(w, req)
@@ -354,7 +354,7 @@ func TestHandler_Grant_NoPreAuthKeyIDRecorded_Denies(t *testing.T) {
 	meshUsers := &fakeMeshUserStore{} // empty: no row for testEmail
 	h, _ := newTestHandlerFull(mesh, nil, meshUsers)
 
-	req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`","duration_seconds":43200}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`","duration_seconds":43200}`))
 	w := httptest.NewRecorder()
 
 	h.Grant(w, req)
@@ -376,7 +376,7 @@ func TestHandler_Grant_MeshUsersLookupFailure_Returns500(t *testing.T) {
 	meshUsers := &fakeMeshUserStore{lookupErr: errors.New("disk error")}
 	h, _ := newTestHandlerFull(mesh, nil, meshUsers)
 
-	req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`","duration_seconds":43200}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`","duration_seconds":43200}`))
 	w := httptest.NewRecorder()
 
 	h.Grant(w, req)
@@ -403,7 +403,7 @@ func TestHandler_Grant_IgnoresCallerSuppliedDuration(t *testing.T) {
 	h, _ := newTestHandler(mesh)
 
 	body := `{"email":"` + testEmail + `","duration_seconds":999999999}`
-	req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, GrantPath, strings.NewReader(body))
 	w := httptest.NewRecorder()
 
 	h.Grant(w, req)
@@ -423,7 +423,7 @@ func TestHandler_Grant_PersistsExpiry(t *testing.T) {
 	h, _ := newTestHandlerWithGrants(mesh, grants)
 
 	before := time.Now()
-	req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
 	w := httptest.NewRecorder()
 
 	h.Grant(w, req)
@@ -463,7 +463,7 @@ func TestHandler_Grant_PersistenceFailureStillReturnsSuccess(t *testing.T) {
 	grants := &fakeGrantRecorder{err: errors.New("disk full")}
 	h, logBuf := newTestHandlerWithGrants(mesh, grants)
 
-	req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
 	w := httptest.NewRecorder()
 
 	h.Grant(w, req)
@@ -484,7 +484,7 @@ func TestGrantResponse_WireCompatibleWithSecuritySwitch(t *testing.T) {
 	mesh := &fakeMesh{}
 	h, _ := newTestHandler(mesh)
 
-	req := httptest.NewRequest(http.MethodPost, GrantPath, strings.NewReader(
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, GrantPath, strings.NewReader(
 		`{"email":"`+testEmail+`","duration_seconds":43200}`,
 	))
 	w := httptest.NewRecorder()

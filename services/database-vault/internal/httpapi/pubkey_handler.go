@@ -1,5 +1,6 @@
-// This file adds ST-F-11's public-key lookup endpoint alongside handler.go's
-// Register/Login handlers, as a separate PublicKeyHandler type rather than
+// Package httpapi adds, in this file, ST-F-11's public-key lookup endpoint
+// alongside handler.go's Register/Login handlers, as a separate
+// PublicKeyHandler type rather than
 // new methods on Handler: it is reached over a completely different mTLS
 // listener (internal/server's NewPublicKeyTLSConfig, organization=
 // "StorageService", not "SecuritySwitch"), by a different caller, for a

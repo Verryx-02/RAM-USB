@@ -38,7 +38,7 @@ func TestRegister_LocalValidationFailure_DoesNotSendRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			called := false
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 				called = true
 			}))
 			defer server.Close()
@@ -102,7 +102,7 @@ func TestRegister_MapsErrorStatusCodes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
 				_ = json.NewEncoder(w).Encode(appErrorResponse{Error: "internal detail that must never reach the user"})
 			}))
@@ -140,7 +140,7 @@ func TestRegister_Unreachable(t *testing.T) {
 // Requirement: CL-F-09
 func TestLogin_LocalValidationFailure_DoesNotSendRequest(t *testing.T) {
 	called := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
 	}))
 	defer server.Close()
@@ -176,7 +176,7 @@ func TestLogin_Success(t *testing.T) {
 
 // Requirement: CL-F-08
 func TestLogin_Unauthorized(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = json.NewEncoder(w).Encode(appErrorResponse{Error: "authentication failed"})
 	}))

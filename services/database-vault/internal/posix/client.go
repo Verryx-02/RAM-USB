@@ -76,18 +76,18 @@ func CreatePOSIXUser(ctx context.Context, client *http.Client, baseURL string, u
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrStorageServiceUnreachable, err)
+		return fmt.Errorf("%w: %w", ErrStorageServiceUnreachable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("%w: read response: %v", ErrStorageServiceUnreachable, err)
+		return fmt.Errorf("%w: read response: %w", ErrStorageServiceUnreachable, err)
 	}
 
 	var parsed createUserResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return fmt.Errorf("%w: status %d, malformed response body: %v", ErrPOSIXUserCreationFailed, resp.StatusCode, err)
+		return fmt.Errorf("%w: status %d, malformed response body: %w", ErrPOSIXUserCreationFailed, resp.StatusCode, err)
 	}
 
 	if resp.StatusCode != http.StatusCreated || !parsed.Success {

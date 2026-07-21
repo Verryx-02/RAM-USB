@@ -35,7 +35,7 @@ func TestFetchAuthorizedKeysLine_Success(t *testing.T) {
 
 // Requirement: ST-F-11
 func TestFetchAuthorizedKeysLine_MalformedJSONBody(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`not json`))
 	}))
@@ -49,7 +49,7 @@ func TestFetchAuthorizedKeysLine_MalformedJSONBody(t *testing.T) {
 
 // Requirement: ST-F-11
 func TestFetchAuthorizedKeysLine_NotFound(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
@@ -65,7 +65,7 @@ func TestFetchAuthorizedKeysLine_NotFound(t *testing.T) {
 
 // Requirement: ST-F-11
 func TestFetchAuthorizedKeysLine_BadRequest(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
 	defer server.Close()
@@ -78,7 +78,7 @@ func TestFetchAuthorizedKeysLine_BadRequest(t *testing.T) {
 
 // Requirement: ST-F-11
 func TestFetchAuthorizedKeysLine_UnexpectedStatus(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
@@ -91,7 +91,7 @@ func TestFetchAuthorizedKeysLine_UnexpectedStatus(t *testing.T) {
 
 // Requirement: ST-F-11
 func TestFetchAuthorizedKeysLine_ContextDeadline(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(200 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -108,7 +108,7 @@ func TestFetchAuthorizedKeysLine_ContextDeadline(t *testing.T) {
 
 // Requirement: ST-F-11
 func TestFetchAuthorizedKeysLine_MalformedUsernameRejectedBeforeCall(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("server should never be contacted for a malformed username")
 	}))
 	defer server.Close()

@@ -42,7 +42,7 @@ func TestAppError_ConstructorsSetStatusAndSafePublicMessage(t *testing.T) {
 			if appErr.Public == internal.Error() {
 				t.Fatal("Public must not equal the internal error's detail")
 			}
-			if appErr.Internal != internal {
+			if !errors.Is(appErr.Internal, internal) {
 				t.Fatal("Internal must be the exact error passed in")
 			}
 		})

@@ -123,15 +123,15 @@ func forward(ctx context.Context, client *http.Client, url string, body any) Res
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return Result{Err: fmt.Errorf("%w: %v", ErrSecuritySwitchTimeout, err)}
+			return Result{Err: fmt.Errorf("%w: %w", ErrSecuritySwitchTimeout, err)}
 		}
-		return Result{Err: fmt.Errorf("%w: %v", ErrSecuritySwitchUnreachable, err)}
+		return Result{Err: fmt.Errorf("%w: %w", ErrSecuritySwitchUnreachable, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return Result{Err: fmt.Errorf("%w: read response: %v", ErrSecuritySwitchUnreachable, err)}
+		return Result{Err: fmt.Errorf("%w: read response: %w", ErrSecuritySwitchUnreachable, err)}
 	}
 
 	return Result{

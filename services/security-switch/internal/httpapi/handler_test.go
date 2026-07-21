@@ -108,7 +108,7 @@ func TestHandler_Register_Success(t *testing.T) {
 	networkManager := &fakeNetworkManager{meshUserPreAuth: "authkey-abc123"}
 	h, _ := newTestHandler(dbVault, networkManager)
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -148,7 +148,7 @@ func TestHandler_Register_MeshUserCreationDeniedMapsToForbidden(t *testing.T) {
 	networkManager := &fakeNetworkManager{meshUserErr: fmt.Errorf("%w: simulated denial", networkmanager.ErrMeshUserCreationDenied)}
 	h, _ := newTestHandler(dbVault, networkManager)
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -164,7 +164,7 @@ func TestHandler_Register_MeshUserCreationUnreachableMapsToBadGateway(t *testing
 	networkManager := &fakeNetworkManager{meshUserErr: fmt.Errorf("%w: simulated 503", networkmanager.ErrNetworkManagerUnreachable)}
 	h, _ := newTestHandler(dbVault, networkManager)
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -180,7 +180,7 @@ func TestHandler_Register_MeshUserCreationTimeoutMapsToGatewayTimeout(t *testing
 	networkManager := &fakeNetworkManager{meshUserErr: fmt.Errorf("%w: simulated timeout", networkmanager.ErrNetworkManagerTimeout)}
 	h, _ := newTestHandler(dbVault, networkManager)
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -195,7 +195,7 @@ func TestHandler_Register_DuplicateRelayed(t *testing.T) {
 	dbVault := &fakeDBVault{registerResult: dbvault.Result{Outcome: dbvault.OutcomeDuplicate}}
 	h, _ := newTestHandler(dbVault, &fakeNetworkManager{})
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -210,7 +210,7 @@ func TestHandler_Register_DatabaseVaultUnreachableMapsToBadGateway(t *testing.T)
 	dbVault := &fakeDBVault{registerResult: dbvault.Result{Outcome: dbvault.OutcomeUnknown, Err: dbvault.ErrDatabaseVaultUnreachable}}
 	h, _ := newTestHandler(dbVault, &fakeNetworkManager{})
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -225,7 +225,7 @@ func TestHandler_Register_DatabaseVaultTimeoutMapsToGatewayTimeout(t *testing.T)
 	dbVault := &fakeDBVault{registerResult: dbvault.Result{Outcome: dbvault.OutcomeUnknown, Err: dbvault.ErrDatabaseVaultTimeout}}
 	h, _ := newTestHandler(dbVault, &fakeNetworkManager{})
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -253,7 +253,7 @@ func TestHandler_Register_ValidationFailure(t *testing.T) {
 			dbVault := &fakeDBVault{}
 			h, logBuf := newTestHandler(dbVault, &fakeNetworkManager{})
 
-			req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(tc.body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
 
 			h.Register(rec, req)
@@ -298,7 +298,7 @@ func TestHandler_Login_SuccessGrantsNetworkAccess(t *testing.T) {
 	networkManager := &fakeNetworkManager{}
 	h, _ := newTestHandler(dbVault, networkManager)
 
-	req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
 	rec := httptest.NewRecorder()
 
 	h.Login(rec, req)
@@ -321,7 +321,7 @@ func TestHandler_Login_GrantDeniedMapsToForbidden(t *testing.T) {
 	networkManager := &fakeNetworkManager{err: fmt.Errorf("%w: simulated denial", networkmanager.ErrGrantDenied)}
 	h, _ := newTestHandler(dbVault, networkManager)
 
-	req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
 	rec := httptest.NewRecorder()
 
 	h.Login(rec, req)
@@ -337,7 +337,7 @@ func TestHandler_Login_GrantUnreachableMapsToBadGateway(t *testing.T) {
 	networkManager := &fakeNetworkManager{err: fmt.Errorf("%w: simulated 503", networkmanager.ErrNetworkManagerUnreachable)}
 	h, _ := newTestHandler(dbVault, networkManager)
 
-	req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
 	rec := httptest.NewRecorder()
 
 	h.Login(rec, req)
@@ -353,7 +353,7 @@ func TestHandler_Login_UnauthorizedDoesNotGrantAccess(t *testing.T) {
 	networkManager := &fakeNetworkManager{}
 	h, _ := newTestHandler(dbVault, networkManager)
 
-	req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
 	rec := httptest.NewRecorder()
 
 	h.Login(rec, req)
@@ -383,7 +383,7 @@ func TestHandler_Login_ValidationFailure(t *testing.T) {
 			dbVault := &fakeDBVault{}
 			h, logBuf := newTestHandler(dbVault, &fakeNetworkManager{})
 
-			req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(tc.body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, LoginPath, strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
 
 			h.Login(rec, req)

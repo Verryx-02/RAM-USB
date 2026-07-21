@@ -129,14 +129,18 @@ func TestNewClient_RealCA(t *testing.T) {
 		t.Fatalf("NewClient() error = %v, want nil", err)
 	}
 
-	resp, err := client.Get(caURL + "/health")
+	healthReq, err := http.NewRequestWithContext(ctx, http.MethodGet, caURL+"/health", nil)
 	if err != nil {
-		t.Fatalf("client.Get(%s/health) error = %v, want nil", caURL, err)
+		t.Fatalf("http.NewRequestWithContext() error = %v, want nil", err)
+	}
+	resp, err := client.Do(healthReq)
+	if err != nil {
+		t.Fatalf("client.Do(%s/health) error = %v, want nil", caURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("client.Get(%s/health) status = %d, want %d", caURL, resp.StatusCode, http.StatusOK)
+		t.Fatalf("client.Do(%s/health) status = %d, want %d", caURL, resp.StatusCode, http.StatusOK)
 	}
 }
 

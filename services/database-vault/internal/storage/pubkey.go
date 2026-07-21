@@ -1,5 +1,6 @@
-// This file adds a second read path alongside lookup.go's GetPasswordHash:
-// retrieving a user's stored ssh_public_key by posix_username rather than by
+// Package storage adds, in this file, a second read path alongside
+// lookup.go's GetPasswordHash: retrieving a user's stored ssh_public_key by
+// posix_username rather than by
 // email_hash. It exists for ST-F-11 ("on every user SFTP connection attempt,
 // [Storage-Service] must retrieve the user's current public key from
 // Database-Vault via AuthorizedKeysCommand"): sshd invokes

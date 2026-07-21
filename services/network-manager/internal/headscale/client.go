@@ -245,7 +245,7 @@ func CreateMeshUser(ctx context.Context, svc Service, email string) (key string,
 		Name:  username,
 		Email: email,
 	}); err != nil {
-		return "", 0, fmt.Errorf("%w: create user: %v", ErrHeadscaleRequestFailed, err)
+		return "", 0, fmt.Errorf("%w: create user: %w", ErrHeadscaleRequestFailed, err)
 	}
 
 	expiration := timestamppb.New(time.Now().Add(preAuthKeyExpiration))
@@ -257,7 +257,7 @@ func CreateMeshUser(ctx context.Context, svc Service, email string) (key string,
 		AclTags:    []string{TagMeshMember},
 	})
 	if err != nil {
-		return "", 0, fmt.Errorf("%w: create pre-auth key: %v", ErrHeadscaleRequestFailed, err)
+		return "", 0, fmt.Errorf("%w: create pre-auth key: %w", ErrHeadscaleRequestFailed, err)
 	}
 	if resp.GetPreAuthKey() == nil || resp.GetPreAuthKey().GetKey() == "" {
 		return "", 0, fmt.Errorf("%w: create pre-auth key: empty key in response", ErrHeadscaleRequestFailed)
@@ -297,7 +297,7 @@ func CreateMeshUser(ctx context.Context, svc Service, email string) (key string,
 func GrantStorageAccess(ctx context.Context, svc Service, preAuthKeyID uint64) (uint64, error) {
 	nodes, err := svc.ListNodes(ctx, &v1.ListNodesRequest{})
 	if err != nil {
-		return 0, fmt.Errorf("%w: list nodes: %v", ErrHeadscaleRequestFailed, err)
+		return 0, fmt.Errorf("%w: list nodes: %w", ErrHeadscaleRequestFailed, err)
 	}
 
 	var node *v1.Node
@@ -317,7 +317,7 @@ func GrantStorageAccess(ctx context.Context, svc Service, preAuthKeyID uint64) (
 		NodeId: node.GetId(),
 		Tags:   tags,
 	}); err != nil {
-		return 0, fmt.Errorf("%w: set tags: %v", ErrHeadscaleRequestFailed, err)
+		return 0, fmt.Errorf("%w: set tags: %w", ErrHeadscaleRequestFailed, err)
 	}
 
 	return node.GetId(), nil
@@ -345,7 +345,7 @@ func RevokeStorageAccess(ctx context.Context, svc Service, nodeID uint64) error 
 func RemoveNodeTag(ctx context.Context, svc Service, nodeID uint64, tag string) error {
 	resp, err := svc.GetNode(ctx, &v1.GetNodeRequest{NodeId: nodeID})
 	if err != nil {
-		return fmt.Errorf("%w: get node: %v", ErrHeadscaleRequestFailed, err)
+		return fmt.Errorf("%w: get node: %w", ErrHeadscaleRequestFailed, err)
 	}
 	if resp.GetNode() == nil {
 		return fmt.Errorf("%w: node %d not found", ErrMeshUserNotFound, nodeID)
@@ -360,7 +360,7 @@ func RemoveNodeTag(ctx context.Context, svc Service, nodeID uint64, tag string) 
 		NodeId: nodeID,
 		Tags:   remaining,
 	}); err != nil {
-		return fmt.Errorf("%w: set tags: %v", ErrHeadscaleRequestFailed, err)
+		return fmt.Errorf("%w: set tags: %w", ErrHeadscaleRequestFailed, err)
 	}
 
 	return nil

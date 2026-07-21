@@ -1,6 +1,7 @@
 package mtls
 
 import (
+	"context"
 	"crypto/tls"
 	"io"
 	"net/http"
@@ -65,7 +66,7 @@ func TestRequireOrganization_AcceptsAllowedOrganization(t *testing.T) {
 	}
 
 	called := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -95,7 +96,7 @@ func TestRequireOrganization_RejectsOtherOrganization(t *testing.T) {
 	}
 
 	called := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -124,14 +125,14 @@ func TestRequireOrganization_RejectsOtherOrganization(t *testing.T) {
 // handshake for) must be denied, not treated as a pass.
 func TestRequireOrganization_RejectsMissingTLS(t *testing.T) {
 	called := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
 
 	handler := RequireOrganization("SecuritySwitch", next)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	req.TLS = nil
 	rec := httptest.NewRecorder()
 
@@ -158,7 +159,7 @@ func newOrgClientServer(t *testing.T, ca *TestCA, serverOrganization string) *ht
 		t.Fatalf("IssueLeaf() error = %v, want nil", err)
 	}
 
-	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	srv.TLS = &tls.Config{
@@ -225,7 +226,7 @@ func TestWrapRoundTripper_RejectsOtherOrganization(t *testing.T) {
 // plain, unencrypted HTTP response) must be rejected, not returned to the
 // caller.
 func TestWrapRoundTripper_RejectsMissingTLS(t *testing.T) {
-	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(plain.Close)

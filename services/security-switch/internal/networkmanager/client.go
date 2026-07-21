@@ -146,15 +146,15 @@ func GrantAccess(ctx context.Context, client *http.Client, baseURL string, email
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return fmt.Errorf("%w: %v", ErrNetworkManagerTimeout, err)
+			return fmt.Errorf("%w: %w", ErrNetworkManagerTimeout, err)
 		}
-		return fmt.Errorf("%w: %v", ErrNetworkManagerUnreachable, err)
+		return fmt.Errorf("%w: %w", ErrNetworkManagerUnreachable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("%w: read response: %v", ErrNetworkManagerUnreachable, err)
+		return fmt.Errorf("%w: read response: %w", ErrNetworkManagerUnreachable, err)
 	}
 
 	// A 5xx status means Network-Manager itself failed to process the
@@ -172,7 +172,7 @@ func GrantAccess(ctx context.Context, client *http.Client, baseURL string, email
 
 	var parsed grantResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return fmt.Errorf("%w: status %d, malformed response body: %v", ErrGrantDenied, resp.StatusCode, err)
+		return fmt.Errorf("%w: status %d, malformed response body: %w", ErrGrantDenied, resp.StatusCode, err)
 	}
 
 	if resp.StatusCode == http.StatusForbidden {
@@ -209,15 +209,15 @@ func CreateMeshUser(ctx context.Context, client *http.Client, baseURL string, em
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return "", fmt.Errorf("%w: %v", ErrNetworkManagerTimeout, err)
+			return "", fmt.Errorf("%w: %w", ErrNetworkManagerTimeout, err)
 		}
-		return "", fmt.Errorf("%w: %v", ErrNetworkManagerUnreachable, err)
+		return "", fmt.Errorf("%w: %w", ErrNetworkManagerUnreachable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("%w: read response: %v", ErrNetworkManagerUnreachable, err)
+		return "", fmt.Errorf("%w: read response: %w", ErrNetworkManagerUnreachable, err)
 	}
 
 	// Same reasoning as GrantAccess above: a 5xx status is Network-
@@ -230,7 +230,7 @@ func CreateMeshUser(ctx context.Context, client *http.Client, baseURL string, em
 
 	var parsed meshUserResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return "", fmt.Errorf("%w: status %d, malformed response body: %v", ErrMeshUserCreationDenied, resp.StatusCode, err)
+		return "", fmt.Errorf("%w: status %d, malformed response body: %w", ErrMeshUserCreationDenied, resp.StatusCode, err)
 	}
 
 	if resp.StatusCode == http.StatusForbidden {

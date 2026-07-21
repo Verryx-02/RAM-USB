@@ -48,7 +48,7 @@ func LoadMasterKey() ([]byte, error) {
 
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMasterKeyInvalidEncoding, err)
+		return nil, fmt.Errorf("%w: %w", ErrMasterKeyInvalidEncoding, err)
 	}
 
 	if len(decoded) != masterKeySize {

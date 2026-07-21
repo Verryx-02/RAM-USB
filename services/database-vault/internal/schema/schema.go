@@ -21,9 +21,9 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	migratepgx5 "github.com/golang-migrate/migrate/v4/database/pgx/v5"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/golang-migrate/migrate/v4/source/file" // registers the "file://" migration-source driver New's migrationsDir path needs
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver sql.Open above needs
 )
 
 // New builds a *migrate.Migrate pointed at the migrations in

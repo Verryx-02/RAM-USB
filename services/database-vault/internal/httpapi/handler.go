@@ -141,7 +141,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := registration.Register(r.Context(), h.Store, h.POSIXProvisioner, registration.RegistrationInput{
+	result := registration.Register(r.Context(), h.Store, h.POSIXProvisioner, registration.Input{
 		EmailHash:      emailHash,
 		EmailEncrypted: emailEncrypted,
 		PasswordHash:   passwordHash,

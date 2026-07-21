@@ -214,12 +214,12 @@ func decodeHash(encoded string) (salt, hash []byte, time, memoryKiB uint32, thre
 
 	decodedSalt, saltErr := base64.RawStdEncoding.DecodeString(parts[4])
 	if saltErr != nil {
-		return nil, nil, 0, 0, 0, fmt.Errorf("%w: invalid salt encoding: %v", ErrPasswordHashMalformed, saltErr)
+		return nil, nil, 0, 0, 0, fmt.Errorf("%w: invalid salt encoding: %w", ErrPasswordHashMalformed, saltErr)
 	}
 
 	decodedHash, hashErr := base64.RawStdEncoding.DecodeString(parts[5])
 	if hashErr != nil {
-		return nil, nil, 0, 0, 0, fmt.Errorf("%w: invalid hash encoding: %v", ErrPasswordHashMalformed, hashErr)
+		return nil, nil, 0, 0, 0, fmt.Errorf("%w: invalid hash encoding: %w", ErrPasswordHashMalformed, hashErr)
 	}
 
 	return decodedSalt, decodedHash, uint32(t), uint32(m), uint8(p), nil //nolint:gosec // bounded by the explicit range checks above

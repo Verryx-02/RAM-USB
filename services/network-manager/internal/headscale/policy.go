@@ -268,7 +268,7 @@ func PushPolicy(ctx context.Context, svc PolicyPusher) error {
 	}
 
 	if _, err := svc.SetPolicy(ctx, &v1.SetPolicyRequest{Policy: string(doc)}); err != nil {
-		return fmt.Errorf("%w: set policy: %v", ErrHeadscaleRequestFailed, err)
+		return fmt.Errorf("%w: set policy: %w", ErrHeadscaleRequestFailed, err)
 	}
 
 	return nil

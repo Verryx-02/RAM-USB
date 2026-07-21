@@ -85,7 +85,7 @@ func TestGrantAccess_Success(t *testing.T) {
 // Requirement: SS-F-05
 // Requirement: SS-F-06
 func TestGrantAccess_Denied(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(grantResponse{Success: false, Error: "denied"})
 	})
@@ -110,7 +110,7 @@ func TestGrantAccess_ServerErrorMapsToUnreachable(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+			baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
 				_ = json.NewEncoder(w).Encode(grantResponse{Success: false, Error: "upstream failure"})
 			})
@@ -129,7 +129,7 @@ func TestGrantAccess_ServerErrorMapsToUnreachable(t *testing.T) {
 
 // Requirement: SS-F-06
 func TestGrantAccess_ServerErrorWithMalformedBodyMapsToUnreachable(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte("<html>Service Unavailable</html>"))
 	})
@@ -143,7 +143,7 @@ func TestGrantAccess_ServerErrorWithMalformedBodyMapsToUnreachable(t *testing.T)
 
 // Requirement: SS-F-06
 func TestGrantAccess_Unreachable(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	stop()
@@ -183,7 +183,7 @@ func TestCreateMeshUser_Success(t *testing.T) {
 
 // Requirement: SS-F-09
 func TestCreateMeshUser_Denied(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(meshUserResponse{Success: false, Error: "denied"})
 	})
@@ -211,7 +211,7 @@ func TestCreateMeshUser_ServerErrorMapsToUnreachable(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+			baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
 				_ = json.NewEncoder(w).Encode(meshUserResponse{Success: false, Error: "upstream failure"})
 			})
@@ -230,7 +230,7 @@ func TestCreateMeshUser_ServerErrorMapsToUnreachable(t *testing.T) {
 
 // Requirement: SS-F-09
 func TestCreateMeshUser_ServerErrorWithMalformedBodyMapsToUnreachable(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte("<html>Service Unavailable</html>"))
 	})
@@ -244,7 +244,7 @@ func TestCreateMeshUser_ServerErrorWithMalformedBodyMapsToUnreachable(t *testing
 
 // Requirement: SS-F-09
 func TestCreateMeshUser_Unreachable(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	stop()

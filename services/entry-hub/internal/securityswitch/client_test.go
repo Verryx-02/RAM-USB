@@ -109,7 +109,7 @@ func TestRegister_RelaysResponseUnchanged(t *testing.T) {
 
 // Requirement: EH-F-08
 func TestRegister_RelaysDuplicateStatusUnchanged(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		_, _ = w.Write([]byte(`{"error":"the request could not be completed"}`))
@@ -128,7 +128,7 @@ func TestRegister_RelaysDuplicateStatusUnchanged(t *testing.T) {
 
 // Requirement: EH-F-09
 func TestRegister_Unreachable(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 	})
 	stop() // close immediately: the server is unreachable for the real call below
@@ -171,7 +171,7 @@ func TestLogin_RelaysResponseUnchanged(t *testing.T) {
 
 // Requirement: EH-F-08
 func TestLogin_RelaysUnauthorizedStatusUnchanged(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"authentication failed"}`))

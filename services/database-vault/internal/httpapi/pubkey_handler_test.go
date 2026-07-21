@@ -48,7 +48,7 @@ func doPublicKeyRequest(h *PublicKeyHandler, posixUsername string) *httptest.Res
 	mux := http.NewServeMux()
 	mux.HandleFunc(PublicKeyPath, h.PublicKey)
 
-	req := httptest.NewRequest(http.MethodGet, "/internal/v1/public-key/"+posixUsername, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/internal/v1/public-key/"+posixUsername, nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	return rec

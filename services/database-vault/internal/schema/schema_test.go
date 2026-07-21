@@ -51,10 +51,10 @@ func TestNewAndApply_CreatesUsersTableFromEmptyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
 	}
-	if _, err := setupDB.Exec("DROP TABLE IF EXISTS users"); err != nil {
+	if _, err := setupDB.ExecContext(ctx, "DROP TABLE IF EXISTS users"); err != nil {
 		t.Fatalf("drop users table: %v", err)
 	}
-	if _, err := setupDB.Exec("DROP TABLE IF EXISTS schema_migrations"); err != nil {
+	if _, err := setupDB.ExecContext(ctx, "DROP TABLE IF EXISTS schema_migrations"); err != nil {
 		t.Fatalf("drop schema_migrations table: %v", err)
 	}
 	if err := setupDB.Close(); err != nil {

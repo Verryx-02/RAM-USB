@@ -74,14 +74,14 @@ func skipUnlessCAConfigured(t *testing.T) (caURL, container string) {
 // Database-Vault's own main_integration_test.go. subject becomes both the
 // certificate's CommonName and (via third-party/certificate-authority/
 // config/organization.x509.tpl) Subject.Organization.
-func generateToken(t *testing.T, caURL, container, subject string) string {
+func generateToken(ctx context.Context, t *testing.T, caURL, container, subject string) string {
 	t.Helper()
 
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skipf("docker CLI not available: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	//nolint:gosec // container/caURL/subject come from this test's own env-gated
@@ -119,7 +119,7 @@ func generateToken(t *testing.T, caURL, container, subject string) string {
 // in for a real Security-Switch instance's certificate (Security-Switch
 // has not adopted pkg/pki yet) - same helper pattern as Database-Vault's
 // own main_integration_test.go.
-func realCAServerTLSConfig(t *testing.T, ctx context.Context, token string) *tls.Config {
+func realCAServerTLSConfig(ctx context.Context, t *testing.T, token string) *tls.Config {
 	t.Helper()
 
 	base := &http.Server{ReadHeaderTimeout: 10 * time.Second}
@@ -147,17 +147,17 @@ func TestBuildSecuritySwitchClient_RealCA_EnforcesOrganization(t *testing.T) {
 	defer cancel()
 
 	t.Run("security-switch organization is accepted", func(t *testing.T) {
-		serverToken := generateToken(t, caURL, container, securityswitch.OrganizationSecuritySwitch)
-		serverTLSConfig := realCAServerTLSConfig(t, ctx, serverToken)
+		serverToken := generateToken(ctx, t, caURL, container, securityswitch.OrganizationSecuritySwitch)
+		serverTLSConfig := realCAServerTLSConfig(ctx, t, serverToken)
 
-		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusCreated)
 		}))
 		stub.TLS = serverTLSConfig
 		stub.StartTLS()
 		defer stub.Close()
 
-		clientToken := generateToken(t, caURL, container, "EntryHub-itest-client")
+		clientToken := generateToken(ctx, t, caURL, container, "EntryHub-itest-client")
 		t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 		t.Setenv(envSecuritySwitchURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 
@@ -179,17 +179,17 @@ func TestBuildSecuritySwitchClient_RealCA_EnforcesOrganization(t *testing.T) {
 	})
 
 	t.Run("other organization is rejected", func(t *testing.T) {
-		serverToken := generateToken(t, caURL, container, "StorageService-itest-wrong-org")
-		serverTLSConfig := realCAServerTLSConfig(t, ctx, serverToken)
+		serverToken := generateToken(ctx, t, caURL, container, "StorageService-itest-wrong-org")
+		serverTLSConfig := realCAServerTLSConfig(ctx, t, serverToken)
 
-		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusCreated)
 		}))
 		stub.TLS = serverTLSConfig
 		stub.StartTLS()
 		defer stub.Close()
 
-		clientToken := generateToken(t, caURL, container, "EntryHub-itest-client2")
+		clientToken := generateToken(ctx, t, caURL, container, "EntryHub-itest-client2")
 		t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 		t.Setenv(envSecuritySwitchURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 

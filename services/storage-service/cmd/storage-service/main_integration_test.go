@@ -74,14 +74,14 @@ func skipUnlessCAConfigured(t *testing.T) (caURL, container string) {
 // generateToken. subject becomes both the certificate's CommonName and
 // (via third-party/certificate-authority/config/organization.x509.tpl)
 // Subject.Organization.
-func generateToken(t *testing.T, caURL, container, subject string) string {
+func generateToken(ctx context.Context, t *testing.T, caURL, container, subject string) string {
 	t.Helper()
 
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skipf("docker CLI not available: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	//nolint:gosec // container/caURL/subject come from this test's own env-gated
@@ -132,7 +132,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 
 	// buildServerTLSConfig reads pki.LoadBootstrapToken() internally (the
 	// env var, not a parameter), same as production.
-	serverToken := generateToken(t, caURL, container, "StorageService-itest-server")
+	serverToken := generateToken(ctx, t, caURL, container, "StorageService-itest-server")
 	t.Setenv(pki.BootstrapTokenEnvVar, serverToken)
 	serverTLSConfig, err := buildServerTLSConfig(ctx)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 	}
 
 	called := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -154,7 +154,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 
 	t.Run("allowed organization is accepted", func(t *testing.T) {
 		called = false
-		clientToken := generateToken(t, caURL, container, server.AllowedClientOrganization)
+		clientToken := generateToken(ctx, t, caURL, container, server.AllowedClientOrganization)
 		client, err := pki.NewClient(ctx, clientToken)
 		if err != nil {
 			t.Fatalf("pki.NewClient() error = %v, want nil", err)
@@ -177,7 +177,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 
 	t.Run("other organization is rejected", func(t *testing.T) {
 		called = false
-		clientToken := generateToken(t, caURL, container, "SecuritySwitch-itest-wrong-org")
+		clientToken := generateToken(ctx, t, caURL, container, "SecuritySwitch-itest-wrong-org")
 		client, err := pki.NewClient(ctx, clientToken)
 		if err != nil {
 			t.Fatalf("pki.NewClient() error = %v, want nil", err)
