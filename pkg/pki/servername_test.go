@@ -25,7 +25,7 @@ func newSANOnlyServer(t *testing.T, ca *mtls.TestCA, organization string) *httpt
 		t.Fatalf("IssueLeaf() error = %v, want nil", err)
 	}
 
-	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	srv.TLS = &tls.Config{

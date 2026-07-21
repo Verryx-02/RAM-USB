@@ -124,7 +124,7 @@ type appErrorResponse struct {
 // sent at all.
 func (c *Client) Register(ctx context.Context, req validation.RegisterRequest) (RegisterResult, error) {
 	if err := validation.ValidateRegister(req); err != nil {
-		return RegisterResult{}, fmt.Errorf("%w: %v", ErrLocalValidationFailed, err)
+		return RegisterResult{}, fmt.Errorf("%w: %w", ErrLocalValidationFailed, err)
 	}
 
 	body, status, err := c.post(ctx, RegisterPath, req)
@@ -149,7 +149,7 @@ func (c *Client) Register(ctx context.Context, req validation.RegisterRequest) (
 // all.
 func (c *Client) Login(ctx context.Context, req validation.LoginRequest) error {
 	if err := validation.ValidateLogin(req); err != nil {
-		return fmt.Errorf("%w: %v", ErrLocalValidationFailed, err)
+		return fmt.Errorf("%w: %w", ErrLocalValidationFailed, err)
 	}
 
 	body, status, err := c.post(ctx, LoginPath, req)
@@ -180,13 +180,13 @@ func (c *Client) post(ctx context.Context, path string, body any) ([]byte, int, 
 
 	resp, err := c.httpClient().Do(httpReq)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %v", ErrUnreachable, err)
+		return nil, 0, fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: read response: %v", ErrUnreachable, err)
+		return nil, 0, fmt.Errorf("%w: read response: %w", ErrUnreachable, err)
 	}
 
 	return respBody, resp.StatusCode, nil

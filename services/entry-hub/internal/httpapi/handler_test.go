@@ -79,7 +79,7 @@ func loginRequestBody(email, password string) string {
 func TestHandler_Health(t *testing.T) {
 	h := &httpapi.Handler{}
 
-	req := httptest.NewRequest(http.MethodPost, httpapi.HealthPath, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.HealthPath, nil)
 	rec := httptest.NewRecorder()
 
 	h.Health(rec, req)
@@ -109,7 +109,7 @@ func TestHandler_Register_SuccessRelaysResponseUnchanged(t *testing.T) {
 	}
 	h, _ := newTestHandler(securitySwitch)
 
-	req := httptest.NewRequest(http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -139,7 +139,7 @@ func TestHandler_Register_DuplicateRelayedUnchanged(t *testing.T) {
 	}
 	h, _ := newTestHandler(securitySwitch)
 
-	req := httptest.NewRequest(http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -163,7 +163,7 @@ func TestHandler_Register_MissingContentTypeDefaultsToJSON(t *testing.T) {
 	}
 	h, _ := newTestHandler(securitySwitch)
 
-	req := httptest.NewRequest(http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -183,7 +183,7 @@ func TestHandler_Register_SecuritySwitchUnreachableMapsToBadGateway(t *testing.T
 	}
 	h, _ := newTestHandler(securitySwitch)
 
-	req := httptest.NewRequest(http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -200,7 +200,7 @@ func TestHandler_Register_SecuritySwitchTimeoutMapsToServiceUnavailable(t *testi
 	}
 	h, _ := newTestHandler(securitySwitch)
 
-	req := httptest.NewRequest(http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -230,7 +230,7 @@ func TestHandler_Register_ValidationFailure(t *testing.T) {
 			securitySwitch := &fakeSecuritySwitch{}
 			h, logBuf := newTestHandler(securitySwitch)
 
-			req := httptest.NewRequest(http.MethodPost, httpapi.RegisterPath, strings.NewReader(tc.body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.RegisterPath, strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
 
 			h.Register(rec, req)
@@ -281,7 +281,7 @@ func TestHandler_Login_SuccessRelaysResponseUnchanged(t *testing.T) {
 	}
 	h, _ := newTestHandler(securitySwitch)
 
-	req := httptest.NewRequest(http.MethodPost, httpapi.LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
 	rec := httptest.NewRecorder()
 
 	h.Login(rec, req)
@@ -308,7 +308,7 @@ func TestHandler_Login_UnauthorizedRelayedUnchanged(t *testing.T) {
 	}
 	h, _ := newTestHandler(securitySwitch)
 
-	req := httptest.NewRequest(http.MethodPost, httpapi.LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
 	rec := httptest.NewRecorder()
 
 	h.Login(rec, req)
@@ -325,7 +325,7 @@ func TestHandler_Login_SecuritySwitchUnreachableMapsToBadGateway(t *testing.T) {
 	}
 	h, _ := newTestHandler(securitySwitch)
 
-	req := httptest.NewRequest(http.MethodPost, httpapi.LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
 	rec := httptest.NewRecorder()
 
 	h.Login(rec, req)
@@ -354,7 +354,7 @@ func TestHandler_Login_ValidationFailure(t *testing.T) {
 			securitySwitch := &fakeSecuritySwitch{}
 			h, logBuf := newTestHandler(securitySwitch)
 
-			req := httptest.NewRequest(http.MethodPost, httpapi.LoginPath, strings.NewReader(tc.body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.LoginPath, strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
 
 			h.Login(rec, req)

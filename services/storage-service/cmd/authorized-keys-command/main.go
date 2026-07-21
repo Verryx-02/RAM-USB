@@ -107,9 +107,15 @@ func main() {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), databaseVaultLookupTimeout)
-	defer cancel()
-
 	line, ok := Resolve(ctx, client, cfg.databaseVaultURL, arg)
+	// Resolve runs and completes synchronously above; cancel() is called
+	// explicitly here (not deferred) because every path below ends in
+	// os.Exit, which skips deferred calls entirely - a deferred cancel()
+	// would never run. There is no in-flight request left needing this
+	// cancellation by this point (Resolve already returned), so this is
+	// routine context-resource hygiene before process exit, not a
+	// safety-critical cleanup step.
+	cancel()
 	if !ok {
 		os.Exit(0)
 	}

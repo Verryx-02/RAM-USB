@@ -112,7 +112,7 @@ func TestHandler_CreateUser(t *testing.T) {
 				Logger:  slog.New(slog.NewTextHandler(&logBuf, nil)),
 			}
 
-			req := httptest.NewRequest(http.MethodPost, httpapi.CreateUserPath, strings.NewReader(tt.body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(tt.body))
 			rec := httptest.NewRecorder()
 
 			h.CreateUser(rec, req)
@@ -166,7 +166,7 @@ func TestHandler_CreateUser_ResponseShapeMatchesDatabaseVaultContract(t *testing
 	creator := &fakeCreator{}
 	h := &httpapi.Handler{Creator: creator}
 
-	req := httptest.NewRequest(http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
 	rec := httptest.NewRecorder()
 
 	h.CreateUser(rec, req)

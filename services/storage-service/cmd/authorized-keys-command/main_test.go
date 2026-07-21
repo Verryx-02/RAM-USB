@@ -22,7 +22,7 @@ func TestResolve(t *testing.T) {
 		{
 			name: "valid username, successful lookup",
 			arg:  "user7k2m9x",
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"ssh_public_key": "ssh-ed25519 AAAAC3 comment"}`))
@@ -33,7 +33,7 @@ func TestResolve(t *testing.T) {
 		{
 			name: "database-vault reports not found",
 			arg:  "user7k2m9x",
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNotFound)
 			},
 			wantOK: false,
@@ -41,7 +41,7 @@ func TestResolve(t *testing.T) {
 		{
 			name: "database-vault lookup fails (unexpected status)",
 			arg:  "user7k2m9x",
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			},
 			wantOK: false,
@@ -49,7 +49,7 @@ func TestResolve(t *testing.T) {
 		{
 			name: "database-vault lookup fails (malformed body)",
 			arg:  "user7k2m9x",
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`not json`))
 			},
@@ -58,7 +58,7 @@ func TestResolve(t *testing.T) {
 		{
 			name: "context deadline exceeded",
 			arg:  "user7k2m9x",
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: func(w http.ResponseWriter, _ *http.Request) {
 				time.Sleep(200 * time.Millisecond)
 				w.WriteHeader(http.StatusOK)
 			},
@@ -68,7 +68,7 @@ func TestResolve(t *testing.T) {
 		{
 			name: "malformed username, server never contacted",
 			arg:  "not-a-valid-username",
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: func(_ http.ResponseWriter, _ *http.Request) {
 				t.Fatal("server should never be contacted for a malformed username")
 			},
 			wantOK: false,
@@ -76,7 +76,7 @@ func TestResolve(t *testing.T) {
 		{
 			name: "empty username, server never contacted",
 			arg:  "",
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: func(_ http.ResponseWriter, _ *http.Request) {
 				t.Fatal("server should never be contacted for an empty username")
 			},
 			wantOK: false,

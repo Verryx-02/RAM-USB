@@ -14,7 +14,7 @@
 //     back to the caller.
 //
 // This package does not compute any hash or ciphertext itself — Register's
-// RegistrationInput takes already-computed fields exactly like
+// Input takes already-computed fields exactly like
 // storage.UserRecord does. It also does not implement any HTTP boundary:
 // Result's Outcome field is what a future handler maps to 201/409/5xx,
 // without inspecting error strings (that handler is out of scope here, the
@@ -88,13 +88,13 @@ type Result struct {
 // database is always consistent with the POSIX user list.
 var ErrOrphanedRecord = errors.New("registration: compensating rollback failed after POSIX user creation failure; user record may be orphaned in the database")
 
-// RegistrationInput holds every field Register needs that some earlier step
+// Input holds every field Register needs that some earlier step
 // has already computed: the email hash (DV-F-03), the encrypted email
 // (DV-F-04), the password hash (DV-F-07), and the (already
 // structurally-validated, DV-F-02) SSH public key. Register does not
 // recompute any of these — it only generates the POSIX username and decides
 // what to do with SaveUser/CreatePOSIXUser's outcomes.
-type RegistrationInput struct {
+type Input struct {
 	EmailHash      string
 	EmailEncrypted encryption.EncryptedEmail
 	PasswordHash   string
@@ -104,7 +104,7 @@ type RegistrationInput struct {
 // Register runs the registration control flow described in this package's
 // doc comment. store persists and (on rollback) deletes the user record;
 // posixSvc asks Storage-Service to create the POSIX user.
-func Register(ctx context.Context, store Storage, posixSvc POSIXProvisioner, input RegistrationInput) Result {
+func Register(ctx context.Context, store Storage, posixSvc POSIXProvisioner, input Input) Result {
 	username, err := posix.GenerateUsername()
 	if err != nil {
 		return Result{
@@ -139,7 +139,7 @@ func Register(ctx context.Context, store Storage, posixSvc POSIXProvisioner, inp
 		if delErr := store.DeleteUser(ctx, input.EmailHash); delErr != nil {
 			return Result{
 				Outcome: OutcomeFailed,
-				Err:     fmt.Errorf("%w: posix creation error: %v; delete error: %v", ErrOrphanedRecord, err, delErr),
+				Err:     fmt.Errorf("%w: posix creation error: %w; delete error: %w", ErrOrphanedRecord, err, delErr),
 			}
 		}
 		return Result{

@@ -6,10 +6,16 @@ RAM-USB/
 CLAUDE.md
 graphify-out/
 
-# Generated dev-only TLS key material (third-party/entry-hub/generate-dev-cert.sh) -
+# Generated dev-only TLS key material (third-party/entry-hub/generate-dev-cert.sh,
+# third-party/network-manager/headscale/dev-tls/README.txt's openssl command) -
 # real key bytes, regenerated on demand, never committed (unlike the
 # zero-entropy *.dev-only.txt placeholder files elsewhere under third-party/).
+# The headscale key was committed by mistake on 2026-07-16 (found via
+# gitleaks 2026-07-20) - inconsistent with this same rule already applied
+# to entry-hub's equivalent; tracking removed via `git rm --cached`, see
+# git-agent's advisory for the exact commit.
 third-party/entry-hub/config/*.dev-only.*
+third-party/network-manager/headscale/dev-tls/*.dev-only.pem
 
 # Real dev-only master key/pepper/CA bootstrap tokens generated while
 # manually verifying the full stack against a real running Certificate-

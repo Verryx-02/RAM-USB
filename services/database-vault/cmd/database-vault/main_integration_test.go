@@ -81,14 +81,14 @@ func skipUnlessCAConfigured(t *testing.T) (caURL, container string) {
 // becomes both the certificate's CommonName and (via
 // third-party/certificate-authority/config/organization.x509.tpl)
 // Subject.Organization.
-func generateToken(t *testing.T, caURL, container, subject string) string {
+func generateToken(ctx context.Context, t *testing.T, caURL, container, subject string) string {
 	t.Helper()
 
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skipf("docker CLI not available: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	//nolint:gosec // container/caURL/subject come from this test's own env-gated
@@ -136,7 +136,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 
 	// buildServerTLSConfig reads pki.LoadBootstrapToken() internally (the
 	// env var, not a parameter), same as production.
-	serverToken := generateToken(t, caURL, container, "DatabaseVault-itest-server")
+	serverToken := generateToken(ctx, t, caURL, container, "DatabaseVault-itest-server")
 	t.Setenv(pki.BootstrapTokenEnvVar, serverToken)
 	serverTLSConfig, err := buildServerTLSConfig(ctx)
 	if err != nil {
@@ -144,7 +144,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 	}
 
 	called := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -158,7 +158,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 
 	t.Run("allowed organization is accepted", func(t *testing.T) {
 		called = false
-		clientToken := generateToken(t, caURL, container, server.AllowedClientOrganization)
+		clientToken := generateToken(ctx, t, caURL, container, server.AllowedClientOrganization)
 		client, err := pki.NewClient(ctx, clientToken)
 		if err != nil {
 			t.Fatalf("pki.NewClient() error = %v, want nil", err)
@@ -189,7 +189,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 
 	t.Run("other organization is rejected", func(t *testing.T) {
 		called = false
-		clientToken := generateToken(t, caURL, container, "StorageService-itest-wrong-org")
+		clientToken := generateToken(ctx, t, caURL, container, "StorageService-itest-wrong-org")
 		client, err := pki.NewClient(ctx, clientToken)
 		if err != nil {
 			t.Fatalf("pki.NewClient() error = %v, want nil", err)
@@ -233,17 +233,17 @@ func TestBuildStorageServiceClient_RealCA_EnforcesOrganization(t *testing.T) {
 	defer cancel()
 
 	t.Run("storage-service organization is accepted", func(t *testing.T) {
-		serverToken := generateToken(t, caURL, container, organizationStorageService)
-		stubTLSConfig := realCAServerTLSConfig(t, ctx, serverToken)
+		serverToken := generateToken(ctx, t, caURL, container, organizationStorageService)
+		stubTLSConfig := realCAServerTLSConfig(ctx, t, serverToken)
 
-		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusCreated)
 		}))
 		stub.TLS = stubTLSConfig
 		stub.StartTLS()
 		defer stub.Close()
 
-		clientToken := generateToken(t, caURL, container, "DatabaseVault-itest-client")
+		clientToken := generateToken(ctx, t, caURL, container, "DatabaseVault-itest-client")
 		t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 		clientTLSConfig, err := buildServerTLSConfig(ctx)
 		if err != nil {
@@ -270,17 +270,17 @@ func TestBuildStorageServiceClient_RealCA_EnforcesOrganization(t *testing.T) {
 	})
 
 	t.Run("other organization is rejected", func(t *testing.T) {
-		serverToken := generateToken(t, caURL, container, "SecuritySwitch-itest-wrong-org")
-		stubTLSConfig := realCAServerTLSConfig(t, ctx, serverToken)
+		serverToken := generateToken(ctx, t, caURL, container, "SecuritySwitch-itest-wrong-org")
+		stubTLSConfig := realCAServerTLSConfig(ctx, t, serverToken)
 
-		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusCreated)
 		}))
 		stub.TLS = stubTLSConfig
 		stub.StartTLS()
 		defer stub.Close()
 
-		clientToken := generateToken(t, caURL, container, "DatabaseVault-itest-client2")
+		clientToken := generateToken(ctx, t, caURL, container, "DatabaseVault-itest-client2")
 		t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 		clientTLSConfig, err := buildServerTLSConfig(ctx)
 		if err != nil {
@@ -326,10 +326,10 @@ func TestBuildServerTLSConfigReusedAsOutboundClient_RealCA(t *testing.T) {
 
 	// peerTLSConfig stands in for Storage-Service's own bootstrapped
 	// server identity, issued by the same CA.
-	peerToken := generateToken(t, caURL, container, "DatabaseVault-itest-peer-standin")
-	peerTLSConfig := realCAServerTLSConfig(t, ctx, peerToken)
+	peerToken := generateToken(ctx, t, caURL, container, "DatabaseVault-itest-peer-standin")
+	peerTLSConfig := realCAServerTLSConfig(ctx, t, peerToken)
 
-	peer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	peer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	peer.TLS = peerTLSConfig
@@ -340,7 +340,7 @@ func TestBuildServerTLSConfigReusedAsOutboundClient_RealCA(t *testing.T) {
 	// buildServerTLSConfig - exactly the function run() uses for its
 	// single bootstrap token - to prove that *this same* *tls.Config,
 	// reused verbatim, is a valid outbound Transport.TLSClientConfig.
-	callerToken := generateToken(t, caURL, container, "DatabaseVault-itest-outbound-caller")
+	callerToken := generateToken(ctx, t, caURL, container, "DatabaseVault-itest-outbound-caller")
 	t.Setenv(pki.BootstrapTokenEnvVar, callerToken)
 	callerTLSConfig, err := buildServerTLSConfig(ctx)
 	if err != nil {
@@ -373,7 +373,7 @@ func TestBuildServerTLSConfigReusedAsOutboundClient_RealCA(t *testing.T) {
 // realCAServerTLSConfig bootstraps a real CA-issued server identity
 // (via pki.NewServer) for use as an httptest.Server's own TLS config,
 // standing in for a real Storage-Service instance's certificate.
-func realCAServerTLSConfig(t *testing.T, ctx context.Context, token string) *tls.Config {
+func realCAServerTLSConfig(ctx context.Context, t *testing.T, token string) *tls.Config {
 	t.Helper()
 
 	base := &http.Server{ReadHeaderTimeout: 10 * time.Second}

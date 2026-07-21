@@ -402,7 +402,7 @@ func TestRemoveNodeTag(t *testing.T) {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("RemoveNodeTag() error = %v, want %v", err, tt.wantErr)
 				}
-				if tt.wantErr == ErrCannotRemoveLastTag && fake.gotSetTags != nil {
+				if errors.Is(tt.wantErr, ErrCannotRemoveLastTag) && fake.gotSetTags != nil {
 					t.Fatal("SetTags was called despite the last-tag guard")
 				}
 				return

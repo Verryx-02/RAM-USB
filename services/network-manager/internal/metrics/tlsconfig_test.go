@@ -1,6 +1,7 @@
 package metrics_test
 
 import (
+	"context"
 	"crypto/tls"
 	"testing"
 
@@ -47,17 +48,18 @@ func TestTLSConfig_AcceptsOnlyMQTTBrokerOrganization(t *testing.T) {
 			config := metrics.TLSConfig(clientCert, ca.Pool())
 			config.ServerName = "localhost"
 
-			conn, err := tls.Dial("tcp", addr, config)
+			dialer := &tls.Dialer{Config: config}
+			conn, err := dialer.DialContext(context.Background(), "tcp", addr)
 			if tt.wantError {
 				if err == nil {
 					_ = conn.Close()
-					t.Fatal("tls.Dial() error = nil, want an error for the wrong-organization broker")
+					t.Fatal("dialer.DialContext() error = nil, want an error for the wrong-organization broker")
 				}
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("tls.Dial() error = %v, want nil", err)
+				t.Fatalf("dialer.DialContext() error = %v, want nil", err)
 			}
 			_ = conn.Close()
 		})
@@ -85,7 +87,7 @@ func startTestBroker(t *testing.T, serverCert tls.Certificate) (addr string, sto
 			}
 			go func(c *tls.Conn) {
 				defer func() { _ = c.Close() }()
-				_ = c.Handshake()
+				_ = c.HandshakeContext(context.Background())
 			}(conn.(*tls.Conn))
 		}
 	}()

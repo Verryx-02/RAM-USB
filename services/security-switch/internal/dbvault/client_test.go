@@ -102,7 +102,7 @@ func TestRegister_Success(t *testing.T) {
 
 // Requirement: SS-F-04
 func TestRegister_Duplicate(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusConflict)
 		_ = json.NewEncoder(w).Encode(appErrorResponse{Error: "the request could not be completed"})
 	})
@@ -117,7 +117,7 @@ func TestRegister_Duplicate(t *testing.T) {
 
 // Requirement: SS-F-06
 func TestRegister_UnexpectedStatus(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(appErrorResponse{Error: "the request could not be completed"})
 	})
@@ -135,7 +135,7 @@ func TestRegister_UnexpectedStatus(t *testing.T) {
 
 // Requirement: SS-F-06
 func TestRegister_Unreachable(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 	})
 	stop() // close immediately: the server is unreachable for the real call below
@@ -171,7 +171,7 @@ func TestLogin_Success(t *testing.T) {
 // Requirement: SS-F-04
 // Requirement: DV-F-15
 func TestLogin_Unauthorized(t *testing.T) {
-	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = json.NewEncoder(w).Encode(appErrorResponse{Error: "authentication failed"})
 	})

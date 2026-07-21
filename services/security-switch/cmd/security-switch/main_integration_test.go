@@ -79,14 +79,14 @@ func skipUnlessCAConfigured(t *testing.T) (caURL, container string) {
 // main_integration_test.go. subject becomes both the certificate's
 // CommonName and (via third-party/certificate-authority/config/
 // organization.x509.tpl) Subject.Organization.
-func generateToken(t *testing.T, caURL, container, subject string) string {
+func generateToken(ctx context.Context, t *testing.T, caURL, container, subject string) string {
 	t.Helper()
 
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skipf("docker CLI not available: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	//nolint:gosec // container/caURL/subject come from this test's own env-gated
@@ -122,7 +122,7 @@ func generateToken(t *testing.T, caURL, container, subject string) string {
 // realCAServerTLSConfig bootstraps a real CA-issued server identity (via
 // pki.NewServer) for use as an httptest.Server's own TLS config, standing
 // in for a real Database-Vault/Network-Manager instance's certificate.
-func realCAServerTLSConfig(t *testing.T, ctx context.Context, token string) *tls.Config {
+func realCAServerTLSConfig(ctx context.Context, t *testing.T, token string) *tls.Config {
 	t.Helper()
 
 	base := &http.Server{ReadHeaderTimeout: 10 * time.Second}
@@ -151,7 +151,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 
 	// buildServerTLSConfig reads pki.LoadBootstrapToken() internally (the
 	// env var, not a parameter), same as production.
-	serverToken := generateToken(t, caURL, container, "SecuritySwitch-itest-server")
+	serverToken := generateToken(ctx, t, caURL, container, "SecuritySwitch-itest-server")
 	t.Setenv(pki.BootstrapTokenEnvVar, serverToken)
 	serverTLSConfig, err := buildServerTLSConfig(ctx)
 	if err != nil {
@@ -159,7 +159,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 	}
 
 	called := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -173,7 +173,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 
 	t.Run("allowed organization is accepted", func(t *testing.T) {
 		called = false
-		clientToken := generateToken(t, caURL, container, server.AllowedClientOrganization)
+		clientToken := generateToken(ctx, t, caURL, container, server.AllowedClientOrganization)
 		client, err := pki.NewClient(ctx, clientToken)
 		if err != nil {
 			t.Fatalf("pki.NewClient() error = %v, want nil", err)
@@ -204,7 +204,7 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 
 	t.Run("other organization is rejected", func(t *testing.T) {
 		called = false
-		clientToken := generateToken(t, caURL, container, "DatabaseVault-itest-wrong-org")
+		clientToken := generateToken(ctx, t, caURL, container, "DatabaseVault-itest-wrong-org")
 		client, err := pki.NewClient(ctx, clientToken)
 		if err != nil {
 			t.Fatalf("pki.NewClient() error = %v, want nil", err)
@@ -249,17 +249,17 @@ func TestBuildDatabaseVaultClient_RealCA_EnforcesOrganization(t *testing.T) {
 	defer cancel()
 
 	t.Run("database-vault organization is accepted", func(t *testing.T) {
-		serverToken := generateToken(t, caURL, container, dbvault.OrganizationDatabaseVault)
-		stubTLSConfig := realCAServerTLSConfig(t, ctx, serverToken)
+		serverToken := generateToken(ctx, t, caURL, container, dbvault.OrganizationDatabaseVault)
+		stubTLSConfig := realCAServerTLSConfig(ctx, t, serverToken)
 
-		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 		stub.TLS = stubTLSConfig
 		stub.StartTLS()
 		defer stub.Close()
 
-		clientToken := generateToken(t, caURL, container, "SecuritySwitch-itest-client")
+		clientToken := generateToken(ctx, t, caURL, container, "SecuritySwitch-itest-client")
 		t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 		clientTLSConfig, err := buildServerTLSConfig(ctx)
 		if err != nil {
@@ -286,17 +286,17 @@ func TestBuildDatabaseVaultClient_RealCA_EnforcesOrganization(t *testing.T) {
 	})
 
 	t.Run("other organization is rejected", func(t *testing.T) {
-		serverToken := generateToken(t, caURL, container, "NetworkManager-itest-wrong-org")
-		stubTLSConfig := realCAServerTLSConfig(t, ctx, serverToken)
+		serverToken := generateToken(ctx, t, caURL, container, "NetworkManager-itest-wrong-org")
+		stubTLSConfig := realCAServerTLSConfig(ctx, t, serverToken)
 
-		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 		stub.TLS = stubTLSConfig
 		stub.StartTLS()
 		defer stub.Close()
 
-		clientToken := generateToken(t, caURL, container, "SecuritySwitch-itest-client2")
+		clientToken := generateToken(ctx, t, caURL, container, "SecuritySwitch-itest-client2")
 		t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 		clientTLSConfig, err := buildServerTLSConfig(ctx)
 		if err != nil {
@@ -336,17 +336,17 @@ func TestBuildNetworkManagerClient_RealCA_EnforcesOrganization(t *testing.T) {
 	defer cancel()
 
 	t.Run("network-manager organization is accepted", func(t *testing.T) {
-		serverToken := generateToken(t, caURL, container, networkmanager.OrganizationNetworkManager)
-		stubTLSConfig := realCAServerTLSConfig(t, ctx, serverToken)
+		serverToken := generateToken(ctx, t, caURL, container, networkmanager.OrganizationNetworkManager)
+		stubTLSConfig := realCAServerTLSConfig(ctx, t, serverToken)
 
-		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 		stub.TLS = stubTLSConfig
 		stub.StartTLS()
 		defer stub.Close()
 
-		clientToken := generateToken(t, caURL, container, "SecuritySwitch-itest-client3")
+		clientToken := generateToken(ctx, t, caURL, container, "SecuritySwitch-itest-client3")
 		t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 		clientTLSConfig, err := buildServerTLSConfig(ctx)
 		if err != nil {
@@ -373,17 +373,17 @@ func TestBuildNetworkManagerClient_RealCA_EnforcesOrganization(t *testing.T) {
 	})
 
 	t.Run("other organization is rejected", func(t *testing.T) {
-		serverToken := generateToken(t, caURL, container, "DatabaseVault-itest-wrong-org2")
-		stubTLSConfig := realCAServerTLSConfig(t, ctx, serverToken)
+		serverToken := generateToken(ctx, t, caURL, container, "DatabaseVault-itest-wrong-org2")
+		stubTLSConfig := realCAServerTLSConfig(ctx, t, serverToken)
 
-		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 		stub.TLS = stubTLSConfig
 		stub.StartTLS()
 		defer stub.Close()
 
-		clientToken := generateToken(t, caURL, container, "SecuritySwitch-itest-client4")
+		clientToken := generateToken(ctx, t, caURL, container, "SecuritySwitch-itest-client4")
 		t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 		clientTLSConfig, err := buildServerTLSConfig(ctx)
 		if err != nil {
@@ -428,7 +428,7 @@ func TestBuildServerTLSConfigReusedForAllThreeRoles_RealCA(t *testing.T) {
 
 	// One single bootstrap exchange for Security-Switch's own identity -
 	// exactly what run() does.
-	ownToken := generateToken(t, caURL, container, "SecuritySwitch-itest-all-roles")
+	ownToken := generateToken(ctx, t, caURL, container, "SecuritySwitch-itest-all-roles")
 	t.Setenv(pki.BootstrapTokenEnvVar, ownToken)
 	ownTLSConfig, err := buildServerTLSConfig(ctx)
 	if err != nil {
@@ -442,7 +442,7 @@ func TestBuildServerTLSConfigReusedForAllThreeRoles_RealCA(t *testing.T) {
 	// Role 1: inbound listener, dialed by a real EntryHub-organization
 	// client.
 	inboundCalled := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		inboundCalled = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -451,7 +451,7 @@ func TestBuildServerTLSConfigReusedForAllThreeRoles_RealCA(t *testing.T) {
 	inboundSrv.StartTLS()
 	defer inboundSrv.Close()
 
-	entryHubToken := generateToken(t, caURL, container, server.AllowedClientOrganization)
+	entryHubToken := generateToken(ctx, t, caURL, container, server.AllowedClientOrganization)
 	entryHubClient, err := pki.NewClient(ctx, entryHubToken)
 	if err != nil {
 		t.Fatalf("pki.NewClient() error = %v, want nil", err)
@@ -475,9 +475,9 @@ func TestBuildServerTLSConfigReusedForAllThreeRoles_RealCA(t *testing.T) {
 
 	// Role 2: outbound Database-Vault client, using the exact same
 	// ownTLSConfig.
-	dbVaultToken := generateToken(t, caURL, container, dbvault.OrganizationDatabaseVault)
-	dbVaultStubTLSConfig := realCAServerTLSConfig(t, ctx, dbVaultToken)
-	dbVaultStub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dbVaultToken := generateToken(ctx, t, caURL, container, dbvault.OrganizationDatabaseVault)
+	dbVaultStubTLSConfig := realCAServerTLSConfig(ctx, t, dbVaultToken)
+	dbVaultStub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	dbVaultStub.TLS = dbVaultStubTLSConfig
@@ -502,9 +502,9 @@ func TestBuildServerTLSConfigReusedForAllThreeRoles_RealCA(t *testing.T) {
 	// Role 3: outbound Network-Manager client, using the exact same
 	// ownTLSConfig again - proving all three roles work concurrently from
 	// one bootstrap exchange.
-	networkManagerToken := generateToken(t, caURL, container, networkmanager.OrganizationNetworkManager)
-	networkManagerStubTLSConfig := realCAServerTLSConfig(t, ctx, networkManagerToken)
-	networkManagerStub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	networkManagerToken := generateToken(ctx, t, caURL, container, networkmanager.OrganizationNetworkManager)
+	networkManagerStubTLSConfig := realCAServerTLSConfig(ctx, t, networkManagerToken)
+	networkManagerStub := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	networkManagerStub.TLS = networkManagerStubTLSConfig

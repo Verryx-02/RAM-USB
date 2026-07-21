@@ -28,10 +28,14 @@ type SecuritySwitchAdapter struct {
 	BaseURL string
 }
 
+// Register satisfies SecuritySwitchClient by forwarding to
+// securityswitch.Register.
 func (a SecuritySwitchAdapter) Register(ctx context.Context, req validation.RegisterRequest) securityswitch.Result {
 	return securityswitch.Register(ctx, a.Client, a.BaseURL, req)
 }
 
+// Login satisfies SecuritySwitchClient by forwarding to
+// securityswitch.Login.
 func (a SecuritySwitchAdapter) Login(ctx context.Context, req validation.LoginRequest) securityswitch.Result {
 	return securityswitch.Login(ctx, a.Client, a.BaseURL, req)
 }

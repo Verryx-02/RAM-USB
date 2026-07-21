@@ -103,7 +103,7 @@ func loginRequestBody(email, password string) string {
 func TestHandler_Register_Success(t *testing.T) {
 	h, _ := newTestHandler(&fakeRegistrationStorage{}, &fakePOSIX{}, &fakeLoginStorage{})
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -129,7 +129,7 @@ func TestHandler_Register_Success(t *testing.T) {
 func TestHandler_Register_DuplicateDoesNotLeakDetail(t *testing.T) {
 	h, _ := newTestHandler(&fakeRegistrationStorage{saveErr: storage.ErrDuplicateUser}, &fakePOSIX{}, &fakeLoginStorage{})
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -150,7 +150,7 @@ func TestHandler_Register_DuplicateDoesNotLeakDetail(t *testing.T) {
 func TestHandler_Register_POSIXFailureIsInternalError(t *testing.T) {
 	h, _ := newTestHandler(&fakeRegistrationStorage{}, &fakePOSIX{createErr: context.DeadlineExceeded}, &fakeLoginStorage{})
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -179,7 +179,7 @@ func TestHandler_Register_ValidationFailure(t *testing.T) {
 			posixProvisioner := &fakePOSIX{}
 			h, logBuf := newTestHandler(store, posixProvisioner, &fakeLoginStorage{})
 
-			req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(tc.body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
 
 			h.Register(rec, req)
@@ -233,7 +233,7 @@ func TestHandler_Register_ValidationFailureDoesNotForwardRequest(t *testing.T) {
 	store.saveErr = storage.ErrDuplicateUser
 	posixProvisioner.createErr = context.DeadlineExceeded
 
-	req := httptest.NewRequest(http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody("", testPassword, testSSHPublicKey)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, RegisterPath, strings.NewReader(registerRequestBody("", testPassword, testSSHPublicKey)))
 	rec := httptest.NewRecorder()
 
 	h.Register(rec, req)
@@ -250,7 +250,7 @@ func TestHandler_Login_Success(t *testing.T) {
 	loginStore := &fakeLoginStorage{hash: hash}
 	h, _ := newTestHandler(&fakeRegistrationStorage{}, &fakePOSIX{}, loginStore)
 
-	req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
 	rec := httptest.NewRecorder()
 
 	h.Login(rec, req)
@@ -265,7 +265,7 @@ func TestHandler_Login_UnauthorizedDoesNotLeakDetail(t *testing.T) {
 	loginStore := &fakeLoginStorage{err: context.DeadlineExceeded}
 	h, _ := newTestHandler(&fakeRegistrationStorage{}, &fakePOSIX{}, loginStore)
 
-	req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
 	rec := httptest.NewRecorder()
 
 	h.Login(rec, req)
@@ -300,7 +300,7 @@ func TestHandler_Login_ValidationFailure(t *testing.T) {
 			loginStore := &fakeLoginStorage{}
 			h, logBuf := newTestHandler(&fakeRegistrationStorage{}, &fakePOSIX{}, loginStore)
 
-			req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(tc.body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, LoginPath, strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
 
 			h.Login(rec, req)

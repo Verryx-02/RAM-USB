@@ -56,8 +56,8 @@ func (f *fakePOSIX) CreatePOSIXUser(_ context.Context, username string) error {
 
 // testInput is a fixed fixture of already-computed, non-secret test values
 // (not real credentials).
-func testInput() RegistrationInput {
-	return RegistrationInput{ //nolint:gosec // fixture data, not a real password hash
+func testInput() Input {
+	return Input{ //nolint:gosec // fixture data, not a real password hash
 		EmailHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd",
 		EmailEncrypted: encryption.EncryptedEmail{
 			Salt:       []byte("0123456789abcdef"),

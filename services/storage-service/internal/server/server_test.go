@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -117,7 +118,7 @@ func startTestServer(t *testing.T, serverCert tls.Certificate, clientCAs *x509.C
 					results <- errors.New("accepted connection is not a *tls.Conn")
 					return
 				}
-				results <- tlsConn.Handshake()
+				results <- tlsConn.HandshakeContext(context.Background())
 			}(conn)
 		}
 	}()
@@ -138,7 +139,8 @@ func dialWithClientCert(addr string, rootCAs *x509.CertPool, clientCert *tls.Cer
 		config.Certificates = []tls.Certificate{*clientCert}
 	}
 
-	conn, err := tls.Dial("tcp", addr, config)
+	dialer := &tls.Dialer{Config: config}
+	conn, err := dialer.DialContext(context.Background(), "tcp", addr)
 	if err != nil {
 		return err
 	}

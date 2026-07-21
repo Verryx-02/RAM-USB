@@ -117,7 +117,7 @@ func SaveUser(ctx context.Context, db Beginner, record UserRecord) error {
 	encryptedEmail, err := marshalEncryptedEmail(record.EmailEncrypted)
 	if err != nil {
 		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			return fmt.Errorf("storage: marshal encrypted email: %w (rollback also failed: %v)", err, rbErr)
+			return fmt.Errorf("storage: marshal encrypted email: %w (rollback also failed: %w)", err, rbErr)
 		}
 		return fmt.Errorf("storage: marshal encrypted email: %w", err)
 	}
@@ -133,7 +133,7 @@ func SaveUser(ctx context.Context, db Beginner, record UserRecord) error {
 	if execErr != nil {
 		classified := classifyInsertError(execErr)
 		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			return fmt.Errorf("%w (rollback also failed: %v)", classified, rbErr)
+			return fmt.Errorf("%w (rollback also failed: %w)", classified, rbErr)
 		}
 		return classified
 	}
@@ -167,7 +167,7 @@ func DeleteUser(ctx context.Context, db Beginner, emailHash string) error {
 
 	if _, err := tx.Exec(ctx, deleteUserSQL, emailHash); err != nil {
 		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			return fmt.Errorf("storage: delete user: %w (rollback also failed: %v)", err, rbErr)
+			return fmt.Errorf("storage: delete user: %w (rollback also failed: %w)", err, rbErr)
 		}
 		return fmt.Errorf("storage: delete user: %w", err)
 	}

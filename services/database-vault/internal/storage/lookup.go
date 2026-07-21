@@ -1,5 +1,6 @@
-// This file adds the read-side counterpart to storage.go's SaveUser/
-// DeleteUser: retrieving a user's stored password_hash by email_hash, the
+// Package storage adds, in this file, the read-side counterpart to
+// storage.go's SaveUser/DeleteUser: retrieving a user's stored
+// password_hash by email_hash, the
 // database step DV-F-13 needs before the login package (DV-F-13/DV-F-14/
 // DV-F-15) can recompute Argon2id and compare it against the received
 // password. It does not decode the PHC string or touch the salt embedded

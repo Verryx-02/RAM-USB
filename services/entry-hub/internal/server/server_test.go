@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"testing"
@@ -68,7 +69,7 @@ func startTestServer(t *testing.T, serverCert tls.Certificate) (string, <-chan e
 			results <- errors.New("accepted connection is not a *tls.Conn")
 			return
 		}
-		results <- tlsConn.Handshake()
+		results <- tlsConn.HandshakeContext(context.Background())
 	}()
 
 	return listener.Addr().String(), results, func() { _ = listener.Close() }
@@ -84,7 +85,8 @@ func dial(addr string) error {
 		InsecureSkipVerify: true, //nolint:gosec // test dialer trusting an in-memory test leaf whose CA is not otherwise wired into this dial; EH-F-01's own client-facing trust is the public Let's Encrypt CA, out of scope for this unit test
 	}
 
-	conn, err := tls.Dial("tcp", addr, config)
+	dialer := &tls.Dialer{Config: config}
+	conn, err := dialer.DialContext(context.Background(), "tcp", addr)
 	if err != nil {
 		return err
 	}

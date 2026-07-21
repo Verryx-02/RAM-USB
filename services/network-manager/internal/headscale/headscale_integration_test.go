@@ -118,7 +118,7 @@ func TestCreateMeshUser_AndGrantStorageAccess_RealHeadscale(t *testing.T) {
 func mintAPIKey(t *testing.T, container string) string {
 	t.Helper()
 
-	out, err := exec.Command("docker", "exec", container, //nolint:gosec // container/binary path are test-only, operator-controlled, not request input
+	out, err := exec.CommandContext(context.Background(), "docker", "exec", container, //nolint:gosec // container/binary path are test-only, operator-controlled, not request input
 		"/ko-app/headscale", "apikeys", "create", "--expiration", "10m").CombinedOutput()
 	if err != nil {
 		t.Fatalf("docker exec headscale apikeys create: %v (output: %s)", err, out)

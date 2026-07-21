@@ -95,12 +95,12 @@ func FetchAuthorizedKeysLine(ctx context.Context, client *http.Client, baseURL, 
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+PublicKeyPathPrefix+posixUsername, nil)
 	if err != nil {
-		return "", fmt.Errorf("%w: build request: %v", ErrLookupFailed, err)
+		return "", fmt.Errorf("%w: build request: %w", ErrLookupFailed, err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrLookupFailed, err)
+		return "", fmt.Errorf("%w: %w", ErrLookupFailed, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -114,12 +114,12 @@ func FetchAuthorizedKeysLine(ctx context.Context, client *http.Client, baseURL, 
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("%w: read response: %v", ErrLookupFailed, err)
+		return "", fmt.Errorf("%w: read response: %w", ErrLookupFailed, err)
 	}
 
 	var parsed publicKeyResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", fmt.Errorf("%w: malformed response body: %v", ErrLookupFailed, err)
+		return "", fmt.Errorf("%w: malformed response body: %w", ErrLookupFailed, err)
 	}
 
 	return parsed.SSHPublicKey, nil

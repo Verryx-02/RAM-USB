@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -121,7 +122,7 @@ func startPublicKeyTestServer(t *testing.T, serverCert tls.Certificate, clientCA
 					results <- errors.New("accepted connection is not a *tls.Conn")
 					return
 				}
-				results <- tlsConn.Handshake()
+				results <- tlsConn.HandshakeContext(context.Background())
 			}(conn)
 		}
 	}()

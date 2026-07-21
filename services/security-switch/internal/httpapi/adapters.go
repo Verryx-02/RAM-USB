@@ -28,10 +28,13 @@ type DBVaultAdapter struct {
 	BaseURL string
 }
 
+// Register satisfies DatabaseVaultClient by forwarding to
+// dbvault.Register.
 func (a DBVaultAdapter) Register(ctx context.Context, req validation.RegisterRequest) dbvault.Result {
 	return dbvault.Register(ctx, a.Client, a.BaseURL, req)
 }
 
+// Login satisfies DatabaseVaultClient by forwarding to dbvault.Login.
 func (a DBVaultAdapter) Login(ctx context.Context, req validation.LoginRequest) dbvault.Result {
 	return dbvault.Login(ctx, a.Client, a.BaseURL, req)
 }
@@ -55,10 +58,14 @@ type NetworkManagerAdapter struct {
 	BaseURL string
 }
 
+// GrantAccess satisfies NetworkManagerClient by forwarding to
+// networkmanager.GrantAccess.
 func (a NetworkManagerAdapter) GrantAccess(ctx context.Context, email string) error {
 	return networkmanager.GrantAccess(ctx, a.Client, a.BaseURL, email)
 }
 
+// CreateMeshUser satisfies NetworkManagerClient by forwarding to
+// networkmanager.CreateMeshUser.
 func (a NetworkManagerAdapter) CreateMeshUser(ctx context.Context, email string) (string, error) {
 	return networkmanager.CreateMeshUser(ctx, a.Client, a.BaseURL, email)
 }

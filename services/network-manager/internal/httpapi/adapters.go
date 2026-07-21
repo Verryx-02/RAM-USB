@@ -40,10 +40,14 @@ type HeadscaleAdapter struct {
 	Service headscale.Service
 }
 
+// CreateMeshUser satisfies MeshProvisioner by forwarding to
+// headscale.CreateMeshUser.
 func (a HeadscaleAdapter) CreateMeshUser(ctx context.Context, email string) (string, uint64, error) {
 	return headscale.CreateMeshUser(ctx, a.Service, email)
 }
 
+// GrantStorageAccess satisfies MeshProvisioner by forwarding to
+// headscale.GrantStorageAccess.
 func (a HeadscaleAdapter) GrantStorageAccess(ctx context.Context, preAuthKeyID uint64) (uint64, error) {
 	return headscale.GrantStorageAccess(ctx, a.Service, preAuthKeyID)
 }

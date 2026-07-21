@@ -1,5 +1,6 @@
-// This file adds Database-Vault's second mTLS listener, for ST-F-11's
-// public-key lookup endpoint. It is a separate listener/*tls.Config from
+// Package server adds, in this file, Database-Vault's second mTLS
+// listener, for ST-F-11's public-key lookup endpoint. It is a separate
+// listener/*tls.Config from
 // server.go's register/login one, not a shared config accepting either
 // organization, because pkg/mtls.ServerConfig's allowedOrganization
 // parameter is a single string, by design: each service-to-service call in

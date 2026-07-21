@@ -99,7 +99,7 @@ func TestCreatePOSIXUser_FailureResponse(t *testing.T) {
 		t.Fatalf("NewTestCA() error = %v", err)
 	}
 
-	baseURL, _ := stubStorageService(t, ca, "StorageService", func(w http.ResponseWriter, r *http.Request) {
+	baseURL, _ := stubStorageService(t, ca, "StorageService", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -126,7 +126,7 @@ func TestCreatePOSIXUser_MalformedResponseBody(t *testing.T) {
 		t.Fatalf("NewTestCA() error = %v", err)
 	}
 
-	baseURL, _ := stubStorageService(t, ca, "StorageService", func(w http.ResponseWriter, r *http.Request) {
+	baseURL, _ := stubStorageService(t, ca, "StorageService", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte("not json"))
 	})
@@ -153,7 +153,7 @@ func TestCreatePOSIXUser_ServerWrongOrganization(t *testing.T) {
 	// "StorageService" - the outbound mTLS client (DV-F-09's zero-trust
 	// requirement, RNF-SEC-02/03) must refuse to treat this as
 	// Storage-Service at all, regardless of what the handler would answer.
-	baseURL, _ := stubStorageService(t, ca, "SomeOtherService", func(w http.ResponseWriter, r *http.Request) {
+	baseURL, _ := stubStorageService(t, ca, "SomeOtherService", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 	})
@@ -176,7 +176,7 @@ func TestCreatePOSIXUser_ConnectionFailure(t *testing.T) {
 		t.Fatalf("NewTestCA() error = %v", err)
 	}
 
-	baseURL, srv := stubStorageService(t, ca, "StorageService", func(w http.ResponseWriter, r *http.Request) {
+	baseURL, srv := stubStorageService(t, ca, "StorageService", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 	})

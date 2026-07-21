@@ -1,8 +1,8 @@
-// forward.go implements EH-F-07 (forward an already-validated request to
-// Security-Switch over mTLS), EH-F-08 (relay Security-Switch's response
-// back to the client unchanged), and EH-F-09 (map a failure of the call
-// itself - not a response Security-Switch actually sent - to HTTP
-// 500/502/503).
+// Package httpapi implements, in forward.go, EH-F-07 (forward an
+// already-validated request to Security-Switch over mTLS), EH-F-08 (relay
+// Security-Switch's response back to the client unchanged), and EH-F-09
+// (map a failure of the call itself - not a response Security-Switch
+// actually sent - to HTTP 500/502/503).
 package httpapi
 
 import (

@@ -144,7 +144,7 @@ func Register(ctx context.Context, client *http.Client, baseURL string, req vali
 	case http.StatusCreated:
 		var parsed registerResponse
 		if err := json.Unmarshal(respBody, &parsed); err != nil {
-			return Result{Outcome: OutcomeUnknown, Err: fmt.Errorf("%w: malformed success body: %v", ErrDatabaseVaultUnexpectedResponse, err)}
+			return Result{Outcome: OutcomeUnknown, Err: fmt.Errorf("%w: malformed success body: %w", ErrDatabaseVaultUnexpectedResponse, err)}
 		}
 		return Result{Outcome: OutcomeRegistered, PosixUsername: parsed.PosixUsername}
 	case http.StatusConflict:
@@ -166,7 +166,7 @@ func Login(ctx context.Context, client *http.Client, baseURL string, req validat
 	case http.StatusOK:
 		var parsed loginResponse
 		if err := json.Unmarshal(respBody, &parsed); err != nil {
-			return Result{Outcome: OutcomeUnknown, Err: fmt.Errorf("%w: malformed success body: %v", ErrDatabaseVaultUnexpectedResponse, err)}
+			return Result{Outcome: OutcomeUnknown, Err: fmt.Errorf("%w: malformed success body: %w", ErrDatabaseVaultUnexpectedResponse, err)}
 		}
 		return Result{Outcome: OutcomeAuthenticated}
 	case http.StatusUnauthorized:
@@ -195,15 +195,15 @@ func forward(ctx context.Context, client *http.Client, url string, body any) ([]
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, 0, fmt.Errorf("%w: %v", ErrDatabaseVaultTimeout, err)
+			return nil, 0, fmt.Errorf("%w: %w", ErrDatabaseVaultTimeout, err)
 		}
-		return nil, 0, fmt.Errorf("%w: %v", ErrDatabaseVaultUnreachable, err)
+		return nil, 0, fmt.Errorf("%w: %w", ErrDatabaseVaultUnreachable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: read response: %v", ErrDatabaseVaultUnreachable, err)
+		return nil, 0, fmt.Errorf("%w: read response: %w", ErrDatabaseVaultUnreachable, err)
 	}
 
 	return respBody, resp.StatusCode, nil

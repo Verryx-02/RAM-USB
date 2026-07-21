@@ -3,6 +3,14 @@ version: "2"
 # Linter set per CONTRIBUTING.md §7: errcheck, govet, staticcheck, unused,
 # gosimple, ineffassign, gosec. In golangci-lint v2, gosimple's checks are
 # merged into staticcheck, so it is not listed as a separate linter here.
+#
+# Extended 2026-07-20 with a second, correctness/security-focused batch
+# (resource-leak and error-handling checks, matching this project's
+# already-stated "security-first" rationale for gosec): bodyclose,
+# sqlclosecheck, rowserrcheck, contextcheck, noctx, errorlint, sloglint,
+# revive, gocritic. Deliberately excludes purely stylistic linters (lll,
+# exhaustruct, nlreturn, etc.) - those would churn already-written code
+# for no correctness gain.
 linters:
   default: none
   enable:
@@ -12,3 +20,12 @@ linters:
     - unused
     - ineffassign
     - gosec
+    - bodyclose
+    - sqlclosecheck
+    - rowserrcheck
+    - contextcheck
+    - noctx
+    - errorlint
+    - sloglint
+    - revive
+    - gocritic
