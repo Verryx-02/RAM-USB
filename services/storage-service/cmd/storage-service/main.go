@@ -9,8 +9,9 @@
 // handled entirely by sshd outside this Go process, not by an HTTP
 // listener. ST-F-11's AuthorizedKeysCommand is a separate, already-scoped
 // binary (services/storage-service/internal/pubkeylookup), not wired here.
-// ST-F-12/ST-F-13 (metrics) have no implementation anywhere in
-// Storage-Service yet and are deliberately not wired here either.
+// ST-F-12/ST-F-13's periodic MQTT metrics publish is wired here, same
+// shape as Database-Vault's and Network-Manager's own metrics wiring
+// (DV-F-16/DV-F-17, NM-F-17/NM-F-18).
 //
 // This server makes no outbound mTLS call of its own: ST-F-10 ("report
 // the outcome back to Database-Vault") is satisfied entirely by this
@@ -56,6 +57,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -65,7 +67,10 @@ import (
 	"syscall"
 	"time"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/storage-service/internal/execrunner"
@@ -82,7 +87,33 @@ const (
 	// envListenAddr is the address this server listens on for incoming
 	// mTLS connections from Database-Vault (ST-F-01, ST-F-06).
 	envListenAddr = "RAM_USB_STORAGE_SERVICE_LISTEN_ADDR"
+
+	// envMQTTBrokerURL/envMQTTClientCert/envMQTTClientKey/envMQTTCA are
+	// ST-F-12's metrics-publish MQTT connection - same four env vars,
+	// same optional-if-envMQTTBrokerURL-unset convention, as Database-
+	// Vault's and Network-Manager's own cmd/<service>/main.go.
+	envMQTTBrokerURL  = "RAM_USB_MQTT_BROKER_URL"
+	envMQTTClientCert = "RAM_USB_MQTT_CLIENT_CERT"
+	envMQTTClientKey  = "RAM_USB_MQTT_CLIENT_KEY"
+	envMQTTCA         = "RAM_USB_MQTT_CA"
 )
+
+// serviceName is Storage-Service's identifier in every metrics payload it
+// publishes and the "<Service-Name>" half of its dedicated MQTT topic
+// (ST-F-12), reproduced verbatim from the SRS's literal
+// `metrics/Storage-Service` quote.
+const serviceName = "Storage-Service"
+
+// metricsClientID is the MQTT client identifier this process connects
+// with (ST-F-12).
+const metricsClientID = "storage-service"
+
+// metricsPublishInterval is ST-F-12's "every minute, and only."
+const metricsPublishInterval = time.Minute
+
+// connectTimeout bounds how long this process waits for the MQTT broker
+// connection (metrics) to complete.
+const connectTimeout = 10 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -110,8 +141,11 @@ func run() error {
 		DirMaker: posixuser.RealDirMaker{},
 	}
 
+	counters := &httpapi.Counters{}
+
 	handler := &httpapi.Handler{
 		Creator: creator,
+		Metrics: counters,
 	}
 
 	mux := http.NewServeMux()
@@ -125,6 +159,17 @@ func run() error {
 		Handler:           mtls.RequireOrganization(server.AllowedClientOrganization, mux),
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	metricsClient, err := buildMetricsClient()
+	if err != nil {
+		return fmt.Errorf("build metrics client: %w", err)
+	}
+	if metricsClient != nil {
+		defer metricsClient.Disconnect(250)
+		go metrics.Run(ctx, metricsPublishInterval, func(publishCtx context.Context) error {
+			return metrics.PublishOnce(publishCtx, metricsClient, serviceName, counters.Snapshot())
+		})
 	}
 
 	serveErr := make(chan error, 1)
@@ -192,4 +237,64 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 	}
 
 	return bootstrapped.TLSConfig, nil
+}
+
+// loadCertPool reads a PEM certificate bundle from path and returns a
+// pool containing it. Same shape as Database-Vault's and Network-Manager's
+// identically-named helper.
+func loadCertPool(path string) (*x509.CertPool, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from this process's own operator-controlled env var config, not from any request input
+	if err != nil {
+		return nil, fmt.Errorf("read CA bundle %s: %w", path, err)
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(data) {
+		return nil, fmt.Errorf("no certificates found in CA bundle %s", path)
+	}
+	return pool, nil
+}
+
+// buildMetricsClient assembles and connects the mTLS MQTT client
+// ST-F-12/ST-F-13's periodic publish uses. A nil, nil return (no error)
+// means metrics publishing is not configured (envMQTTBrokerURL unset) -
+// this process still serves POSIX-user-creation traffic without it. Same
+// shape as Database-Vault's and Network-Manager's identically-named
+// helper.
+func buildMetricsClient() (mqtt.Client, error) {
+	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
+	if !ok || brokerURL == "" {
+		slog.Warn("storage-service: metrics publishing disabled, " + envMQTTBrokerURL + " is not set")
+		return nil, nil
+	}
+
+	certPath, err := requireEnv(envMQTTClientCert)
+	if err != nil {
+		return nil, err
+	}
+	keyPath, err := requireEnv(envMQTTClientKey)
+	if err != nil {
+		return nil, err
+	}
+	caPath, err := requireEnv(envMQTTCA)
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("load mqtt client certificate/key: %w", err)
+	}
+
+	rootCAs, err := loadCertPool(caPath)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := metrics.NewClient(brokerURL, cert, rootCAs, metricsClientID, connectTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
