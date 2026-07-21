@@ -1,13 +1,13 @@
 
 ---
 
-Date: 18-Jul-2026 
+Date: 21-Jul-2026 
 Indexes: [[RAM-USB]]
 
 ---
 
-**Version:** 1.3  
-**Status:** Amended: SS-F-09 added, closing a gap found while implementing the Client (Security-Switch was never required to ask Network-Manager for a mesh pre-auth key during registration, only at login) 
+**Version:** 1.4  
+**Status:** Amended: container base-image policy and Storage-Service container-architecture notes added; NM-F-10, NM-F-11, NM-F-17, NM-F-18, PKI-F-01, and PKI-F-02 linked to their merged commits; NM-F-12 reworded to document how Headscale's own CLI satisfies it; CA-F-01/CA-F-02 clarified as guarantees of the underlying step-ca product 
 **Author:** Francesco Verrengia
 
 > [!NOTE] The level of detail in this document increases with each iteration, following the spiral model of requirements engineering.
