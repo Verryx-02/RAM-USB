@@ -214,7 +214,7 @@ func run() error {
 	// pre-auth-key-ID mapping, internal/grants/meshusers.go) - one SQLite
 	// file, one Store, two conceptually distinct tables with different
 	// row lifecycles. See that package's own doc comment for why.
-	grantStore, err := grants.Open(grantsDBPath)
+	grantStore, err := grants.Open(ctx, grantsDBPath)
 	if err != nil {
 		return fmt.Errorf("open grants store (NM-F-11): %w", err)
 	}

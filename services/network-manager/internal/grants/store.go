@@ -94,7 +94,7 @@ type Store struct {
 // (modernc.org/sqlite) accepts as a filesystem path - see this package's
 // doc comment for why the durability guarantee NM-F-11 needs comes from
 // where the caller points path, not from anything this function does.
-func Open(path string) (*Store, error) {
+func Open(ctx context.Context, path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("grants: open %s: %w", path, err)
@@ -109,11 +109,11 @@ func Open(path string) (*Store, error) {
 	// registration for mesh_users).
 	db.SetMaxOpenConns(1)
 
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.ExecContext(ctx, schema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("grants: apply schema: %w", err)
 	}
-	if _, err := db.Exec(meshUsersSchema); err != nil {
+	if _, err := db.ExecContext(ctx, meshUsersSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("grants: apply mesh_users schema: %w", err)
 	}

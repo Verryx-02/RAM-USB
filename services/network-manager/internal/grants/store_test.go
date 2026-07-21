@@ -18,7 +18,7 @@ import (
 func TestStore_RecordAndQueryGrant(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "grants.db")
 
-	store, err := Open(path)
+	store, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -64,7 +64,7 @@ func TestStore_RecordGrant_ReplacesExistingRowForSameEmail(t *testing.T) {
 	// for an already-granted user must extend the existing expiry, not
 	// create a second row) - see store.go's schema doc comment.
 	path := filepath.Join(t.TempDir(), "grants.db")
-	store, err := Open(path)
+	store, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -92,7 +92,7 @@ func TestStore_RecordGrant_ReplacesExistingRowForSameEmail(t *testing.T) {
 // Requirement: NM-F-11
 func TestStore_DeleteGrant(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "grants.db")
-	store, err := Open(path)
+	store, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -141,7 +141,7 @@ func TestStore_GrantSurvivesReopen(t *testing.T) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	func() {
-		store, err := Open(path)
+		store, err := Open(ctx, path)
 		if err != nil {
 			t.Fatalf("Open() (1st process) error = %v", err)
 		}
@@ -154,7 +154,7 @@ func TestStore_GrantSurvivesReopen(t *testing.T) {
 	// store is now fully closed - the same state a killed/restarted
 	// process would leave behind.
 
-	reopened, err := Open(path)
+	reopened, err := Open(ctx, path)
 	if err != nil {
 		t.Fatalf("Open() (2nd process, after 'restart') error = %v", err)
 	}

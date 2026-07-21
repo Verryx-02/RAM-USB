@@ -14,7 +14,7 @@ import (
 func TestStore_RecordAndQueryPreAuthKeyID(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "grants.db")
 
-	store, err := Open(path)
+	store, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -45,7 +45,7 @@ func TestStore_PreAuthKeyIDForEmail_NotFoundIsNotAnError(t *testing.T) {
 	// for treating "not found" as a denial.
 	path := filepath.Join(t.TempDir(), "grants.db")
 
-	store, err := Open(path)
+	store, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -69,7 +69,7 @@ func TestStore_PreAuthKeyIDForEmail_NotFoundIsNotAnError(t *testing.T) {
 func TestStore_RecordPreAuthKeyID_ReplacesExistingRowForSameEmail(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "grants.db")
 
-	store, err := Open(path)
+	store, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -107,7 +107,7 @@ func TestStore_PreAuthKeyIDSurvivesReopen(t *testing.T) {
 	ctx := context.Background()
 
 	func() {
-		store, err := Open(path)
+		store, err := Open(ctx, path)
 		if err != nil {
 			t.Fatalf("Open() (1st process) error = %v", err)
 		}
@@ -120,7 +120,7 @@ func TestStore_PreAuthKeyIDSurvivesReopen(t *testing.T) {
 	// store is now fully closed - the same state a killed/restarted
 	// process would leave behind.
 
-	reopened, err := Open(path)
+	reopened, err := Open(ctx, path)
 	if err != nil {
 		t.Fatalf("Open() (2nd process, after 'restart') error = %v", err)
 	}
