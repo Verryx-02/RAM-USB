@@ -86,6 +86,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/encryption"
@@ -187,7 +188,7 @@ const defaultMigrationsDir = "services/database-vault/migrations"
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("database-vault: fatal startup error", "error", err)
+		slog.Error("database-vault: fatal startup error", "error", logging.Sanitize(err.Error()))
 		os.Exit(1)
 	}
 }
@@ -322,7 +323,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("database-vault: listening", "addr", listenAddr)
+		slog.Info("database-vault: listening", "addr", logging.Sanitize(listenAddr))
 		// TLSConfig already carries the bootstrapped certificate (via
 		// buildServerTLSConfig's GetCertificate callback, not a static
 		// Certificates slice), so ListenAndServeTLS is called with empty
@@ -332,7 +333,7 @@ func run() error {
 
 	publicKeyServeErr := make(chan error, 1)
 	go func() {
-		slog.Info("database-vault: public-key listener listening", "addr", publicKeyListenAddr)
+		slog.Info("database-vault: public-key listener listening", "addr", logging.Sanitize(publicKeyListenAddr))
 		publicKeyServeErr <- publicKeyHTTPServer.ListenAndServeTLS("", "")
 	}()
 

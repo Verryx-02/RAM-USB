@@ -52,6 +52,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/services/storage-service/internal/pubkeylookup"
 )
@@ -96,13 +97,13 @@ func main() {
 
 	cfg, err := loadConfig(configPath)
 	if err != nil {
-		slog.Error("authorized-keys-command: config load failed", "error", err)
+		slog.Error("authorized-keys-command: config load failed", "error", logging.Sanitize(err.Error()))
 		os.Exit(0)
 	}
 
 	client, err := buildClient(cfg)
 	if err != nil {
-		slog.Error("authorized-keys-command: build mTLS client failed", "error", err)
+		slog.Error("authorized-keys-command: build mTLS client failed", "error", logging.Sanitize(err.Error()))
 		os.Exit(0)
 	}
 
@@ -147,7 +148,7 @@ func Resolve(ctx context.Context, client *http.Client, baseURL, arg string) (lin
 		case errors.Is(err, pubkeylookup.ErrInvalidPosixUsername):
 			slog.Warn("authorized-keys-command: rejected malformed username argument")
 		default:
-			slog.Error("authorized-keys-command: public key lookup failed, denying connection", "error", err)
+			slog.Error("authorized-keys-command: public key lookup failed, denying connection", "error", logging.Sanitize(err.Error()))
 		}
 		return "", false
 	}
