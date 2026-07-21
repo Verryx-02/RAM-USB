@@ -1,0 +1,73 @@
+{
+  "title": "RAM-USB Metrics Overview",
+  "description": "MT-F-04's three required dashboard panels (response time, throughput, active connections), each split per service via the \"metric\" column - queries the same \"metrics\" hypertable services/metrics-collector/migrations/000001_create_metrics_table.up.sql creates. JSON has no comment syntax, hence this field for the doc-comment context every other file in this project carries inline.",
+  "uid": "ram-usb-metrics-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "utc",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Response time (MT-F-04)",
+      "description": "Average response time (ms), per service, per published interval - pkg/metrics.Payload.AverageResponseTimeMs.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "ms" },
+        "overrides": []
+      },
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT time AS \"time\", service AS \"metric\", average_response_time_ms AS \"value\" FROM metrics WHERE $__timeFilter(time) ORDER BY time",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Throughput (MT-F-04)",
+      "description": "Requests handled per published interval, per service - pkg/metrics.Payload.RequestCount.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": []
+      },
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT time AS \"time\", service AS \"metric\", request_count AS \"value\" FROM metrics WHERE $__timeFilter(time) ORDER BY time",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Active connections (MT-F-04)",
+      "description": "Point-in-time open-connection count at publish time, per service - pkg/metrics.Payload.ActiveConnections.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT time AS \"time\", service AS \"metric\", active_connections AS \"value\" FROM metrics WHERE $__timeFilter(time) ORDER BY time",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

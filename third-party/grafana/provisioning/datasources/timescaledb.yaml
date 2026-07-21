@@ -1,0 +1,24 @@
+# Grafana datasource provisioning (MT-F-04): points Grafana at the same
+# TimescaleDB/Postgres database Metrics-Collector writes to
+# (metrics-collector-timescaledb, deployments/docker-compose.dev.yml),
+# entirely via this file - no manual UI datasource configuration, per
+# Grafana's own provisioning convention
+# (/etc/grafana/provisioning/{datasources,dashboards}).
+apiVersion: 1
+
+datasources:
+  - name: TimescaleDB
+    uid: timescaledb
+    type: postgres
+    access: proxy
+    url: metrics-collector-timescaledb:5432
+    database: metrics_collector
+    user: metrics_collector
+    isDefault: true
+    editable: false
+    secureJsonData:
+      password: metrics_collector_dev_only
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1800
+      timescaledb: true

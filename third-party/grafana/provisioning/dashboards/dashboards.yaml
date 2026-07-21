@@ -1,0 +1,16 @@
+# Grafana dashboard provisioning (MT-F-04): tells Grafana to load every
+# dashboard JSON file under third-party/grafana/dashboards (mounted at
+# /var/lib/grafana/dashboards in the grafana Compose service) - no manual
+# UI dashboard import, per Grafana's own provisioning convention.
+apiVersion: 1
+
+providers:
+  - name: RAM-USB
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
