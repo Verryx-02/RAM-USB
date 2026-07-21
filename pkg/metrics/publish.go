@@ -34,33 +34,35 @@ type Publisher interface {
 // may never be (re-)established.
 var ErrPublisherNotConnected = errors.New("metrics: publisher is not connected to the broker")
 
-// PublishOnce builds one aggregated metrics payload from counters and
-// publishes it to Topic (EH-F-10), waiting up to publishTimeout for the
-// broker's acknowledgement. It does not retry; the caller's scheduling
-// loop (Run) decides whether and when to try again on the next
-// interval.
-func PublishOnce(ctx context.Context, publisher Publisher, counters Counters) error {
+// PublishOnce builds one aggregated metrics payload for serviceName from
+// counters and publishes it to TopicFor(serviceName) (EH-F-10, SS-F-07,
+// DV-F-16, ST-F-12, NM-F-17, CA-F-03), waiting up to publishTimeout for
+// the broker's acknowledgement. It does not retry; the caller's
+// scheduling loop (Run) decides whether and when to try again on the
+// next interval.
+func PublishOnce(ctx context.Context, publisher Publisher, serviceName string, counters Counters) error {
 	if !publisher.IsConnected() {
 		return ErrPublisherNotConnected
 	}
 
-	payload, err := BuildPayload(counters, time.Now())
+	payload, err := BuildPayload(serviceName, counters, time.Now())
 	if err != nil {
 		return fmt.Errorf("metrics: build payload: %w", err)
 	}
 
-	token := publisher.Publish(Topic, publishQoS, false, payload)
+	topic := TopicFor(serviceName)
+	token := publisher.Publish(topic, publishQoS, false, payload)
 
 	select {
 	case <-token.Done():
 	case <-time.After(publishTimeout):
-		return fmt.Errorf("metrics: publish to %s timed out after %s", Topic, publishTimeout)
+		return fmt.Errorf("metrics: publish to %s timed out after %s", topic, publishTimeout)
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 
 	if err := token.Error(); err != nil {
-		return fmt.Errorf("metrics: publish to %s: %w", Topic, err)
+		return fmt.Errorf("metrics: publish to %s: %w", topic, err)
 	}
 
 	return nil

@@ -65,10 +65,10 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/httpapi"
-	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/metrics"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/securityswitch"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/server"
 )
@@ -113,6 +113,14 @@ const (
 	envMQTTClientKey  = "RAM_USB_MQTT_CLIENT_KEY"
 	envMQTTCA         = "RAM_USB_MQTT_CA"
 )
+
+// serviceName is Entry-Hub's identifier in every metrics payload it
+// publishes and the "<Service-Name>" half of its dedicated MQTT topic
+// (EH-F-10), reproduced verbatim from the SRS's literal `metrics/Entry-Hub`
+// quote - not PascalCased the way this codebase's mTLS
+// Subject.Organization values are, since this is the SRS's literal quoted
+// value, not this codebase's own naming convention.
+const serviceName = "Entry-Hub"
 
 // metricsClientID is the MQTT client identifier this server connects
 // with (EH-F-10). Distinct from Database-Vault's/Security-Switch's own
@@ -178,7 +186,7 @@ func run() error {
 	if metricsClient != nil {
 		defer metricsClient.Disconnect(250)
 		go metrics.Run(ctx, metricsPublishInterval, func(publishCtx context.Context) error {
-			return metrics.PublishOnce(publishCtx, metricsClient, counters.Snapshot())
+			return metrics.PublishOnce(publishCtx, metricsClient, serviceName, counters.Snapshot())
 		})
 	}
 

@@ -68,10 +68,9 @@ func SweepOnce(ctx context.Context, store SweepStore, revoker Revoker, now time.
 
 // Run calls SweepOnce once per interval tick, until ctx is canceled
 // (NM-F-10: "periodically ... automatically and without manual
-// intervention"). Same ticker shape as
-// services/database-vault/internal/metrics.Run: tick then sweep, no
-// immediate sweep on start, a failed tick is logged and does not stop the
-// loop.
+// intervention"). Same ticker shape as pkg/metrics.Run: tick then sweep,
+// no immediate sweep on start, a failed tick is logged and does not stop
+// the loop.
 func Run(ctx context.Context, interval time.Duration, store SweepStore, revoker Revoker) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

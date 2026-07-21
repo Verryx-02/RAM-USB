@@ -87,12 +87,12 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/encryption"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/httpapi"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/login"
-	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/metrics"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/password"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/registration"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/schema"
@@ -169,6 +169,15 @@ const (
 // file), rather than adding an unrequested exported constant to a
 // package whose own tests are already committed.
 const organizationStorageService = "StorageService"
+
+// serviceName is Database-Vault's identifier in every metrics payload it
+// publishes and the "<Service-Name>" half of its dedicated MQTT topic
+// (DV-F-16), reproduced verbatim from the SRS's literal
+// `metrics/Database-Vault` quote. Metrics-Collector (MT-F-02) discards
+// any message whose "service" field does not match the MQTT topic it
+// arrived on, so this value is deliberately identical to that topic's
+// suffix.
+const serviceName = "Database-Vault"
 
 // metricsClientID is the MQTT client identifier this server connects
 // with (DV-F-16). No SRS/design doc specifies one; a fixed, readable
@@ -317,7 +326,7 @@ func run() error {
 	if metricsClient != nil {
 		defer metricsClient.Disconnect(250)
 		go metrics.Run(ctx, metricsPublishInterval, func(publishCtx context.Context) error {
-			return metrics.PublishOnce(publishCtx, metricsClient, counters.Snapshot())
+			return metrics.PublishOnce(publishCtx, metricsClient, serviceName, counters.Snapshot())
 		})
 	}
 

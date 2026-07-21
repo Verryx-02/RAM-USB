@@ -4,7 +4,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/metrics"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 )
 
 // Counters is a minimal thread-safe in-process request/error/response-time

@@ -5,18 +5,23 @@ import (
 	"crypto/tls"
 	"testing"
 
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
-	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/metrics"
 )
 
+// Requirement: EH-F-10
+// Requirement: SS-F-07
+// Requirement: DV-F-16
+// Requirement: ST-F-12
 // Requirement: NM-F-17
+// Requirement: CA-F-03
 func TestTLSConfig_AcceptsOnlyMQTTBrokerOrganization(t *testing.T) {
 	ca, err := mtls.NewTestCA()
 	if err != nil {
 		t.Fatalf("NewTestCA() error = %v", err)
 	}
 
-	clientCert, err := ca.IssueLeaf("NetworkManager", "network-manager-client")
+	clientCert, err := ca.IssueLeaf("SomeService", "some-service-client")
 	if err != nil {
 		t.Fatalf("IssueLeaf(client) error = %v", err)
 	}
@@ -36,8 +41,16 @@ func TestTLSConfig_AcceptsOnlyMQTTBrokerOrganization(t *testing.T) {
 		serverCert tls.Certificate
 		wantError  bool
 	}{
-		{name: "broker certificate organization MQTTBroker is accepted", serverCert: brokerCert, wantError: false},
-		{name: "broker certificate with a different organization is rejected", serverCert: impostorCert, wantError: true},
+		{
+			name:       "broker certificate organization MQTTBroker is accepted",
+			serverCert: brokerCert,
+			wantError:  false,
+		},
+		{
+			name:       "broker certificate with a different organization is rejected",
+			serverCert: impostorCert,
+			wantError:  true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -66,8 +79,11 @@ func TestTLSConfig_AcceptsOnlyMQTTBrokerOrganization(t *testing.T) {
 	}
 }
 
-// startTestBroker starts a bare TLS listener standing in for the MQTT
-// broker, presenting serverCert.
+// startTestBroker starts a bare (no client-cert-required) TLS listener
+// standing in for the MQTT broker, presenting serverCert. It drives each
+// accepted connection's handshake in the background, exactly like
+// server_test.go's startTestServer helper, since a client's tls.Dial
+// only completes once the server side has serviced the handshake.
 func startTestBroker(t *testing.T, serverCert tls.Certificate) (addr string, stop func()) {
 	t.Helper()
 

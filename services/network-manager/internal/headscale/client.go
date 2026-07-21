@@ -158,7 +158,8 @@ const preAuthKeyExpiration = 15 * time.Minute
 // the *grpc.ClientConn-backed client v1.NewHeadscaleServiceClient returns
 // already satisfies Service through Go's ordinary structural typing - no
 // adapter type is needed, the same shape already used for paho's
-// mqtt.Client in services/database-vault/internal/metrics (DV-F-16/17).
+// mqtt.Client in pkg/metrics (backing DV-F-16/17 and every other
+// service's metrics publish).
 // Tests substitute a hand-written fake, never a real Headscale server.
 type Service interface {
 	CreateUser(ctx context.Context, in *v1.CreateUserRequest, opts ...grpc.CallOption) (*v1.CreateUserResponse, error)

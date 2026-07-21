@@ -6,10 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/metrics"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 )
 
+// Requirement: EH-F-10
+// Requirement: SS-F-07
 // Requirement: DV-F-16
+// Requirement: ST-F-12
+// Requirement: NM-F-17
+// Requirement: CA-F-03
 func TestRun_PublishesOncePerTickUntilCanceled(t *testing.T) {
 	var calls atomic.Int64
 
@@ -48,7 +53,7 @@ func TestRun_PublishesOncePerTickUntilCanceled(t *testing.T) {
 	}
 }
 
-// Requirement: DV-F-16
+// Requirement: EH-F-10
 func TestRun_DoesNotPublishImmediatelyOnStart(t *testing.T) {
 	var calls atomic.Int64
 
@@ -62,14 +67,14 @@ func TestRun_DoesNotPublishImmediatelyOnStart(t *testing.T) {
 
 	// With a one-hour interval, no tick fires in this short window - Run
 	// must wait for the first tick, not publish immediately on start
-	// (DV-F-16: "every minute, and only").
+	// ("every minute, and only" - EH-F-10 and its equivalents).
 	time.Sleep(20 * time.Millisecond)
 	if got := calls.Load(); got != 0 {
 		t.Fatalf("publish called %d times before the first tick, want 0", got)
 	}
 }
 
-// Requirement: DV-F-16
+// Requirement: EH-F-10
 func TestRun_FailedPublishDoesNotStopTheLoop(t *testing.T) {
 	var calls atomic.Int64
 

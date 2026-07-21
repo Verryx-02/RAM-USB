@@ -6,10 +6,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/metrics"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 )
 
+// testServiceName stands in for any real service's identity (e.g.
+// Entry-Hub's "Entry-Hub", EH-F-10's literal SRS example) - this
+// package's tests prove the shared mechanism works for any service name,
+// not one particular service's requirement.
+const testServiceName = "Entry-Hub"
+
+// Requirement: EH-F-11
 // Requirement: SS-F-08
+// Requirement: DV-F-17
+// Requirement: ST-F-13
+// Requirement: NM-F-18
+// Requirement: CA-F-03
 func TestBuildPayload_NeverContainsPersonalData(t *testing.T) {
 	counters := metrics.Counters{
 		RequestCount:          120,
@@ -19,7 +30,7 @@ func TestBuildPayload_NeverContainsPersonalData(t *testing.T) {
 	}
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 
-	raw, err := metrics.BuildPayload(counters, now)
+	raw, err := metrics.BuildPayload(testServiceName, counters, now)
 	if err != nil {
 		t.Fatalf("BuildPayload() error = %v", err)
 	}
@@ -31,8 +42,8 @@ func TestBuildPayload_NeverContainsPersonalData(t *testing.T) {
 
 	// The payload's field set is exactly this, and only this - every
 	// field is a count, an average, or a timestamp. Any additional field
-	// (email, username, ip, ssh_public_key, ...) would be an SS-F-08
-	// violation.
+	// (email, username, ip, ssh_public_key, ...) would be a violation of
+	// every service's paired "aggregated statistics only" requirement.
 	wantFields := map[string]bool{
 		"service":                  true,
 		"timestamp":                true,
@@ -65,9 +76,14 @@ func TestBuildPayload_NeverContainsPersonalData(t *testing.T) {
 	}
 }
 
+// Requirement: EH-F-10
 // Requirement: SS-F-07
+// Requirement: DV-F-16
+// Requirement: ST-F-12
+// Requirement: NM-F-17
+// Requirement: CA-F-03
 func TestBuildPayload_ServiceFieldMatchesTopic(t *testing.T) {
-	raw, err := metrics.BuildPayload(metrics.Counters{}, time.Now())
+	raw, err := metrics.BuildPayload(testServiceName, metrics.Counters{}, time.Now())
 	if err != nil {
 		t.Fatalf("BuildPayload() error = %v", err)
 	}
@@ -77,17 +93,17 @@ func TestBuildPayload_ServiceFieldMatchesTopic(t *testing.T) {
 		t.Fatalf("json.Unmarshal(payload) error = %v", err)
 	}
 
-	if payload.Service != metrics.ServiceName {
-		t.Errorf("payload.Service = %q, want %q", payload.Service, metrics.ServiceName)
+	if payload.Service != testServiceName {
+		t.Errorf("payload.Service = %q, want %q", payload.Service, testServiceName)
 	}
 
 	wantTopic := "metrics/" + payload.Service
-	if metrics.Topic != wantTopic {
-		t.Errorf("metrics.Topic = %q, want %q (must match Payload.Service for MT-F-02)", metrics.Topic, wantTopic)
+	if got := metrics.TopicFor(testServiceName); got != wantTopic {
+		t.Errorf("metrics.TopicFor(%q) = %q, want %q (must match Payload.Service for MT-F-02)", testServiceName, got, wantTopic)
 	}
 }
 
-// Requirement: SS-F-07
+// Requirement: MT-F-04
 func TestBuildPayload_CountersRoundTrip(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -110,7 +126,7 @@ func TestBuildPayload_CountersRoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw, err := metrics.BuildPayload(tt.counters, time.Now())
+			raw, err := metrics.BuildPayload(testServiceName, tt.counters, time.Now())
 			if err != nil {
 				t.Fatalf("BuildPayload() error = %v", err)
 			}
@@ -131,6 +147,29 @@ func TestBuildPayload_CountersRoundTrip(t *testing.T) {
 			}
 			if payload.ActiveConnections != tt.counters.ActiveConnections {
 				t.Errorf("ActiveConnections = %d, want %d", payload.ActiveConnections, tt.counters.ActiveConnections)
+			}
+		})
+	}
+}
+
+// Requirement: MT-F-02
+func TestTopicFor_MatchesLiteralPerServicePattern(t *testing.T) {
+	tests := []struct {
+		serviceName string
+		wantTopic   string
+	}{
+		{"Entry-Hub", "metrics/Entry-Hub"},
+		{"Security-Switch", "metrics/Security-Switch"},
+		{"Database-Vault", "metrics/Database-Vault"},
+		{"Storage-Service", "metrics/Storage-Service"},
+		{"Network-Manager", "metrics/Network-Manager"},
+		{"Certificate-Authority", "metrics/Certificate-Authority"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.serviceName, func(t *testing.T) {
+			if got := metrics.TopicFor(tt.serviceName); got != tt.wantTopic {
+				t.Errorf("TopicFor(%q) = %q, want %q", tt.serviceName, got, tt.wantTopic)
 			}
 		})
 	}

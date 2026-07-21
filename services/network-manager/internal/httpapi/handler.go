@@ -73,8 +73,8 @@ type Handler struct {
 	MeshUsers MeshUserStore
 
 	// Metrics accumulates request/error/response-time counts feeding
-	// NM-F-17/NM-F-18's periodic MQTT publish (internal/metrics.Run,
-	// wired in cmd/network-manager/main.go). Must not be nil - same
+	// NM-F-17/NM-F-18's periodic MQTT publish (pkg/metrics.Run, wired in
+	// cmd/network-manager/main.go). Must not be nil - same
 	// "always required, wired by every constructor" convention as
 	// Database-Vault's own Handler.Metrics.
 	Metrics *Counters

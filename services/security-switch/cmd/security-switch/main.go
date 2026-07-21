@@ -78,11 +78,11 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/dbvault"
 	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/httpapi"
-	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/metrics"
 	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/networkmanager"
 	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/server"
 )
@@ -134,6 +134,12 @@ const (
 	// issued the MQTT broker's server certificate.
 	envMQTTCA = "RAM_USB_MQTT_CA"
 )
+
+// serviceName is Security-Switch's identifier in every metrics payload it
+// publishes and the "<Service-Name>" half of its dedicated MQTT topic
+// (SS-F-07), reproduced verbatim from the SRS's literal
+// `metrics/Security-Switch` quote.
+const serviceName = "Security-Switch"
 
 // metricsClientID is the MQTT client identifier this server connects
 // with (SS-F-07). No SRS/design doc specifies one; a fixed, readable
@@ -214,7 +220,7 @@ func run() error {
 	if metricsClient != nil {
 		defer metricsClient.Disconnect(250)
 		go metrics.Run(ctx, metricsPublishInterval, func(publishCtx context.Context) error {
-			return metrics.PublishOnce(publishCtx, metricsClient, counters.Snapshot())
+			return metrics.PublishOnce(publishCtx, metricsClient, serviceName, counters.Snapshot())
 		})
 	}
 

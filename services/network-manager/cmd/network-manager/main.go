@@ -75,12 +75,12 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/grants"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/httpapi"
-	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/metrics"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/server"
 )
 
@@ -132,6 +132,12 @@ const (
 	envMQTTClientKey  = "RAM_USB_MQTT_CLIENT_KEY"
 	envMQTTCA         = "RAM_USB_MQTT_CA"
 )
+
+// serviceName is Network-Manager's identifier in every metrics payload it
+// publishes and the "<Service-Name>" half of its dedicated MQTT topic
+// (NM-F-17), reproduced verbatim from the SRS's literal
+// `metrics/Network-Manager` quote.
+const serviceName = "Network-Manager"
 
 // metricsClientID is the MQTT client identifier this process connects
 // with (NM-F-17).
@@ -258,7 +264,7 @@ func run() error {
 	if metricsClient != nil {
 		defer metricsClient.Disconnect(250)
 		go metrics.Run(ctx, metricsPublishInterval, func(publishCtx context.Context) error {
-			return metrics.PublishOnce(publishCtx, metricsClient, counters.Snapshot())
+			return metrics.PublishOnce(publishCtx, metricsClient, serviceName, counters.Snapshot())
 		})
 	}
 
