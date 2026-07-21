@@ -28,6 +28,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"time"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
@@ -94,6 +95,13 @@ type Handler struct {
 	// Creator performs the actual POSIX-user creation. Must not be nil.
 	Creator UserCreator
 
+	// Metrics accumulates request/error/response-time counts feeding
+	// ST-F-12/ST-F-13's periodic MQTT publish (pkg/metrics.Run, wired in
+	// cmd/storage-service/main.go). Must not be nil - same
+	// "always required, wired by every constructor" convention as
+	// Database-Vault's and Network-Manager's own Handler.Metrics.
+	Metrics *Counters
+
 	// Logger receives every structured log line this handler writes. If
 	// nil, slog.Default() is used.
 	Logger *slog.Logger
@@ -113,8 +121,16 @@ func (h *Handler) logger() *slog.Logger {
 // failure, is a createUserResponse; the request is never forwarded or
 // retried past a validation failure (RD-04, fail-secure).
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	h.Metrics.BeginRequest()
+	isError := false
+	defer func() {
+		h.Metrics.EndRequest(time.Since(start), isError)
+	}()
+
 	req, err := decodeCreateUserRequest(r)
 	if err != nil {
+		isError = true
 		// err's formatted string can embed the request body's own content
 		// (encoding/json's DisallowUnknownFields error echoes back the
 		// offending field name verbatim, for instance) - Sanitize keeps
@@ -127,12 +143,14 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !usernamePattern.MatchString(req.Username) {
+		isError = true
 		h.logger().Warn("create-user: request rejected", "error", ErrInvalidUsername)
 		writeResult(w, apperrors.NewBadRequest(ErrInvalidUsername))
 		return
 	}
 
 	if err := h.Creator.CreateUser(r.Context(), req.Username); err != nil {
+		isError = true
 		h.logger().Error("create-user: POSIX user creation failed", "error", logging.Sanitize(err.Error()))
 		writeResult(w, apperrors.NewInternal(err))
 		return

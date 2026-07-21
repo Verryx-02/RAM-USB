@@ -109,6 +109,7 @@ func TestHandler_CreateUser(t *testing.T) {
 			var logBuf bytes.Buffer
 			h := &httpapi.Handler{
 				Creator: creator,
+				Metrics: &httpapi.Counters{},
 				Logger:  slog.New(slog.NewTextHandler(&logBuf, nil)),
 			}
 
@@ -170,6 +171,7 @@ func TestHandler_CreateUser_RejectedRequestNeverForgesALogLine(t *testing.T) {
 	var logBuf bytes.Buffer
 	h := &httpapi.Handler{
 		Creator: creator,
+		Metrics: &httpapi.Counters{},
 		Logger:  slog.New(slog.NewTextHandler(&logBuf, nil)),
 	}
 
@@ -201,7 +203,7 @@ func TestHandler_CreateUser_ResponseShapeMatchesDatabaseVaultContract(t *testing
 	// that) so a contract drift between the two sides shows up as a
 	// failing test on this side too.
 	creator := &fakeCreator{}
-	h := &httpapi.Handler{Creator: creator}
+	h := &httpapi.Handler{Creator: creator, Metrics: &httpapi.Counters{}}
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
 	rec := httptest.NewRecorder()
@@ -222,5 +224,45 @@ func TestHandler_CreateUser_ResponseShapeMatchesDatabaseVaultContract(t *testing
 	}
 	if _, ok := raw["error"]; ok {
 		t.Fatalf("response body has an \"error\" field on success, want it omitted: %q", rec.Body.String())
+	}
+}
+
+// Requirement: ST-F-12
+// Requirement: ST-F-13
+func TestHandler_CreateUser_MetricsCounted(t *testing.T) {
+	creator := &fakeCreator{}
+	h := &httpapi.Handler{Creator: creator, Metrics: &httpapi.Counters{}}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
+	rec := httptest.NewRecorder()
+
+	h.CreateUser(rec, req)
+
+	snap := h.Metrics.Snapshot()
+	if snap.RequestCount != 1 {
+		t.Fatalf("RequestCount = %d, want 1", snap.RequestCount)
+	}
+	if snap.ErrorCount != 0 {
+		t.Fatalf("ErrorCount = %d, want 0", snap.ErrorCount)
+	}
+}
+
+// Requirement: ST-F-12
+// Requirement: ST-F-13
+func TestHandler_CreateUser_MetricsCountsErrors(t *testing.T) {
+	creator := &fakeCreator{err: errors.New("useradd: some sensitive system detail")}
+	h := &httpapi.Handler{Creator: creator, Metrics: &httpapi.Counters{}}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
+	rec := httptest.NewRecorder()
+
+	h.CreateUser(rec, req)
+
+	snap := h.Metrics.Snapshot()
+	if snap.RequestCount != 1 {
+		t.Fatalf("RequestCount = %d, want 1", snap.RequestCount)
+	}
+	if snap.ErrorCount != 1 {
+		t.Fatalf("ErrorCount = %d, want 1", snap.ErrorCount)
 	}
 }

@@ -17,6 +17,16 @@ graphify-out/
 third-party/entry-hub/config/*.dev-only.*
 third-party/network-manager/headscale/dev-tls/*.dev-only.pem
 
+# third-party/mosquitto/generate-dev-certs.sh's output: the real
+# Certificate-Authority's root cert (copied verbatim) plus a real-CA-issued
+# broker cert and one real-CA-issued client cert per publishing/
+# subscribing identity - real key bytes, regenerated on demand (and, since
+# these are real-CA-issued leaf certificates, ~24h-lived - regeneration is
+# expected routinely, not just occasionally), never committed, same
+# convention as the entries above.
+third-party/mosquitto/certs/*.dev-only.*
+third-party/mosquitto/certs/*.srl
+
 # Real dev-only master key/pepper/CA bootstrap tokens generated while
 # manually verifying the full stack against a real running Certificate-
 # Authority (2026-07-20 real-CA end-to-end test) - never committed.
