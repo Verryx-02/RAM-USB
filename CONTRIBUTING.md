@@ -124,7 +124,9 @@ To add a new diagram: create `NN-category-name.puml` directly in `docs/design/di
 
 Tooling and package layout are baseline. Error handling and logging are structural decisions, each with a specific reason behind it.
 
-**Formatting and linting:** every file passes `gofmt`/`goimports` and `go vet`. `golangci-lint` runs with `errcheck`, `govet`, `staticcheck`, `unused`, `gosimple`, `ineffassign`, `gosec`. `gosec` specifically: this project's non-functional requirements are security-first, and the linter enforces that in code.
+**Formatting and linting:** every file passes `gofmt`/`goimports` and `go vet`. `golangci-lint` runs with `errcheck`, `govet`, `staticcheck`, `unused`, `gosimple`, `ineffassign`, `gosec`, plus (added 2026-07-20) `bodyclose`, `sqlclosecheck`, `rowserrcheck`, `contextcheck`, `noctx`, `errorlint`, `sloglint`, `revive`, `gocritic`. `gosec` specifically: this project's non-functional requirements are security-first, and the linter enforces that in code; the 2026-07-20 additions extend that same rationale to resource-leak and error-handling correctness (unclosed HTTP bodies/SQL rows, missing context propagation, error-wrapping mistakes) rather than being general-purpose style linters.
+
+**Verification pipeline** (run before every commit, per this project's own practice): `go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`, `golangci-lint run ./...`, plus (added 2026-07-20, catch classes of bug the above cannot): `go test -race ./...` (data races - already caught one real bug in a test's hand-written fake), `govulncheck ./...` (known vulnerabilities in the dependency graph, code-path-aware), `gitleaks detect` (committed secrets - already caught one dev-only key committed by mistake), `trivy fs .` (dependency vulnerabilities, Dockerfile misconfiguration, secrets - overlaps with the two above by design, as a second independent scanner).
 
 **Package layout:**
 
