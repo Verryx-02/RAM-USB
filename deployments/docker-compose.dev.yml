@@ -1,9 +1,26 @@
 # Development Docker Compose stack (docs/Test_Plan.md §4: integration and
 # system tests run against this stack).
 #
-# All 5 Go services (Entry-Hub, Security-Switch, Database-Vault,
-# Storage-Service, Network-Manager) plus their infrastructure dependencies
-# (Postgres, Headscale, the Certificate-Authority) are defined below.
+# All 6 Go services (Entry-Hub, Security-Switch, Database-Vault,
+# Storage-Service, Network-Manager, Metrics-Collector) plus their
+# infrastructure dependencies (Postgres, Headscale, the
+# Certificate-Authority, Mosquitto, TimescaleDB, Grafana) are defined
+# below.
+#
+# MT-F-01..04's metrics-consuming stack (mqtt-broker, metrics-collector,
+# metrics-collector-timescaledb, grafana) needs one manual, dev-only setup
+# step before its first `docker compose up`, the same "regenerate on
+# demand, never commit" convention as every other dev cert in this file:
+#
+#   third-party/mosquitto/generate-dev-certs.sh
+#
+# This mints a purpose-built dev-only MQTT CA plus one client certificate
+# per publishing/subscribing identity (see that script's own doc comment
+# for why this is a separate CA from step-ca, not a second bootstrap-token
+# exchange). Every EH-F-10/SS-F-07/DV-F-16/ST-F-12/NM-F-17-publishing
+# service below is wired with RAM_USB_MQTT_* env vars pointing at the
+# files that script produces; metrics-collector's own connection uses the
+# same convention.
 #
 # Each Go service needs a real, single-use CA bootstrap token
 # (RAM_USB_CA_BOOTSTRAP_TOKEN, CA-F-04) minted fresh before every
@@ -201,8 +218,16 @@ services:
       RAM_USB_ENTRY_HUB_TLS_KEY: /certs/server.dev-only.key
       RAM_USB_SECURITY_SWITCH_URL: "https://security-switch:8444"
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${TOKEN_ENTRY_HUB:?generate via step ca token entry-hub, see this file's top comment}"
+      # EH-F-10/EH-F-11: metrics publish, over the dev-only MQTT identity
+      # third-party/mosquitto/generate-dev-certs.sh produces - see this
+      # file's top comment.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+      RAM_USB_MQTT_CLIENT_CERT: /mqtt-certs/EntryHub.dev-only.crt
+      RAM_USB_MQTT_CLIENT_KEY: /mqtt-certs/EntryHub.dev-only.key
+      RAM_USB_MQTT_CA: /mqtt-certs/mqtt-dev-ca.dev-only.crt
     volumes:
       - ../third-party/entry-hub/config:/certs:ro
+      - ../third-party/mosquitto/certs:/mqtt-certs:ro
     ports:
       - "8443:8443"
 
@@ -218,6 +243,13 @@ services:
       RAM_USB_DATABASE_VAULT_URL: "https://database-vault:8445"
       RAM_USB_NETWORK_MANAGER_URL: "https://network-manager:8447"
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${TOKEN_SECURITY_SWITCH:?generate via step ca token security-switch, see this file's top comment}"
+      # SS-F-07/SS-F-08: metrics publish, same convention as entry-hub above.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+      RAM_USB_MQTT_CLIENT_CERT: /mqtt-certs/SecuritySwitch.dev-only.crt
+      RAM_USB_MQTT_CLIENT_KEY: /mqtt-certs/SecuritySwitch.dev-only.key
+      RAM_USB_MQTT_CA: /mqtt-certs/mqtt-dev-ca.dev-only.crt
+    volumes:
+      - ../third-party/mosquitto/certs:/mqtt-certs:ro
 
   database-vault:
     build:
@@ -236,6 +268,13 @@ services:
       RAM_USB_MASTER_KEY: "${RAM_USB_MASTER_KEY:?generate via: openssl rand -base64 32}"
       RAM_USB_PASSWORD_PEPPER: "${RAM_USB_PASSWORD_PEPPER:?set any dev-only string}"
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${TOKEN_DATABASE_VAULT:?generate via step ca token database-vault, see this file's top comment}"
+      # DV-F-16/DV-F-17: metrics publish, same convention as entry-hub above.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+      RAM_USB_MQTT_CLIENT_CERT: /mqtt-certs/DatabaseVault.dev-only.crt
+      RAM_USB_MQTT_CLIENT_KEY: /mqtt-certs/DatabaseVault.dev-only.key
+      RAM_USB_MQTT_CA: /mqtt-certs/mqtt-dev-ca.dev-only.crt
+    volumes:
+      - ../third-party/mosquitto/certs:/mqtt-certs:ro
 
   storage-service:
     build:
@@ -254,6 +293,13 @@ services:
     environment:
       RAM_USB_STORAGE_SERVICE_LISTEN_ADDR: "0.0.0.0:8448"
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${TOKEN_STORAGE_SERVICE:?generate via step ca token storage-service, see this file's top comment}"
+      # ST-F-12/ST-F-13: metrics publish, same convention as entry-hub above.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+      RAM_USB_MQTT_CLIENT_CERT: /mqtt-certs/StorageService.dev-only.crt
+      RAM_USB_MQTT_CLIENT_KEY: /mqtt-certs/StorageService.dev-only.key
+      RAM_USB_MQTT_CA: /mqtt-certs/mqtt-dev-ca.dev-only.crt
+    volumes:
+      - ../third-party/mosquitto/certs:/mqtt-certs:ro
     ports:
       - "2222:2222"
 
@@ -275,8 +321,112 @@ services:
       RAM_USB_HEADSCALE_INSECURE_SKIP_VERIFY: "true"
       RAM_USB_NETWORK_MANAGER_GRANTS_DB_PATH: "/tmp/grants.db"
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${TOKEN_NETWORK_MANAGER:?generate via step ca token network-manager, see this file's top comment}"
+      # NM-F-17/NM-F-18: metrics publish, same convention as entry-hub above.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+      RAM_USB_MQTT_CLIENT_CERT: /mqtt-certs/NetworkManager.dev-only.crt
+      RAM_USB_MQTT_CLIENT_KEY: /mqtt-certs/NetworkManager.dev-only.key
+      RAM_USB_MQTT_CA: /mqtt-certs/mqtt-dev-ca.dev-only.crt
+    volumes:
+      - ../third-party/mosquitto/certs:/mqtt-certs:ro
+
+  # Mosquitto MQTT broker (MT-F-01, MT-F-02, NET-F-02): the single message
+  # bus every metrics-publishing service and metrics-collector connect to.
+  # third-party/mosquitto/mosquitto.conf/acl.conf's own doc comments cover
+  # the full TLS/ACL model - this service just mounts them plus the
+  # dev-only certs generate-dev-certs.sh produces (see this file's top
+  # comment).
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    volumes:
+      - ../third-party/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../third-party/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro
+      - ../third-party/mosquitto/certs:/mosquitto/certs:ro
+    ports:
+      - "8883:8883"
+    healthcheck:
+      # eclipse-mosquitto's image ships mosquitto_pub; a self-connect
+      # publish using the broker's own dev-only CertificateAuthority
+      # identity (an otherwise-idle write grant while CA-F-03's own
+      # publish side is not yet wired - see acl.conf's own doc comment) is
+      # the practical healthcheck, since this image has no shell-independent
+      # HTTP endpoint to probe over TLS. Not retained (no "-r") and not a
+      # JSON metrics.Payload body - metrics-collector's own Handle
+      # (MT-F-02) discards it as an unparseable payload on the topic it
+      # already has a write grant for, logged at Warn every 10s; accepted
+      # as harmless dev-stack noise rather than adding a second,
+      # healthcheck-only ACL topic grant for one container's own probe.
+      # mosquitto_sub was tried first and rejected: it exits non-zero
+      # (exit 27, "Timed out") whenever no other client happens to publish
+      # during its wait window - confirmed live this session - which would
+      # make this healthcheck fail spuriously on an otherwise-healthy
+      # broker with no current publishers.
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-p", "8883",
+             "--cafile", "/mosquitto/certs/mqtt-dev-ca.dev-only.crt",
+             "--cert", "/mosquitto/certs/CertificateAuthority.dev-only.crt",
+             "--key", "/mosquitto/certs/CertificateAuthority.dev-only.key",
+             "-t", "metrics/Certificate-Authority", "-m", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # TimescaleDB (MT-F-03): the hypertable Metrics-Collector writes every
+  # accepted payload into. third-party/timescaledb/init.sql and
+  # services/metrics-collector/migrations/000001_create_metrics_table.up.sql's
+  # own doc comments cover the CREATE EXTENSION / migration split
+  # rationale (verified live against this exact image this session).
+  metrics-collector-timescaledb:
+    image: timescale/timescaledb:2.23.0-pg18
+    environment:
+      POSTGRES_USER: metrics_collector
+      POSTGRES_PASSWORD: metrics_collector_dev_only
+      POSTGRES_DB: metrics_collector
+    volumes:
+      - metrics-collector-timescaledb-data:/var/lib/postgresql/data
+      - ../third-party/timescaledb/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metrics_collector -d metrics_collector"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  metrics-collector:
+    build:
+      context: ..
+      dockerfile: deployments/docker/metrics-collector/Dockerfile
+    depends_on:
+      mqtt-broker:
+        condition: service_healthy
+      metrics-collector-timescaledb:
+        condition: service_healthy
+    environment:
+      RAM_USB_METRICS_COLLECTOR_DATABASE_URL: "postgres://metrics_collector:metrics_collector_dev_only@metrics-collector-timescaledb:5432/metrics_collector?sslmode=disable"
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+      RAM_USB_MQTT_CLIENT_CERT: /mqtt-certs/MetricsCollector.dev-only.crt
+      RAM_USB_MQTT_CLIENT_KEY: /mqtt-certs/MetricsCollector.dev-only.key
+      RAM_USB_MQTT_CA: /mqtt-certs/mqtt-dev-ca.dev-only.crt
+    volumes:
+      - ../third-party/mosquitto/certs:/mqtt-certs:ro
+
+  # Grafana (MT-F-04): dashboards for response time, throughput, and
+  # active connections, provisioned entirely via
+  # third-party/grafana/provisioning - no manual UI configuration.
+  grafana:
+    image: grafana/grafana:13.1
+    depends_on:
+      metrics-collector-timescaledb:
+        condition: service_healthy
+    volumes:
+      - ../third-party/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../third-party/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
 
 volumes:
   database-vault-postgres-data:
   network-manager-headscale-data:
   certificate-authority-data:
+  metrics-collector-timescaledb-data:
+  grafana-data:
