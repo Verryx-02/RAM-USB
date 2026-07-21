@@ -1,0 +1,37 @@
+-- Runs once, automatically, via the official timescale/timescaledb
+-- image's /docker-entrypoint-initdb.d/ convention (same mount pattern
+-- deployments/docker-compose.dev.yml already uses for
+-- certificate-authority-init) - see that compose file's
+-- metrics-collector-timescaledb service.
+--
+-- CREATE EXTENSION lives here, not in a services/metrics-collector
+-- golang-migrate migration, for a documented reason (verified live this
+-- session, not just inferred): the timescale/timescaledb image's own
+-- 000_install_timescaledb.sh init script already runs
+-- "CREATE EXTENSION IF NOT EXISTS timescaledb" against POSTGRES_DB before
+-- any /docker-entrypoint-initdb.d/*.sql file (including this one) runs -
+-- confirmed by inspecting a running container's logs. This file's own
+-- CREATE EXTENSION is therefore a defensive, idempotent no-op today (an
+-- image behavior this project's code should not have to depend on staying
+-- exactly this way across image versions, so it is stated here
+-- explicitly), while the hypertable/retention/columnstore DDL that
+-- actually shapes application data lives in
+-- services/metrics-collector/migrations, consistent with how
+-- Database-Vault manages 100% of its own schema through golang-migrate
+-- migrations rather than a separate init.sql.
+--
+-- No privilege split motivated this choice: a fresh timescale/timescaledb
+-- container's POSTGRES_USER is already a superuser (confirmed live this
+-- session via "\du"), the same as every other Postgres service in this
+-- project (e.g. database-vault-postgres's POSTGRES_USER) - so
+-- golang-migrate's own connection could equally well run CREATE EXTENSION
+-- itself. The real, TimescaleDB-specific reason to keep it here is a
+-- documented upstream restriction: CREATE EXTENSION timescaledb loads a
+-- background-worker-launching shared library that historically requires
+-- being the first command of its own fresh session (TimescaleDB's own
+-- "loader" - a different constraint from an ordinary transaction-boundary
+-- rule). /docker-entrypoint-initdb.d/*.sql files each run in their own
+-- fresh psql session, guaranteeing that; a migration tool that reuses/
+-- pools connections across migrations (golang-migrate does) cannot make
+-- the same guarantee.
+CREATE EXTENSION IF NOT EXISTS timescaledb;
