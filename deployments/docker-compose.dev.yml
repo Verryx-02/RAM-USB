@@ -9,18 +9,28 @@
 #
 # MT-F-01..04's metrics-consuming stack (mqtt-broker, metrics-collector,
 # metrics-collector-timescaledb, grafana) needs one manual, dev-only setup
-# step before its first `docker compose up`, the same "regenerate on
-# demand, never commit" convention as every other dev cert in this file:
+# step - AFTER certificate-authority and certificate-authority-init are up
+# (see that script's own doc comment for why this is not itself wired as a
+# one-shot compose service, the same reason
+# third-party/certificate-authority/apply-organization-template.sh isn't
+# either) - regenerated on demand like every other dev cert in this file,
+# but on a much shorter cadence: these are real-CA-issued leaf certificates
+# with step-ca's own ~24h default lifetime, not a long-lived self-signed
+# pair, so expect to re-run this periodically during a long dev session:
 #
+#   docker compose -f deployments/docker-compose.dev.yml up -d \
+#       certificate-authority certificate-authority-init
 #   third-party/mosquitto/generate-dev-certs.sh
 #
-# This mints a purpose-built dev-only MQTT CA plus one client certificate
-# per publishing/subscribing identity (see that script's own doc comment
-# for why this is a separate CA from step-ca, not a second bootstrap-token
-# exchange). Every EH-F-10/SS-F-07/DV-F-16/ST-F-12/NM-F-17-publishing
-# service below is wired with RAM_USB_MQTT_* env vars pointing at the
-# files that script produces; metrics-collector's own connection uses the
-# same convention.
+# This mints one certificate per publishing/subscribing identity (plus the
+# broker's own server certificate) from the SAME real Certificate-Authority
+# every other RAM-USB service's mTLS identity already comes from - not a
+# separate self-signed root (see that script's own doc comment for the
+# full reasoning and why it uses a docker-exec-based token mint/certificate
+# exchange rather than pkg/pki's normal single-use-bootstrap-token flow).
+# Every EH-F-10/SS-F-07/DV-F-16/ST-F-12/NM-F-17-publishing service below is
+# wired with RAM_USB_MQTT_* env vars pointing at the files that script
+# produces; metrics-collector's own connection uses the same convention.
 #
 # Each Go service needs a real, single-use CA bootstrap token
 # (RAM_USB_CA_BOOTSTRAP_TOKEN, CA-F-04) minted fresh before every

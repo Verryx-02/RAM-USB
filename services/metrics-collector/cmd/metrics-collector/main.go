@@ -26,9 +26,12 @@
 // (require_certificate true, tls_version tlsv1.3 — NET-F-02) and the
 // Organization-derived CN identity still gates ACL access (PKI-F-02,
 // enforced by third-party/mosquitto/acl.conf's use_identity_as_username);
-// this process's certificate simply comes from a purpose-built dev-only
-// MQTT CA (third-party/mosquitto/generate-dev-certs.sh) rather than from
-// step-ca, matching every other MQTT participant in this stack. Unlike
+// this process's certificate is minted from the same real
+// certificate-authority every other RAM-USB service's mTLS identity comes
+// from (third-party/mosquitto/generate-dev-certs.sh, which docker-execs
+// into the running CA container rather than using pkg/pki's live
+// single-use-bootstrap-token flow — see that script's own doc comment for
+// why), matching every other MQTT participant in this stack. Unlike
 // every publish-side service (for which the four RAM_USB_MQTT_* env vars
 // are optional — metrics publishing degrades gracefully if unset, since
 // publishing is a side effect of an otherwise-independent server), all
