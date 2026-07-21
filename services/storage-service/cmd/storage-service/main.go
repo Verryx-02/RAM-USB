@@ -65,6 +65,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/storage-service/internal/execrunner"
@@ -85,7 +86,7 @@ const (
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("storage-service: fatal startup error", "error", err)
+		slog.Error("storage-service: fatal startup error", "error", logging.Sanitize(err.Error()))
 		os.Exit(1)
 	}
 }
@@ -128,7 +129,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("storage-service: listening", "addr", listenAddr)
+		slog.Info("storage-service: listening", "addr", logging.Sanitize(listenAddr))
 		// TLSConfig already carries the bootstrapped certificate (via
 		// buildServerTLSConfig's GetCertificate callback, not a static
 		// Certificates slice), so ListenAndServeTLS is called with empty

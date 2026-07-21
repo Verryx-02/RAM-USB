@@ -74,6 +74,7 @@ import (
 	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
 	"google.golang.org/grpc"
 
+	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/grants"
@@ -154,7 +155,7 @@ const sweepInterval = 5 * time.Minute
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("network-manager: fatal startup error", "error", err)
+		slog.Error("network-manager: fatal startup error", "error", logging.Sanitize(err.Error()))
 		os.Exit(1)
 	}
 }
@@ -263,7 +264,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("network-manager: listening", "addr", listenAddr)
+		slog.Info("network-manager: listening", "addr", logging.Sanitize(listenAddr))
 		// TLSConfig already carries the bootstrapped certificate (via
 		// buildServerTLSConfig's GetCertificate callback, not a static
 		// Certificates slice), so ListenAndServeTLS is called with empty

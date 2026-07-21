@@ -64,6 +64,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/httpapi"
@@ -127,7 +128,7 @@ const connectTimeout = 10 * time.Second
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("entry-hub: fatal startup error", "error", err)
+		slog.Error("entry-hub: fatal startup error", "error", logging.Sanitize(err.Error()))
 		os.Exit(1)
 	}
 }
@@ -183,7 +184,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("entry-hub: listening", "addr", listenAddr)
+		slog.Info("entry-hub: listening", "addr", logging.Sanitize(listenAddr))
 		// TLSConfig already carries the certificate/key pair (via
 		// server.NewTLSConfig), so ListenAndServeTLS is called with empty
 		// file paths per net/http's documented convention for that case.

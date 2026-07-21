@@ -155,6 +155,43 @@ func TestHandler_CreateUser(t *testing.T) {
 	}
 }
 
+// Requirement: RNF-SEC-02
+// Requirement: RNF-SEC-03
+func TestHandler_CreateUser_RejectedRequestNeverForgesALogLine(t *testing.T) {
+	// The unknown-field name below carries a JSON-escaped newline (a
+	// backslash-u-0-0-0-a sequence in the request body), which
+	// encoding/json decodes to a real newline rune before building its
+	// "unknown field" error - if that error's message were logged
+	// unsanitized, this single log call would appear as two lines, the
+	// second one forged to look like an independent ERROR record.
+	const maliciousBody = `{"username":"user7g3k9z","extra` + "\\u000a" + `level=ERROR msg=\"forged log line\" user=admin":"x"}`
+
+	creator := &fakeCreator{}
+	var logBuf bytes.Buffer
+	h := &httpapi.Handler{
+		Creator: creator,
+		Logger:  slog.New(slog.NewTextHandler(&logBuf, nil)),
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(maliciousBody))
+	rec := httptest.NewRecorder()
+
+	h.CreateUser(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	output := strings.TrimRight(logBuf.String(), "\n")
+	lines := strings.Split(output, "\n")
+	if len(lines) != 1 {
+		t.Fatalf("log output produced %d lines, want 1 (a forged log line got through): %q", len(lines), logBuf.String())
+	}
+	if strings.Contains(logBuf.String(), "\nlevel=ERROR msg=\"forged log line\"") {
+		t.Fatalf("log output contains a forged second log line: %q", logBuf.String())
+	}
+}
+
 // Requirement: ST-F-10
 func TestHandler_CreateUser_ResponseShapeMatchesDatabaseVaultContract(t *testing.T) {
 	// Cross-check: this is the exact struct shape

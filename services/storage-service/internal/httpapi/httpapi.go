@@ -30,6 +30,7 @@ import (
 	"regexp"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
+	"github.com/Verryx-02/RAM-USB/pkg/logging"
 )
 
 // CreateUserPath is the HTTP endpoint Database-Vault calls on
@@ -114,7 +115,13 @@ func (h *Handler) logger() *slog.Logger {
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeCreateUserRequest(r)
 	if err != nil {
-		h.logger().Warn("create-user: request rejected", "error", err)
+		// err's formatted string can embed the request body's own content
+		// (encoding/json's DisallowUnknownFields error echoes back the
+		// offending field name verbatim, for instance) - Sanitize keeps
+		// that content out of the way of the log stream's own structure
+		// (RNF-SEC-02/RNF-SEC-03), independent of whatever validation ran
+		// upstream of this handler.
+		h.logger().Warn("create-user: request rejected", "error", logging.Sanitize(err.Error()))
 		writeResult(w, apperrors.NewBadRequest(err))
 		return
 	}
@@ -126,7 +133,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Creator.CreateUser(r.Context(), req.Username); err != nil {
-		h.logger().Error("create-user: POSIX user creation failed", "error", err)
+		h.logger().Error("create-user: POSIX user creation failed", "error", logging.Sanitize(err.Error()))
 		writeResult(w, apperrors.NewInternal(err))
 		return
 	}
