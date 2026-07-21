@@ -9,7 +9,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
-	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/metrics"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 )
 
 // fakeToken is a hand-written fake implementing mqtt.Token, already
@@ -53,12 +53,17 @@ func (p *fakePublisher) Publish(topic string, qos byte, retained bool, payload i
 	return newFakeToken(p.tokenErr)
 }
 
+// Requirement: EH-F-10
+// Requirement: SS-F-07
 // Requirement: DV-F-16
+// Requirement: ST-F-12
+// Requirement: NM-F-17
+// Requirement: CA-F-03
 func TestPublishOnce_PublishesToDedicatedTopic(t *testing.T) {
 	publisher := &fakePublisher{connected: true}
 	counters := metrics.Counters{RequestCount: 5, ErrorCount: 1, AverageResponseTimeMs: 3.2, ActiveConnections: 2}
 
-	if err := metrics.PublishOnce(context.Background(), publisher, counters); err != nil {
+	if err := metrics.PublishOnce(context.Background(), publisher, testServiceName, counters); err != nil {
 		t.Fatalf("PublishOnce() error = %v", err)
 	}
 
@@ -67,8 +72,9 @@ func TestPublishOnce_PublishesToDedicatedTopic(t *testing.T) {
 	}
 
 	call := publisher.calls[0]
-	if call.topic != metrics.Topic {
-		t.Errorf("Publish topic = %q, want %q", call.topic, metrics.Topic)
+	wantTopic := metrics.TopicFor(testServiceName)
+	if call.topic != wantTopic {
+		t.Errorf("Publish topic = %q, want %q", call.topic, wantTopic)
 	}
 	if call.retained {
 		t.Errorf("Publish retained = true, want false (a stale retained metrics message must never be replayed to a new subscriber)")
@@ -83,19 +89,19 @@ func TestPublishOnce_PublishesToDedicatedTopic(t *testing.T) {
 	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
 		t.Fatalf("json.Unmarshal(published payload) error = %v", err)
 	}
-	if payload.Service != metrics.ServiceName {
-		t.Errorf("published payload.Service = %q, want %q", payload.Service, metrics.ServiceName)
+	if payload.Service != testServiceName {
+		t.Errorf("published payload.Service = %q, want %q", payload.Service, testServiceName)
 	}
 	if payload.RequestCount != counters.RequestCount {
 		t.Errorf("published payload.RequestCount = %d, want %d", payload.RequestCount, counters.RequestCount)
 	}
 }
 
-// Requirement: DV-F-16
+// Requirement: RD-04
 func TestPublishOnce_NotConnected(t *testing.T) {
 	publisher := &fakePublisher{connected: false}
 
-	err := metrics.PublishOnce(context.Background(), publisher, metrics.Counters{})
+	err := metrics.PublishOnce(context.Background(), publisher, testServiceName, metrics.Counters{})
 	if !errors.Is(err, metrics.ErrPublisherNotConnected) {
 		t.Fatalf("PublishOnce() error = %v, want ErrPublisherNotConnected", err)
 	}
@@ -104,12 +110,12 @@ func TestPublishOnce_NotConnected(t *testing.T) {
 	}
 }
 
-// Requirement: DV-F-16
+// Requirement: EH-F-10
 func TestPublishOnce_BrokerRejectsPublish(t *testing.T) {
 	wantErr := errors.New("broker rejected publish")
 	publisher := &fakePublisher{connected: true, tokenErr: wantErr}
 
-	err := metrics.PublishOnce(context.Background(), publisher, metrics.Counters{})
+	err := metrics.PublishOnce(context.Background(), publisher, testServiceName, metrics.Counters{})
 	if err == nil {
 		t.Fatal("PublishOnce() error = nil, want the broker's rejection surfaced")
 	}
@@ -118,7 +124,7 @@ func TestPublishOnce_BrokerRejectsPublish(t *testing.T) {
 	}
 }
 
-// Requirement: DV-F-16
+// Requirement: EH-F-10
 func TestPublishOnce_ContextCanceled(t *testing.T) {
 	// A publisher whose token never completes, paired with an
 	// already-canceled context, must make PublishOnce return promptly
@@ -128,7 +134,7 @@ func TestPublishOnce_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := metrics.PublishOnce(ctx, publisher, metrics.Counters{})
+	err := metrics.PublishOnce(ctx, publisher, testServiceName, metrics.Counters{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("PublishOnce() error = %v, want context.Canceled", err)
 	}

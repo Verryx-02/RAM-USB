@@ -169,8 +169,8 @@ func TestRun_TicksAndSweeps(t *testing.T) {
 
 	// Same real-short-interval wall-clock wait already established as
 	// acceptable per Test_Plan §2.1 for "wait, then assert a call count
-	// changed" (services/database-vault/internal/metrics.schedule_test.go
-	// uses the identical pattern for DV-F-16's Run).
+	// changed" (pkg/metrics's own schedule_test.go uses the identical
+	// pattern for Run).
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for len(store.deletedEmailsSnapshot()) == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
