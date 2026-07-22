@@ -59,7 +59,7 @@
 // every certificate with both serverAuth and clientAuth EKU, so there is
 // no EKU-based obstacle to reuse either.
 //
-// See also deployments/docker-compose.dev.yml's certificate-authority-init
+// See also deployments/compose/certificate-authority.yml's certificate-authority-init
 // service: the dev Certificate-Authority container needs a one-time,
 // idempotent setup step (a custom x509 template on its bootstrap-token
 // provisioner, third-party/certificate-authority/config/
@@ -72,7 +72,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -144,21 +143,13 @@ const (
 	envStorageServiceURL = "RAM_USB_STORAGE_SERVICE_URL"
 
 	// envMQTTBrokerURL is the MQTT broker's address (DV-F-16), e.g.
-	// "tls://mqtt-broker.internal:8883".
+	// "tls://mqtt-broker.internal:8883". No separate RAM_USB_MQTT_CLIENT_CERT/
+	// RAM_USB_MQTT_CLIENT_KEY/RAM_USB_MQTT_CA env vars exist anymore - this
+	// server's MQTT identity and root trust are both derived from
+	// serverTLSConfig, the same bootstrapped identity already reused for
+	// both inbound listeners and the outbound Storage-Service client (see
+	// this file's package doc comment).
 	envMQTTBrokerURL = "RAM_USB_MQTT_BROKER_URL"
-
-	// envMQTTClientCert/envMQTTClientKey locate the client
-	// certificate/key this server presents when connecting to the MQTT
-	// broker over mTLS (DV-F-16). MQTT metrics publishing is
-	// deliberately out of this task's scope (CA-F-03, step-ca's own
-	// bootstrap flow has no native MQTT publish) and keeps its existing
-	// file-based cert/key/CA convention.
-	envMQTTClientCert = "RAM_USB_MQTT_CLIENT_CERT"
-	envMQTTClientKey  = "RAM_USB_MQTT_CLIENT_KEY"
-
-	// envMQTTCA locates the CA certificate bundle (PEM) trusted to have
-	// issued the MQTT broker's server certificate.
-	envMQTTCA = "RAM_USB_MQTT_CA"
 )
 
 // organizationStorageService is the Subject.Organization DV-F-09 requires
@@ -319,7 +310,7 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	metricsClient, err := buildMetricsClient()
+	metricsClient, err := buildMetricsClient(serverTLSConfig)
 	if err != nil {
 		return fmt.Errorf("build metrics client: %w", err)
 	}
@@ -399,21 +390,6 @@ func getEnvOrDefault(name, fallback string) string {
 	return value
 }
 
-// loadCertPool reads a PEM certificate bundle from path and returns a
-// pool containing it.
-func loadCertPool(path string) (*x509.CertPool, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path comes from this process's own operator-controlled env var config, not from any request input
-	if err != nil {
-		return nil, fmt.Errorf("read CA bundle %s: %w", path, err)
-	}
-
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(data) {
-		return nil, fmt.Errorf("no certificates found in CA bundle %s", path)
-	}
-	return pool, nil
-}
-
 // buildServerTLSConfig bootstraps this server's one TLS identity from the
 // Certificate-Authority (CA-F-04, PKI-F-01), using pki.LoadBootstrapToken's
 // single-use token exactly once. The returned *tls.Config is shared by
@@ -477,43 +453,27 @@ func buildStorageServiceClient(serverTLSConfig *tls.Config) (*http.Client, strin
 }
 
 // buildMetricsClient assembles and connects the mTLS MQTT client
-// DV-F-16/DV-F-17's periodic publish uses. A nil, nil return (no error)
+// DV-F-16/DV-F-17's periodic publish uses, reusing serverTLSConfig - this
+// server's one bootstrapped TLS identity (see buildServerTLSConfig and
+// this file's package doc comment) - as the source of this connection's
+// client certificate, cloned via pki.ClientTLSConfig with ServerName
+// forced to metrics.OrganizationMQTTBroker and layered with PKI-F-02's
+// organization check via metrics.TLSConfig. A nil, nil return (no error)
 // means metrics publishing is not configured (envMQTTBrokerURL unset) -
 // this process still serves registration/login traffic without it,
 // since DV-F-16/DV-F-17 are about what gets published when metrics are
 // published, not a hard dependency of the registration/login control
 // flow itself.
-func buildMetricsClient() (mqtt.Client, error) {
+func buildMetricsClient(serverTLSConfig *tls.Config) (mqtt.Client, error) {
 	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
 	if !ok || brokerURL == "" {
 		slog.Warn("database-vault: metrics publishing disabled, " + envMQTTBrokerURL + " is not set")
 		return nil, nil
 	}
 
-	certPath, err := requireEnv(envMQTTClientCert)
-	if err != nil {
-		return nil, err
-	}
-	keyPath, err := requireEnv(envMQTTClientKey)
-	if err != nil {
-		return nil, err
-	}
-	caPath, err := requireEnv(envMQTTCA)
-	if err != nil {
-		return nil, err
-	}
+	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(serverTLSConfig, metrics.OrganizationMQTTBroker))
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load mqtt client certificate/key: %w", err)
-	}
-
-	rootCAs, err := loadCertPool(caPath)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := metrics.NewClient(brokerURL, cert, rootCAs, metricsClientID, connectTimeout)
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout)
 	if err != nil {
 		return nil, err
 	}

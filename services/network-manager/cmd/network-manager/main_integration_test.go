@@ -20,7 +20,7 @@ import (
 // This file verifies buildServerTLSConfig - the function run wires
 // together to satisfy PKI-F-01/PKI-F-02/CA-F-04 for Network-Manager's one
 // inbound listener (NM-F-03) - against a REAL running Certificate-Authority
-// container (deployments/docker-compose.dev.yml's certificate-authority
+// container (deployments/compose/certificate-authority.yml's certificate-authority
 // service), mirroring services/database-vault/cmd/database-vault/
 // main_integration_test.go's own real-CA pattern exactly (same
 // env-var-gated skip, same docker-exec-based token minting). This proves
@@ -35,8 +35,8 @@ import (
 // TestBuildStorageServiceClient_RealCA_EnforcesOrganization, there is no
 // second test in this file for an outbound role.
 //
-// Requires the certificate-authority-init compose service (deployments/
-// docker-compose.dev.yml) to have completed, which `docker compose up`
+// Requires the certificate-authority-init compose service
+// (deployments/compose/certificate-authority.yml) to have completed, which `docker compose up`
 // now guarantees automatically. Without it, every certificate this CA
 // issues has an empty Subject.Organization and the case below would fail
 // closed (RD-04).
@@ -44,7 +44,7 @@ import (
 const (
 	caURLEnvVar        = "PKI_TEST_CA_URL"
 	caContainerEnvVar  = "PKI_TEST_CA_CONTAINER"
-	defaultCAContainer = "deployments-certificate-authority-1"
+	defaultCAContainer = "certificate-authority"
 
 	containerRootCert     = "/home/step/certs/root_ca.crt"
 	containerPasswordFile = "/run/secrets/ca-password.dev-only" //nolint:gosec // a file path, not a credential value
@@ -56,7 +56,7 @@ func skipUnlessCAConfigured(t *testing.T) (caURL, container string) {
 	caURL = os.Getenv(caURLEnvVar)
 	if caURL == "" {
 		t.Skipf("%s not set; skipping the real-Certificate-Authority PKI-F-02 test. "+
-			"Run `docker compose -f deployments/docker-compose.dev.yml up` "+
+			"Run `docker compose -f deployments/compose/certificate-authority.yml up` "+
 			"(certificate-authority-init applies the organization template "+
 			"automatically) and set this variable (e.g. https://localhost:9000) "+
 			"to run it.", caURLEnvVar)

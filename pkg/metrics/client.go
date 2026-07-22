@@ -19,22 +19,24 @@ package metrics
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-// NewClient builds and connects a paho MQTT client for publishing
-// metrics to brokerURL (e.g. "tls://mqtt-broker.internal:8883") over
-// mTLS, verifying the broker's certificate per TLSConfig. It blocks until
-// the connection completes or connectTimeout elapses.
-func NewClient(brokerURL string, clientCert tls.Certificate, rootCAs *x509.CertPool, clientID string, connectTimeout time.Duration) (mqtt.Client, error) {
+// NewClient builds and connects a paho MQTT client for publishing/
+// subscribing to brokerURL (e.g. "tls://mqtt-broker.internal:8883") over
+// mTLS, presenting and verifying certificates per tlsConfig (see TLSConfig -
+// the caller builds tlsConfig from its own already-bootstrapped mTLS
+// identity, reused for this MQTT connection rather than a second,
+// independent certificate). It blocks until the connection completes or
+// connectTimeout elapses.
+func NewClient(brokerURL string, tlsConfig *tls.Config, clientID string, connectTimeout time.Duration) (mqtt.Client, error) {
 	options := mqtt.NewClientOptions().
 		AddBroker(brokerURL).
 		SetClientID(clientID).
-		SetTLSConfig(TLSConfig(clientCert, rootCAs)).
+		SetTLSConfig(tlsConfig).
 		SetConnectTimeout(connectTimeout).
 		SetAutoReconnect(true)
 

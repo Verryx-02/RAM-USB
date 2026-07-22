@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 )
@@ -14,11 +13,15 @@ import (
 // value is genuinely identical across all of them.
 const OrganizationMQTTBroker = "MQTTBroker"
 
-// TLSConfig returns the *tls.Config a metrics-publishing MQTT client uses
-// to connect to the broker: present clientCert, trust rootCAs, and accept
-// only a broker whose certificate Subject carries OrganizationMQTTBroker
-// and is otherwise valid. It reuses pkg/mtls's shared outbound mTLS
-// verification logic.
-func TLSConfig(clientCert tls.Certificate, rootCAs *x509.CertPool) *tls.Config {
-	return mtls.ClientConfig(clientCert, rootCAs, OrganizationMQTTBroker)
+// TLSConfig returns the *tls.Config a metrics-publishing/subscribing MQTT
+// client uses to connect to the broker, from base - the caller's own
+// already-bootstrapped mTLS identity's *tls.Config (pkg/pki), with
+// ServerName already forced to OrganizationMQTTBroker by the caller
+// (pki.ClientTLSConfig(base, OrganizationMQTTBroker), before this function
+// runs - see e.g. any service's buildMetricsClient). TLSConfig layers
+// PKI-F-02's organization check on top (mtls.WithOrganization), without
+// touching base's certificate presentation/renewal mechanism, and without
+// this package needing a dependency on pkg/pki itself.
+func TLSConfig(base *tls.Config) *tls.Config {
+	return mtls.WithOrganization(base, OrganizationMQTTBroker)
 }

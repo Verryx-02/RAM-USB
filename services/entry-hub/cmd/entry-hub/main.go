@@ -40,7 +40,21 @@
 // pkg/mtls.ClientConfig's handshake-level VerifyConnection check (see
 // pkg/pki's package doc comment).
 //
-// See also deployments/docker-compose.dev.yml's certificate-authority-init
+// EH-F-10/EH-F-11's MQTT metrics identity (buildMetricsClient) reuses this
+// SAME bootstrapped *http.Client's *tls.Config - pki.TLSConfig extracts it,
+// pki.ClientTLSConfig clones it with ServerName forced to
+// metrics.OrganizationMQTTBroker, and metrics.TLSConfig layers PKI-F-02's
+// organization check on top (mtls.WithOrganization, the MQTT-connection
+// counterpart of WrapRoundTripper's HTTP-level check above) - instead of a
+// second, independent bootstrap-token exchange or the static cert/key
+// files this process used before. This matches SRS §2.6's own bootstrap
+// model ("subsequent renewals happen by presenting the mTLS certificate
+// the service already holds, not the token"): a second role for an
+// already-issued identity is exactly that kind of reuse, not a fresh
+// issuance, and pkg/pki's own automatic renewal keeps this MQTT identity
+// valid for as long as the process runs, with no static file to go stale.
+//
+// See also deployments/compose/certificate-authority.yml's certificate-authority-init
 // service: the dev Certificate-Authority container needs a one-time,
 // idempotent setup step (a custom x509 template on its bootstrap-token
 // provisioner) before any certificate it issues carries a non-empty
@@ -52,7 +66,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -98,20 +111,20 @@ const (
 	// redefined here.
 	envSecuritySwitchURL = "RAM_USB_SECURITY_SWITCH_URL"
 
-	// envMQTTBrokerURL/envMQTTClientCert/envMQTTClientKey/envMQTTCA reuse
-	// the exact same env var names Database-Vault's and Security-Switch's
-	// main.go already established (RAM_USB_MQTT_*) - same judgment call,
-	// documented identically in both of those files: every service's
-	// metrics client connects to the one same broker with the one same
-	// required certificate organization
-	// (metrics.OrganizationMQTTBroker = "MQTTBroker"), and each service
-	// is its own OS process reading its own separate environment, so
-	// reusing the identical name is the consistent choice, not a
-	// collision risk.
-	envMQTTBrokerURL  = "RAM_USB_MQTT_BROKER_URL"
-	envMQTTClientCert = "RAM_USB_MQTT_CLIENT_CERT"
-	envMQTTClientKey  = "RAM_USB_MQTT_CLIENT_KEY"
-	envMQTTCA         = "RAM_USB_MQTT_CA"
+	// envMQTTBrokerURL reuses the exact same env var name Database-Vault's
+	// and Security-Switch's main.go already established
+	// (RAM_USB_MQTT_BROKER_URL) - same judgment call, documented
+	// identically in both of those files: every service's metrics client
+	// connects to the one same broker with the one same required
+	// certificate organization (metrics.OrganizationMQTTBroker =
+	// "MQTTBroker"), and each service is its own OS process reading its
+	// own separate environment, so reusing the identical name is the
+	// consistent choice, not a collision risk. Unlike before, no separate
+	// RAM_USB_MQTT_CLIENT_CERT/RAM_USB_MQTT_CLIENT_KEY/RAM_USB_MQTT_CA env
+	// vars exist anymore - this process's MQTT identity and root trust are
+	// both derived from the same pki.NewClient bootstrap already performed
+	// for Security-Switch (see this file's package doc comment).
+	envMQTTBrokerURL = "RAM_USB_MQTT_BROKER_URL"
 )
 
 // serviceName is Entry-Hub's identifier in every metrics payload it
@@ -155,7 +168,7 @@ func run() error {
 		return fmt.Errorf("build server tls config: %w", err)
 	}
 
-	securitySwitchClient, securitySwitchURL, err := buildSecuritySwitchClient(ctx)
+	securitySwitchClient, securitySwitchURL, mqttTLSBase, err := buildSecuritySwitchClient(ctx)
 	if err != nil {
 		return fmt.Errorf("build security-switch client: %w", err)
 	}
@@ -179,7 +192,7 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	metricsClient, err := buildMetricsClient()
+	metricsClient, err := buildMetricsClient(mqttTLSBase)
 	if err != nil {
 		return fmt.Errorf("build metrics client: %w", err)
 	}
@@ -222,21 +235,6 @@ func requireEnv(name string) (string, error) {
 	return value, nil
 }
 
-// loadCertPool reads a PEM certificate bundle from path and returns a
-// pool containing it.
-func loadCertPool(path string) (*x509.CertPool, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path comes from this process's own operator-controlled env var config, not from any request input
-	if err != nil {
-		return nil, fmt.Errorf("read CA bundle %s: %w", path, err)
-	}
-
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(data) {
-		return nil, fmt.Errorf("no certificates found in CA bundle %s", path)
-	}
-	return pool, nil
-}
-
 // buildServerTLSConfig assembles EH-F-01/EH-F-02/EH-F-03's public TLS
 // configuration from this server's own certificate/key. Unlike every
 // other service's buildServerTLSConfig, this has no client-CA to load -
@@ -263,27 +261,38 @@ func buildServerTLSConfig() (*tls.Config, error) {
 // buildSecuritySwitchClient assembles the *http.Client EH-F-07 uses to
 // call Security-Switch over mTLS (PKI-F-01, CA-F-04), verifying
 // organization=securityswitch.OrganizationSecuritySwitch on
-// Security-Switch's certificate (PKI-F-02).
+// Security-Switch's certificate (PKI-F-02). It also returns mqttTLSBase -
+// this same bootstrapped identity's *tls.Config, extracted via
+// pki.TLSConfig BEFORE client.Transport is wrapped below - for
+// buildMetricsClient to reuse for EH-F-10/EH-F-11's MQTT connection (see
+// this file's package doc comment). This extraction must happen before
+// mtls.WrapRoundTripper runs: pki.TLSConfig type-asserts
+// client.Transport.(*http.Transport), which only holds before the wrap -
+// afterward client.Transport is a *mtls.organizationRoundTripper instead
+// (confirmed live: extracting after the wrap fails closed with "client.
+// Transport is *mtls.organizationRoundTripper, want *http.Transport"),
+// and WrapRoundTripper's own wrapping is otherwise entirely orthogonal to
+// the *tls.Config buildMetricsClient needs.
 //
 // This is Entry-Hub's one and only mTLS identity (see this file's package
 // doc comment: Entry-Hub has no inbound mTLS listener to reuse an
 // identity from), so it bootstraps it directly via pki.NewClient rather
 // than deriving it from a pki.NewServer call the way Database-Vault's
 // buildStorageServiceClient does.
-func buildSecuritySwitchClient(ctx context.Context) (*http.Client, string, error) {
-	baseURL, err := requireEnv(envSecuritySwitchURL)
+func buildSecuritySwitchClient(ctx context.Context) (client *http.Client, baseURL string, mqttTLSBase *tls.Config, err error) {
+	baseURL, err = requireEnv(envSecuritySwitchURL)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	token, err := pki.LoadBootstrapToken()
 	if err != nil {
-		return nil, "", fmt.Errorf("load ca bootstrap token: %w", err)
+		return nil, "", nil, fmt.Errorf("load ca bootstrap token: %w", err)
 	}
 
-	client, err := pki.NewClient(ctx, token)
+	client, err = pki.NewClient(ctx, token)
 	if err != nil {
-		return nil, "", fmt.Errorf("bootstrap security-switch client identity from certificate-authority: %w", err)
+		return nil, "", nil, fmt.Errorf("bootstrap security-switch client identity from certificate-authority: %w", err)
 	}
 
 	// Force this handshake's ServerName to the organization Security-Switch
@@ -294,51 +303,40 @@ func buildSecuritySwitchClient(ctx context.Context) (*http.Client, string, error
 	// merely defensive) and verified safe (chain validation against the
 	// bootstrapped RootCAs, and certificate renewal, are both unaffected).
 	if err := pki.ForceServerName(client, securityswitch.OrganizationSecuritySwitch); err != nil {
-		return nil, "", fmt.Errorf("force security-switch client TLS server name: %w", err)
+		return nil, "", nil, fmt.Errorf("force security-switch client TLS server name: %w", err)
+	}
+
+	mqttTLSBase, err = pki.TLSConfig(client)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("extract mqtt tls config: %w", err)
 	}
 
 	// PKI-F-02's organization check runs here, at the HTTP-response
 	// level (mtls.WrapRoundTripper), not inside client's *tls.Config's
 	// handshake - see this file's package doc comment for why.
 	client.Transport = mtls.WrapRoundTripper(client.Transport, securityswitch.OrganizationSecuritySwitch)
-	return client, baseURL, nil
+	return client, baseURL, mqttTLSBase, nil
 }
 
 // buildMetricsClient assembles and connects the mTLS MQTT client
-// EH-F-10/EH-F-11's periodic publish uses. A nil, nil return (no error)
-// means metrics publishing is not configured (envMQTTBrokerURL unset) -
-// this process still relays registration/login traffic without it.
-func buildMetricsClient() (mqtt.Client, error) {
+// EH-F-10/EH-F-11's periodic publish uses, reusing mqttTLSBase -
+// buildSecuritySwitchClient's own bootstrapped identity, extracted before
+// that client's Transport was wrapped (see buildSecuritySwitchClient's own
+// doc comment for why one bootstrap token, reused, is correct here rather
+// than a second independent bootstrap exchange) - as the source of this
+// connection's client certificate. A nil, nil return (no error) means
+// metrics publishing is not configured (envMQTTBrokerURL unset) - this
+// process still relays registration/login traffic without it.
+func buildMetricsClient(mqttTLSBase *tls.Config) (mqtt.Client, error) {
 	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
 	if !ok || brokerURL == "" {
 		slog.Warn("entry-hub: metrics publishing disabled, " + envMQTTBrokerURL + " is not set")
 		return nil, nil
 	}
 
-	certPath, err := requireEnv(envMQTTClientCert)
-	if err != nil {
-		return nil, err
-	}
-	keyPath, err := requireEnv(envMQTTClientKey)
-	if err != nil {
-		return nil, err
-	}
-	caPath, err := requireEnv(envMQTTCA)
-	if err != nil {
-		return nil, err
-	}
+	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(mqttTLSBase, metrics.OrganizationMQTTBroker))
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load mqtt client certificate/key: %w", err)
-	}
-
-	rootCAs, err := loadCertPool(caPath)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := metrics.NewClient(brokerURL, cert, rootCAs, metricsClientID, connectTimeout)
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout)
 	if err != nil {
 		return nil, err
 	}
