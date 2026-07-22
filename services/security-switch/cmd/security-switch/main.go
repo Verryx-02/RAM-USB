@@ -60,6 +60,30 @@
 // non-empty Subject.Organization at all - without it, PKI-F-02's
 // organization check would reject every connection. `docker compose up`
 // applies it automatically now; no manual step is required.
+//
+// Mesh membership (completed via pkg/mesh): this process now also joins
+// Headscale as a real tsnet mesh node (buildMeshNode), used for BOTH
+// outbound mTLS clients this server owns - SS-F-04's call to Database-Vault
+// (buildDatabaseVaultClient's Transport.DialContext), completing DV-F-01's
+// "access to the private mesh network" clause on the calling side, and
+// SS-F-05/SS-F-09's call to Network-Manager
+// (buildNetworkManagerClient's Transport.DialContext, once Network-Manager
+// itself joined the mesh, see
+// services/network-manager/cmd/network-manager/main.go's package doc
+// comment), completing NM-F-03's mesh-reachability restriction on the
+// calling side - both share this one meshNode instance, not a second one
+// per outbound peer. Both calls now pass exclusively through the mesh
+// (pkg/mesh's own package doc comment, "Reachability guarantee").
+// Deliberately NOT changed in this task: this server's own inbound
+// listener (httpServer below, receiving Entry-Hub's calls) stays exactly
+// as before - a ramusb-net TLS listener via ListenAndServeTLS - because
+// Entry-Hub is not itself a mesh node yet (out of this task's scope: Entry-Hub
+// has its own separate, larger dual public/mesh-path problem, not addressed
+// here). Moving this listener to tsnet-only in isolation would sever
+// Entry-Hub's ability to reach Security-Switch at all - so this file
+// intentionally keeps two separate network identities: the pre-existing
+// ramusb-net one (inbound, from Entry-Hub) and the mesh one (outbound only,
+// to Database-Vault and Network-Manager).
 package main
 
 import (
@@ -68,6 +92,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -77,6 +102,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
+	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
@@ -97,11 +123,64 @@ const (
 	envListenAddr = "RAM_USB_SECURITY_SWITCH_LISTEN_ADDR"
 
 	// envDatabaseVaultURL is Database-Vault's base URL (SS-F-04), e.g.
-	// "https://database-vault.internal:8443".
+	// "https://database-vault:8445" - "database-vault" here is
+	// Database-Vault's MagicDNS short name within the Headscale mesh
+	// (RAM_USB_DATABASE_VAULT_MESH_HOSTNAME in
+	// deployments/compose/database-vault.yml), not a ramusb-net Docker
+	// DNS name: buildDatabaseVaultClient's Transport.DialContext routes
+	// every dial through meshNode.Dial (pkg/mesh), which resolves and
+	// connects entirely inside tsnet's own userspace netstack - never via
+	// the container's real network interfaces/OS resolver, regardless of
+	// what this hostname string happens to also resolve to on
+	// ramusb-net.
 	envDatabaseVaultURL = "RAM_USB_DATABASE_VAULT_URL"
 
+	// envMeshDir is the persistent directory this node's tsnet mesh
+	// identity/state lives in (see pkg/mesh.Config.Dir) - backed by a
+	// dedicated Docker volume (deployments/compose/security-switch.yml).
+	envMeshDir = "RAM_USB_SECURITY_SWITCH_MESH_DIR"
+
+	// envMeshHostname is this node's MagicDNS short name within the
+	// tailnet (see pkg/mesh.Config.Hostname). No other service dials
+	// Security-Switch over the mesh in this task's cut (see this file's
+	// package doc comment) - this node only ever dials out - but tsnet
+	// still requires a Hostname to join at all.
+	envMeshHostname = "RAM_USB_SECURITY_SWITCH_MESH_HOSTNAME"
+
+	// envMeshControlURL is the self-hosted Headscale server's
+	// coordination URL (see pkg/mesh.Config.ControlURL), the same env var
+	// name Database-Vault's own main.go uses (shared, not
+	// service-specific).
+	envMeshControlURL = "RAM_USB_TAILSCALE_CONTROL_URL"
+
+	// envMeshAuthKey is this node's single-use Headscale pre-auth key
+	// (see pkg/mesh.Config.AuthKey and pkg/mesh's package doc comment,
+	// "Key distribution"), minted manually by the operator - see
+	// deployments/compose/security-switch.yml for the exact minting
+	// command.
+	envMeshAuthKey = "RAM_USB_SECURITY_SWITCH_TAILSCALE_AUTHKEY" //nolint:gosec // an env var *name*, not a credential value
+
+	// envMeshControlCAFile optionally names a PEM file this process
+	// should trust for envMeshControlURL's TLS certificate (see
+	// pkg/mesh.Config.ControlCAFile) - shared across services exactly
+	// like envMeshControlURL, since it exists solely to trust that same
+	// URL's certificate. Left unset in any deployment where ControlURL's
+	// certificate already chains to a real, publicly trusted root; only
+	// this project's dev-only self-signed Headscale certificate
+	// (third-party/network-manager/headscale/dev-tls) needs it, per this
+	// project's convention of mounting dev-only secrets/certificates at
+	// runtime rather than baking them into the image (see
+	// deployments/compose/security-switch.yml).
+	envMeshControlCAFile = "RAM_USB_TAILSCALE_CONTROL_CA_FILE"
+
 	// envNetworkManagerURL is Network-Manager's base URL (SS-F-05,
-	// SS-F-09), e.g. "https://network-manager.internal:8443".
+	// SS-F-09), e.g. "https://network-manager:8447" - "network-manager"
+	// here is Network-Manager's MagicDNS short name within the Headscale
+	// mesh (RAM_USB_NETWORK_MANAGER_MESH_HOSTNAME in
+	// deployments/compose/network-manager.yml), not a ramusb-net Docker DNS
+	// name - same reasoning as envDatabaseVaultURL above:
+	// buildNetworkManagerClient's Transport.DialContext routes every dial
+	// through meshNode.Dial (pkg/mesh), never via ramusb-net.
 	envNetworkManagerURL = "RAM_USB_NETWORK_MANAGER_URL"
 
 	// envMQTTBrokerURL is the MQTT broker's address (SS-F-07), e.g.
@@ -161,6 +240,22 @@ func run() error {
 		return err
 	}
 
+	// meshNode is this process's own Headscale mesh identity (completed by
+	// pkg/mesh - see this file's package doc comment, "Mesh membership"),
+	// used to dial out to Database-Vault (completing DV-F-01's "access to
+	// the private mesh network" clause on the calling side) and to
+	// Network-Manager (completing NM-F-03's mesh-reachability restriction
+	// on the calling side) below.
+	meshNode, err := buildMeshNode(ctx)
+	if err != nil {
+		return fmt.Errorf("join mesh: %w", err)
+	}
+	defer func() {
+		if closeErr := meshNode.Close(); closeErr != nil {
+			slog.Warn("security-switch: mesh node close error", "error", logging.Sanitize(closeErr.Error()))
+		}
+	}()
+
 	// serverTLSConfig is this server's one bootstrapped TLS identity
 	// (PKI-F-01, CA-F-04), shared by the inbound EntryHub-facing listener
 	// and both outbound clients below - see buildServerTLSConfig and this
@@ -171,12 +266,12 @@ func run() error {
 		return fmt.Errorf("build server tls config: %w", err)
 	}
 
-	dbVaultClient, dbVaultURL, err := buildDatabaseVaultClient(serverTLSConfig)
+	dbVaultClient, dbVaultURL, err := buildDatabaseVaultClient(serverTLSConfig, meshNode.Dial)
 	if err != nil {
 		return fmt.Errorf("build database-vault client: %w", err)
 	}
 
-	networkManagerClient, networkManagerURL, err := buildNetworkManagerClient(serverTLSConfig)
+	networkManagerClient, networkManagerURL, err := buildNetworkManagerClient(serverTLSConfig, meshNode.Dial)
 	if err != nil {
 		return fmt.Errorf("build network-manager client: %w", err)
 	}
@@ -298,15 +393,71 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 // the dialed network address (envDatabaseVaultURL's host, which differs
 // between dev/compose and production) - see pkg/pki's package doc comment
 // for why this is required, not merely defensive.
-func buildDatabaseVaultClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
+//
+// dial is set as Transport.DialContext (completing DV-F-01's "access to
+// the private mesh network" clause on the calling side): run passes
+// meshNode.Dial in production, so every TCP dial this client makes goes
+// through pkg/mesh's tsnet node instead of the default net.Dialer - this
+// call physically cannot reach Database-Vault any other way than through
+// the mesh, see pkg/mesh's own package doc comment ("Reachability
+// guarantee"). A func-typed parameter
+// rather than a *mesh.Server one deliberately decouples this function
+// from requiring a live Headscale join in tests that exist only to prove
+// PKI-F-02's organization enforcement (main_integration_test.go, which
+// passes a plain (&net.Dialer{}).DialContext instead) - pkg/mesh's own
+// real-Headscale integration test is what proves the mesh-only
+// reachability property itself.
+func buildDatabaseVaultClient(serverTLSConfig *tls.Config, dial func(ctx context.Context, network, addr string) (net.Conn, error)) (*http.Client, string, error) {
 	baseURL, err := requireEnv(envDatabaseVaultURL)
 	if err != nil {
 		return nil, "", err
 	}
 
-	transport := &http.Transport{TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, dbvault.OrganizationDatabaseVault)}
+	transport := &http.Transport{
+		TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, dbvault.OrganizationDatabaseVault),
+		DialContext:     dial,
+	}
 	client := &http.Client{Transport: mtls.WrapRoundTripper(transport, dbvault.OrganizationDatabaseVault)}
 	return client, baseURL, nil
+}
+
+// buildMeshNode joins this process to the private Headscale mesh (pkg/mesh)
+// using envMeshDir/envMeshHostname/envMeshControlURL/envMeshAuthKey, failing
+// closed (RD-04) if any is unset. The returned node's Dial is what completes
+// DV-F-01's and NM-F-03's mesh-reachability clauses on the calling side for
+// this server's two outbound clients (see buildDatabaseVaultClient and
+// buildNetworkManagerClient). ctx bounds only the join itself; the returned
+// node lives for this process's whole lifetime (closed via a deferred call
+// in run).
+func buildMeshNode(ctx context.Context) (*mesh.Server, error) {
+	dir, err := requireEnv(envMeshDir)
+	if err != nil {
+		return nil, err
+	}
+	hostname, err := requireEnv(envMeshHostname)
+	if err != nil {
+		return nil, err
+	}
+	controlURL, err := requireEnv(envMeshControlURL)
+	if err != nil {
+		return nil, err
+	}
+	authKey, err := requireEnv(envMeshAuthKey)
+	if err != nil {
+		return nil, err
+	}
+	// Optional (empty in any deployment where ControlURL's certificate
+	// already chains to a real, publicly trusted root) - see
+	// envMeshControlCAFile's own doc comment.
+	controlCAFile := os.Getenv(envMeshControlCAFile)
+
+	return mesh.Up(ctx, mesh.Config{
+		Dir:           dir,
+		Hostname:      hostname,
+		ControlURL:    controlURL,
+		AuthKey:       authKey,
+		ControlCAFile: controlCAFile,
+	})
 }
 
 // buildNetworkManagerClient assembles the *http.Client SS-F-05/SS-F-09 use
@@ -320,13 +471,25 @@ func buildDatabaseVaultClient(serverTLSConfig *tls.Config) (*http.Client, string
 // pki.ClientTLSConfig clones serverTLSConfig and forces this handshake's
 // ServerName to networkmanager.OrganizationNetworkManager, same reasoning
 // as buildDatabaseVaultClient above.
-func buildNetworkManagerClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
+//
+// dial is set as Transport.DialContext (completing NM-F-03's
+// mesh-reachability restriction on the calling side, once Network-Manager
+// itself became a mesh node - see this file's package doc comment, "Mesh
+// membership"): run passes meshNode.Dial in production, the SAME mesh node
+// instance already joined for buildDatabaseVaultClient above, not a second
+// one - see pkg/mesh's own package doc comment ("Reachability guarantee").
+// A func-typed parameter rather than a *mesh.Server one, same reasoning as
+// buildDatabaseVaultClient's own dial parameter.
+func buildNetworkManagerClient(serverTLSConfig *tls.Config, dial func(ctx context.Context, network, addr string) (net.Conn, error)) (*http.Client, string, error) {
 	baseURL, err := requireEnv(envNetworkManagerURL)
 	if err != nil {
 		return nil, "", err
 	}
 
-	transport := &http.Transport{TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, networkmanager.OrganizationNetworkManager)}
+	transport := &http.Transport{
+		TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, networkmanager.OrganizationNetworkManager),
+		DialContext:     dial,
+	}
 	client := &http.Client{Transport: mtls.WrapRoundTripper(transport, networkmanager.OrganizationNetworkManager)}
 	return client, baseURL, nil
 }

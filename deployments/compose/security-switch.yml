@@ -7,17 +7,64 @@ services:
       dockerfile: deployments/docker/security-switch/Dockerfile
     container_name: security-switch
     environment:
+      # SS-F-01: unchanged - Entry-Hub is not yet a mesh node (out of this
+      # task's scope), so this listener stays on ramusb-net.
       RAM_USB_SECURITY_SWITCH_LISTEN_ADDR: "0.0.0.0:8444"
+      # SS-F-04: "database-vault" here is Database-Vault's MagicDNS short
+      # name within the Headscale mesh
+      # (RAM_USB_DATABASE_VAULT_MESH_HOSTNAME in
+      # deployments/compose/database-vault.yml), not its ramusb-net
+      # Docker DNS name - this call now goes exclusively through
+      # meshNode.Dial (see services/security-switch/cmd/security-switch/
+      # main.go's package doc comment), never via ramusb-net, regardless
+      # of what this hostname string also happens to resolve to there.
       RAM_USB_DATABASE_VAULT_URL: "https://database-vault:8445"
+      # SS-F-05/SS-F-09: "network-manager" here is Network-Manager's
+      # MagicDNS short name within the Headscale mesh
+      # (RAM_USB_NETWORK_MANAGER_MESH_HOSTNAME in
+      # deployments/compose/network-manager.yml), not its ramusb-net Docker
+      # DNS name - this call now goes exclusively through meshNode.Dial
+      # (see services/security-switch/cmd/security-switch/main.go's
+      # package doc comment), never via ramusb-net, regardless of what this
+      # hostname string also happens to resolve to there.
       RAM_USB_NETWORK_MANAGER_URL: "https://network-manager:8447"
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token SecuritySwitch --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
       # SS-F-07/SS-F-08: metrics publish, reuses the same mTLS identity
       # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
       # static MQTT certificate/key.
       RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+      # SS-F-01 mesh membership (pkg/mesh): this node's persistent tsnet
+      # identity directory, MagicDNS short name, shared Headscale
+      # coordination URL, and single-use pre-auth key, used to dial out to
+      # both Database-Vault and Network-Manager above - see
+      # services/network-manager/internal/headscale/policy.go for the
+      # tag:security-switch ACL rule this key's --tags must match.
+      RAM_USB_SECURITY_SWITCH_MESH_DIR: "/var/lib/tsnet"
+      RAM_USB_SECURITY_SWITCH_MESH_HOSTNAME: "security-switch"
+      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager-headscale:8080}"
+      RAM_USB_SECURITY_SWITCH_TAILSCALE_AUTHKEY: >-
+        ${RAM_USB_SECURITY_SWITCH_TAILSCALE_AUTHKEY:?mint with:
+        docker exec network-manager-headscale headscale users create security-switch
+        && docker exec network-manager-headscale headscale users list --name security-switch -o json
+        && docker exec network-manager-headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:security-switch}
+      # Dev-only (pkg/mesh.Config.ControlCAFile): this image is
+      # distroless (no shell, no update-ca-certificates, an immutable
+      # trust store), so trusting Headscale's self-signed dev
+      # certificate happens entirely in Go at runtime via SSL_CERT_FILE
+      # (see pkg/mesh's package doc comment, "Control-plane certificate
+      # trust in a distroless container") instead of the OS trust store.
+      # Leave unset once RAM_USB_TAILSCALE_CONTROL_URL's certificate
+      # chains to a real, publicly trusted root.
+      RAM_USB_TAILSCALE_CONTROL_CA_FILE: "/etc/mesh-control-ca/cert.dev-only.pem"
+    volumes:
+      - ramusb-security-switch-mesh-state:/var/lib/tsnet
+      - ../../third-party/network-manager/headscale/dev-tls/cert.dev-only.pem:/etc/mesh-control-ca/cert.dev-only.pem:ro
     networks:
       - ramusb-net
 
 networks:
   ramusb-net:
     external: true
+
+volumes:
+  ramusb-security-switch-mesh-state:

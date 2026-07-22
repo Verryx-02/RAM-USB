@@ -52,6 +52,20 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/security-switch \
     ./services/security-switch/cmd/security-switch
 
+# pkg/mesh's tsnet state directory (RAM_USB_SECURITY_SWITCH_MESH_DIR,
+# mounted onto /var/lib/tsnet below as the named volume
+# ramusb-security-switch-mesh-state) needs to be owned by the distroless
+# runtime stage's unprivileged "nonroot" account (UID/GID 65532, confirmed
+# via `docker inspect gcr.io/distroless/static-debian12:nonroot --format
+# '{{.Config.User}}'`) BEFORE that volume is ever created. Docker seeds a
+# brand-new named volume's content from whatever already exists at its
+# mount path inside the image, ownership included - a volume first created
+# empty (root-owned by default) leaves tsnet, running as UID 65532, unable
+# to write tailscaled.log.conf ("permission denied" at startup). This
+# builder stage has a shell to create+chown that seed directory; the
+# distroless runtime stage below does not.
+RUN mkdir -p /tsnet-seed && chown 65532:65532 /tsnet-seed
+
 # ---- runtime stage -------------------------------------------------------
 # gcr.io/distroless/static-debian12: no shell, no package manager, no libc
 # beyond the minimal static-linking runtime pieces distroless itself needs
@@ -66,6 +80,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/security-switch \
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=build /out/security-switch /usr/local/bin/security-switch
+COPY --from=build --chown=65532:65532 /tsnet-seed /var/lib/tsnet
 
 # distroless/static-debian12:nonroot already runs as UID/GID 65532
 # ("nonroot"); no USER directive needed.
