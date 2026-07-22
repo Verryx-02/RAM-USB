@@ -1,11 +1,41 @@
 # Certificate-Authority + automatic application of the organization
-# template (PKI-F-02). Standalone: no variable required.
+# template (PKI-F-02). Standalone: no variable required (except the
+# sidecar's RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY below).
 #
 # certificate-authority-init is included here (not a separate file/shell):
 # it waits for the CA to be healthy, applies organization.x509.tpl to the
 # "admin" provisioner, then exits on its own - a single `docker compose up`
 # covers both, unlike the earlier bash procedure which required a separate
 # `docker run --rm` command for the init step.
+#
+# certificate-authority-mesh (NM-F-04, "all internal components... can
+# contact, and be contacted by, the Certificate-Authority over the mesh
+# network"): step-ca is a third-party binary, not a Go process, so it
+# cannot embed pkg/mesh the way Security-Switch/Database-Vault do. Instead
+# this is the sidecar pattern: a real tailscale/tailscale client container
+# (same image/cap_add/devices shape as tailscale-test.yml) joins the mesh
+# and shares certificate-authority's OWN network namespace via
+# `network_mode: "service:certificate-authority"` - Compose does not allow
+# the `networks:` key together with `network_mode` on the SAME container
+# (confirmed via `docker compose config`, which rejects that combination
+# with "conflicting: services... has both network_mode and networks"), so
+# exactly one of the two containers can carry `networks: ramusb-net` and
+# exactly one carries `network_mode: "service:..."` - never both keys on
+# one container, and never both containers on `networks:`. `cap_add`/
+# `devices` (NET_ADMIN/NET_RAW/tun) ARE compatible with `network_mode:
+# service:X` on the same (sidecar) container - confirmed live in this
+# session: the sidecar creates its own tailscale0 interface inside the
+# shared namespace it joins, independent of which container declared the
+# capabilities. certificate-authority itself is left completely
+# unmodified (still `networks: ramusb-net`, per this task's own
+# constraint) - it becomes reachable on the sidecar's tailscale IP/
+# MagicDNS hostname "certificate-authority" (TS_EXTRA_ARGS --hostname
+# below) for free, with zero code or image change, since both containers
+# share one network stack once the sidecar is up. Because that MagicDNS
+# short hostname is chosen to equal the existing Docker DNS name, every
+# RAM_USB_CA_BOOTSTRAP_TOKEN's `--ca-url https://certificate-authority:9000`
+# (see e.g. entry-hub.yml/security-switch.yml) keeps working unchanged for
+# every service, whether or not that service is itself a mesh member yet.
 name: ramusb-certificate-authority
 services:
   certificate-authority:
@@ -45,9 +75,56 @@ services:
     networks:
       - ramusb-net
 
+  certificate-authority-mesh:
+    image: tailscale/tailscale:latest
+    container_name: certificate-authority-mesh
+    depends_on:
+      certificate-authority:
+        condition: service_healthy
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ramusb-certificate-authority-mesh-state:/var/lib/tailscale
+      - ../../third-party/network-manager/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+    environment:
+      # tag:certificate-authority (services/network-manager/internal/
+      # headscale/policy.go) - reused as-is, NM-F-04's rule already grants
+      # this tag reachability both ways, no new tag needed for the CA.
+      TS_AUTHKEY: "${RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY:?mint with: docker exec network-manager-headscale headscale users create certificate-authority && docker exec network-manager-headscale headscale users list --name certificate-authority -o json && docker exec network-manager-headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:certificate-authority}"
+      TS_EXTRA_ARGS: "--login-server=${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager-headscale:8080} --hostname=certificate-authority"
+      # Confirmed live this session: containerboot's tailscaled defaults to
+      # "--tun=userspace-networking" (a gVisor netstack invisible to the OS
+      # kernel/other processes in this shared namespace) even with
+      # NET_ADMIN/NET_RAW/tun granted above. In that mode a peer's inbound
+      # TCP SYN to this node's tailscale IP is rejected entirely inside
+      # tailscaled's own userland network stack - it never reaches a real
+      # tailscale0 interface, so certificate-authority (sharing this
+      # namespace) never sees the packet, and the connecting peer sees an
+      # immediate "connection refused" with nothing captured on either
+      # side's tailscale0 (confirmed via tcpdump). TS_USERSPACE=false
+      # forces the real kernel tun device instead, which is required for
+      # NM-F-04's "can be contacted... over the mesh network" direction
+      # (the CA must accept inbound connections, not just originate them -
+      # unlike a User's outbound-only tailscale-test.yml client, which
+      # works fine in userspace-networking mode and needs no such change).
+      TS_USERSPACE: "false"
+      # network_mode below means this container has no ramusb-net DNS of
+      # its own beyond what certificate-authority's namespace already
+      # resolves - the Headscale control URL above is reached through
+      # that shared namespace's existing ramusb-net attachment.
+    entrypoint: ["/bin/sh", "-c", "update-ca-certificates && exec /usr/local/bin/containerboot"]
+    # Shares certificate-authority's network namespace instead of joining
+    # ramusb-net itself - see this file's own top comment for why
+    # `network_mode` and `networks` never appear on the same container.
+    network_mode: "service:certificate-authority"
+
 networks:
   ramusb-net:
     external: true
 
 volumes:
   ramusb-ca-data:
+  ramusb-certificate-authority-mesh-state:
