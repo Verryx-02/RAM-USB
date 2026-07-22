@@ -69,14 +69,16 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// Requirement: NM-F-01, NM-F-02, NM-F-03, NM-F-04, NM-F-05, NM-F-06, NM-F-07
+// Requirement: NM-F-01, NM-F-02, NM-F-03, NM-F-04, NM-F-05, NM-F-06, NM-F-07, DV-F-09, ST-F-01
 //
 // Asserts PolicyDocument's generated JSON contains exactly the right
 // src/dst pairs for every rule this task's six requirements (plus the
 // NM-F-03 rule buildACLs' own doc comment explains including) translate
 // to - no more, no less - cross-checked against
 // docs/design/diagrams/09-security-trust-zones.puml's arrows, not
-// re-derived from the SRS prose alone.
+// re-derived from the SRS prose alone. Also covers the MQTT-broker rule
+// (TagMQTTBroker's own doc comment explains why it carries no single SRS
+// ID).
 func TestPolicyDocument_Content(t *testing.T) {
 	data, err := hs.PolicyDocument()
 	if err != nil {
@@ -88,8 +90,8 @@ func TestPolicyDocument_Content(t *testing.T) {
 		t.Fatalf("json.Unmarshal(PolicyDocument()) error = %v", err)
 	}
 
-	if len(doc.ACLs) != 7 {
-		t.Fatalf("len(doc.ACLs) = %d, want 7 (NM-F-01, 02, 03, 04x2, 05, 06/07)", len(doc.ACLs))
+	if len(doc.ACLs) != 8 {
+		t.Fatalf("len(doc.ACLs) = %d, want 8 (NM-F-01, 02, 03, 04x2, 05, 06/07, MQTT-broker)", len(doc.ACLs))
 	}
 
 	for i, acl := range doc.ACLs {
@@ -135,14 +137,27 @@ func TestPolicyDocument_Content(t *testing.T) {
 			wantSrc: []string{hs.TagCertificateAuthority},
 		},
 		{
-			name:    "NM-F-05/NM-F-07 (authenticated half): only TagStorageAccess nodes can contact Storage-Service",
+			name:    "NM-F-05/NM-F-07 (authenticated half) + DV-F-09/ST-F-01: TagStorageAccess nodes and Database-Vault can contact Storage-Service",
 			dst:     []string{hs.TagStorageService + ":*"},
-			wantSrc: []string{hs.TagStorageAccess},
+			wantSrc: []string{hs.TagStorageAccess, hs.TagDatabaseVault},
 		},
 		{
 			name:    "NM-F-06/NM-F-07 (registered half): every TagMeshMember node can contact Entry-Hub",
 			dst:     []string{hs.TagEntryHub + ":*"},
 			wantSrc: []string{hs.TagMeshMember},
+		},
+		{
+			name: "MQTT-broker mesh reachability: every metrics publisher plus Metrics-Collector can contact the broker",
+			dst:  []string{hs.TagMQTTBroker + ":*"},
+			wantSrc: []string{
+				hs.TagEntryHub,
+				hs.TagSecuritySwitch,
+				hs.TagDatabaseVault,
+				hs.TagStorageService,
+				hs.TagNetworkManager,
+				hs.TagMetricsCollector,
+				hs.TagCertificateAuthority,
+			},
 		},
 	}
 

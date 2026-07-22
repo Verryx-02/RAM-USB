@@ -75,6 +75,21 @@ const (
 	TagStorageService       = "tag:storage-service"
 	TagNetworkManager       = "tag:network-manager"
 	TagCertificateAuthority = "tag:certificate-authority"
+	// TagMQTTBroker/TagMetricsCollector identify the MQTT broker's own
+	// sidecar mesh identity (deployments/compose/mqtt-broker.yml's
+	// tailscale/tailscale sidecar, network_mode: "service:mqtt-broker" -
+	// Mosquitto is a C binary and cannot embed pkg/mesh, same reasoning as
+	// Certificate-Authority's TagCertificateAuthority) and Metrics-
+	// Collector's mesh identity respectively. No SRS ID names MQTT-broker
+	// mesh reachability the explicit way NM-F-04 names it for
+	// Certificate-Authority; these two tags and the ACL rule referencing
+	// them below exist to keep every metrics publisher/subscriber
+	// (MT-F-01..04, CA-F-03/DV-F-16/EH-F-10/NM-F-17/SS-F-07/ST-F-12) able
+	// to reach the broker once it, too, is mesh-only - flagged for
+	// confirmation against the requirement owner, same as this file's
+	// existing NM-F-03 scope-expansion note above.
+	TagMQTTBroker       = "tag:mqtt-broker"
+	TagMetricsCollector = "tag:metrics-collector"
 )
 
 // policyAdminGroup/policyAdminOwner exist solely to give every tag
@@ -97,6 +112,8 @@ var allTags = []string{
 	TagStorageService,
 	TagNetworkManager,
 	TagCertificateAuthority,
+	TagMQTTBroker,
+	TagMetricsCollector,
 	TagMeshMember,
 	TagStorageAccess,
 }
@@ -157,6 +174,12 @@ func dstAny(tag string) string {
 // the moment this policy is pushed. This is flagged explicitly, not a
 // silent scope expansion: confirm with the requirement owner if a
 // different resolution is wanted.
+//
+// An eighth rule grants every metrics publisher, plus Metrics-Collector
+// itself, reachability toward the MQTT broker's mesh identity
+// (TagMQTTBroker) - see that constant's own doc comment for why no single
+// SRS ID names this rule the way NM-F-04 names Certificate-Authority's,
+// and why it is included here anyway.
 func buildACLs() []policyACL {
 	return []policyACL{
 		{ // NM-F-01: only Entry-Hub, Database-Vault, Network-Manager, and
@@ -200,9 +223,19 @@ func buildACLs() []policyACL {
 		{ // NM-F-05 and (together with the rule below) half of NM-F-07:
 			// only authenticated Users - nodes holding TagStorageAccess,
 			// assigned by GrantStorageAccess/NM-F-09 - can contact
-			// Storage-Service.
+			// Storage-Service. Database-Vault is included too (DV-F-09,
+			// ST-F-01's "access to the private mesh network" clause):
+			// Database-Vault's own POSIX-user-creation request to
+			// Storage-Service is a standing reachability need for the
+			// lifetime of the deployment, unlike a User's grant, which is
+			// per-request/dynamic (NM-F-09) - it belongs in this static
+			// rule, not a runtime-granted tag. Confirmed live: this call
+			// previously hung until context-canceled with no ACL rule
+			// permitting it (Headscale's packet filter is enforced at the
+			// receiving node, so an absent rule denies silently rather
+			// than erroring).
 			Action: "accept",
-			Src:    []string{TagStorageAccess},
+			Src:    []string{TagStorageAccess, TagDatabaseVault},
 			Dst:    []string{dstAny(TagStorageService)},
 		},
 		{ // NM-F-06 and (together with the rule above) the other half of
@@ -214,6 +247,22 @@ func buildACLs() []policyACL {
 			Action: "accept",
 			Src:    []string{TagMeshMember},
 			Dst:    []string{dstAny(TagEntryHub)},
+		},
+		{ // Every metrics publisher, plus Metrics-Collector itself
+			// (subscriber), can contact the MQTT broker's mesh identity -
+			// see buildACLs' own doc comment and TagMQTTBroker's for why
+			// this rule has no single SRS ID of its own.
+			Action: "accept",
+			Src: []string{
+				TagEntryHub,
+				TagSecuritySwitch,
+				TagDatabaseVault,
+				TagStorageService,
+				TagNetworkManager,
+				TagMetricsCollector,
+				TagCertificateAuthority,
+			},
+			Dst: []string{dstAny(TagMQTTBroker)},
 		},
 	}
 }
