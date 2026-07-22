@@ -39,7 +39,7 @@
 // a durable volume outside the container's writable layer, so the file
 // (and therefore every persisted grant) survives a container restart -
 // that is the whole point of NM-F-11. Wiring an actual bind-mounted
-// volume into deployments/docker-compose.dev.yml is explicitly out of
+// volume into deployments/compose/network-manager.yml is explicitly out of
 // this task's scope (see this session's own report); restart survival was
 // instead verified empirically against a real SQLite file and a real
 // process restart, not merely asserted structurally - see this package's

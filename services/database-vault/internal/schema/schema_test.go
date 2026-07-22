@@ -16,7 +16,7 @@ import (
 
 // databaseURLEnvVar names the environment variable that points this test at
 // a real Postgres instance (e.g. the database-vault-postgres service in
-// deployments/docker-compose.dev.yml). docs/Test_Plan.md §4 requires unit
+// deployments/compose/postgres.yml). docs/Test_Plan.md §4 requires unit
 // tests to run with no external dependency and no Docker, so this test is
 // skipped whenever the variable is unset, instead of being a hard
 // dependency of `go test ./...` — same convention as
@@ -33,7 +33,7 @@ const databaseURLEnvVar = "DATABASE_VAULT_TEST_DATABASE_URL"
 func TestNewAndApply_CreatesUsersTableFromEmptyDatabase(t *testing.T) {
 	databaseURL := os.Getenv(databaseURLEnvVar)
 	if databaseURL == "" {
-		t.Skipf("%s not set; skipping the real-Postgres schema test (see docs/Test_Plan.md §4: unit tests run with no external dependency, no Docker). Start deployments/docker-compose.dev.yml's database-vault-postgres service and set this variable to run it.", databaseURLEnvVar)
+		t.Skipf("%s not set; skipping the real-Postgres schema test (see docs/Test_Plan.md §4: unit tests run with no external dependency, no Docker). Start deployments/compose/postgres.yml's database-vault-postgres service and set this variable to run it.", databaseURLEnvVar)
 	}
 
 	ctx := context.Background()

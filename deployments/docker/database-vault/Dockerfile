@@ -26,7 +26,7 @@
 # RAM_USB_DATABASE_VAULT_LISTEN_ADDR, RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR,
 # RAM_USB_DATABASE_VAULT_DATABASE_URL, RAM_USB_STORAGE_SERVICE_URL, and the
 # optional RAM_USB_DATABASE_VAULT_MIGRATIONS_DIR / RAM_USB_MQTT_* group) -
-# wired for real in docker-compose.dev.yml, a separate task. No cert/key
+# wired for real in deployments/compose/database-vault.yml. No cert/key
 # files are baked into or mounted onto this image: this service's TLS
 # identity is obtained at startup from the Certificate-Authority via
 # pkg/pki's bootstrap-token flow (CA-F-04, PKI-F-01), not from disk.

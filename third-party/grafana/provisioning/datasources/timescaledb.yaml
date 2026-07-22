@@ -1,6 +1,6 @@
 # Grafana datasource provisioning (MT-F-04): points Grafana at the same
 # TimescaleDB/Postgres database Metrics-Collector writes to
-# (metrics-collector-timescaledb, deployments/docker-compose.dev.yml),
+# (metrics-collector-timescaledb, deployments/compose/metrics-collector-timescaledb.yml),
 # entirely via this file - no manual UI datasource configuration, per
 # Grafana's own provisioning convention
 # (/etc/grafana/provisioning/{datasources,dashboards}).

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Entrypoint for the certificate-authority-init one-shot compose service
-# (deployments/docker-compose.dev.yml). Runs automatically, once, on every
+# (deployments/compose/certificate-authority.yml). Runs automatically, once, on every
 # `docker compose up`, after the certificate-authority service reports
 # healthy (depends_on: condition: service_healthy) - no manual step
 # required, unlike this directory's apply-organization-template.sh, which

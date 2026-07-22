@@ -1,6 +1,6 @@
 Dev-only, self-signed TLS certificate/key pair for the
-network-manager-headscale Docker Compose service (deployments/
-docker-compose.dev.yml). NOT a real secret - safe to regenerate freely,
+network-manager-headscale Docker Compose service
+(deployments/compose/headscale.yml). NOT a real secret - safe to regenerate freely,
 never used for anything beyond a local development/test stack.
 
 Regenerate with:

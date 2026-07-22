@@ -14,7 +14,7 @@ import (
 
 // caURLEnvVar names the environment variable that points this test at a
 // real Certificate-Authority instance (e.g. the certificate-authority
-// service in deployments/docker-compose.dev.yml). docs/Test_Plan.md §4
+// service in deployments/compose/certificate-authority.yml). docs/Test_Plan.md §4
 // requires unit tests to run with no external dependency and no Docker —
 // same env-var-gated-skip pattern already used by
 // services/database-vault/internal/storage/postgres_test.go's
@@ -24,17 +24,16 @@ const caURLEnvVar = "PKI_TEST_CA_URL"
 
 // caContainerEnvVar optionally overrides the Docker container name this
 // test execs into to generate a real bootstrap token (see
-// generateTestToken below). Defaults to defaultCAContainer, which is the
-// name `docker compose -f deployments/docker-compose.dev.yml up -d
-// certificate-authority` produces by default (Compose derives the
-// project name from the compose file's directory, "deployments", when no
-// -p/--project-name is given).
+// generateTestToken below). Defaults to defaultCAContainer, the plain,
+// stable `container_name:` deployments/compose/certificate-authority.yml
+// sets explicitly (not a Compose-project-derived name) — the only
+// compose convention this project has for running the CA locally.
 const caContainerEnvVar = "PKI_TEST_CA_CONTAINER"
 
-const defaultCAContainer = "deployments-certificate-authority-1"
+const defaultCAContainer = "certificate-authority"
 
 // Paths inside the certificate-authority container, fixed by this
-// project's own deployments/docker-compose.dev.yml (root cert location is
+// project's own deployments/compose/certificate-authority.yml (root cert location is
 // smallstep/step-ca's own convention; the password file path is this
 // compose file's chosen mount point for the dev-only secret in
 // third-party/certificate-authority/config/password.dev-only.txt).
@@ -44,7 +43,7 @@ const (
 )
 
 // caName must match DOCKER_STEPCA_INIT_NAME in
-// deployments/docker-compose.dev.yml — used to confirm a certificate
+// deployments/compose/certificate-authority.yml — used to confirm a certificate
 // handed back by NewServer/NewClient really chains to this dev CA, not
 // some other trust root.
 const caName = "RAM-USB Dev CA"
@@ -52,7 +51,7 @@ const caName = "RAM-USB Dev CA"
 // generateTestToken shells into the running certificate-authority
 // container and runs `step ca token`, using the same admin JWK
 // provisioner and dev-only password file
-// (deployments/docker-compose.dev.yml, DOCKER_STEPCA_INIT_PASSWORD_FILE)
+// (deployments/compose/certificate-authority.yml, DOCKER_STEPCA_INIT_PASSWORD_FILE)
 // that container bootstrapped itself with. This generates a real,
 // single-use bootstrap token end to end — no token is hand-crafted or
 // stubbed. subject is an arbitrary identifier for the requesting
@@ -96,8 +95,8 @@ func skipUnlessCAConfigured(t *testing.T) (caURL, container string) {
 	caURL = os.Getenv(caURLEnvVar)
 	if caURL == "" {
 		t.Skipf("%s not set; skipping the real-Certificate-Authority CA-F-04/PKI-F-01 test. "+
-			"Start deployments/docker-compose.dev.yml's certificate-authority service "+
-			"(docker compose -f deployments/docker-compose.dev.yml up -d certificate-authority) "+
+			"Start deployments/compose/certificate-authority.yml's certificate-authority service "+
+			"(docker compose -f deployments/compose/certificate-authority.yml up -d certificate-authority) "+
 			"and set this variable (e.g. https://localhost:9000) to run it.", caURLEnvVar)
 	}
 

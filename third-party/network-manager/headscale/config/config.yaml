@@ -1,7 +1,7 @@
 # Minimal dev-only Headscale configuration for Network-Manager's mesh
 # backend (NM-F-08, NM-F-09), mounted read-only into the
 # network-manager-headscale service defined in
-# deployments/docker-compose.dev.yml.
+# deployments/compose/headscale.yml.
 #
 # Only what NM-F-08/NM-F-09 actually exercise this session is filled in
 # beyond Headscale's own defaults (github.com/juanfont/headscale
