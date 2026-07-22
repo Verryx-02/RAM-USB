@@ -1,11 +1,29 @@
 # Mosquitto MQTT broker (MT-F-01, MT-F-02, NET-F-02): the single message
 # bus every metrics-publishing service and metrics-collector connect to.
-# Standalone: no variable required. Like postgres.yml/headscale.yml, no
-# Compose dependency toward other files - see MANUAL-DISTRIBUTED-RUN.md
-# for the manual startup order (it must start after the
-# Certificate-Authority, because the dev-only certificates are minted from
-# it via third-party/mosquitto/generate-dev-certs.sh, but before the
-# application services and metrics-collector).
+# Standalone except for the sidecar's
+# RAM_USB_MQTT_BROKER_TAILSCALE_AUTHKEY below. Like postgres.yml/
+# headscale.yml, no Compose dependency toward other files - see
+# MANUAL-DISTRIBUTED-RUN.md for the manual startup order (it must start
+# after the Certificate-Authority, because the dev-only certificates are
+# minted from it via third-party/mosquitto/generate-dev-certs.sh, but
+# before the application services and metrics-collector).
+#
+# mqtt-broker-mesh: Mosquitto is a C binary, not a Go process, so it
+# cannot embed pkg/mesh - same sidecar pattern as
+# certificate-authority.yml's certificate-authority-mesh (see that file's
+# top comment for the full network_mode/networks mutual-exclusivity
+# mechanics, confirmed live via `docker compose config` this session).
+# mqtt-broker itself is left completely unmodified (still
+# `networks: ramusb-net`) and becomes reachable via the sidecar's
+# tailscale IP/MagicDNS hostname "mqtt-broker" (TS_EXTRA_ARGS --hostname
+# below) with zero code or image change. No SRS ID names MQTT-broker mesh
+# reachability the explicit way NM-F-04 names it for Certificate-
+# Authority (see services/network-manager/internal/headscale/policy.go's
+# TagMQTTBroker doc comment) - flagged for confirmation against the
+# requirement owner; every RAM_USB_MQTT_BROKER_URL
+# ("tls://mqtt-broker:8883", see e.g. security-switch.yml) keeps working
+# unchanged either way, since that hostname is chosen to equal the
+# existing Docker DNS name.
 name: ramusb-mqtt-broker
 services:
   mqtt-broker:
@@ -40,6 +58,39 @@ services:
     networks:
       - ramusb-net
 
+  mqtt-broker-mesh:
+    image: tailscale/tailscale:latest
+    container_name: mqtt-broker-mesh
+    depends_on:
+      mqtt-broker:
+        condition: service_healthy
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ramusb-mqtt-broker-mesh-state:/var/lib/tailscale
+      - ../../third-party/network-manager/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+    environment:
+      # tag:mqtt-broker (services/network-manager/internal/headscale/
+      # policy.go's TagMQTTBroker) - new tag, no existing service reused
+      # this identity.
+      TS_AUTHKEY: "${RAM_USB_MQTT_BROKER_TAILSCALE_AUTHKEY:?mint with: docker exec network-manager-headscale headscale users create mqtt-broker && docker exec network-manager-headscale headscale users list --name mqtt-broker -o json && docker exec network-manager-headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:mqtt-broker}"
+      TS_EXTRA_ARGS: "--login-server=${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager-headscale:8080} --hostname=mqtt-broker"
+      # Required for inbound mesh reachability - see
+      # certificate-authority.yml's certificate-authority-mesh TS_USERSPACE
+      # comment for the full "connection refused"/userspace-networking
+      # trap confirmed live this session.
+      TS_USERSPACE: "false"
+    entrypoint: ["/bin/sh", "-c", "update-ca-certificates && exec /usr/local/bin/containerboot"]
+    # Shares mqtt-broker's network namespace instead of joining ramusb-net
+    # itself - see this file's own top comment.
+    network_mode: "service:mqtt-broker"
+
 networks:
   ramusb-net:
     external: true
+
+volumes:
+  ramusb-mqtt-broker-mesh-state:
