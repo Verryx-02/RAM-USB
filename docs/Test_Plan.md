@@ -79,7 +79,7 @@ Driver and stub are hand-written fakes implementing the relevant Go interface (`
 ## 4. Test environment and tools
 
 - **Unit tests:** `go test ./...`. No external dependency, no Docker.
-- **Integration and system tests:** run against the Docker Compose stack (`deployments/docker-compose.dev.yml`), with real mTLS certificates issued by the local Certificate-Authority container.
+- **Integration and system tests:** run against the per-container `deployments/compose/*.yml` stack (one Docker Compose file per service, joined via the external `ramusb-net` Docker network), brought up one terminal per service per `MANUAL-DISTRIBUTED-RUN.md` — deliberately mirroring how these services are actually distributed across separate Proxmox VMs/hosts in production (RNF-ORG-04), rather than one merged multi-service file that made every service look co-located. Real mTLS certificates are issued by the local Certificate-Authority container.
 - **Linting:** `golangci-lint` (`CONTRIBUTING.md` §7.1) runs before any test suite. Only lint-clean files proceed to testing.
 - **Coverage:** `go test -cover`, tracked per package. See §5 for the exit criterion this protects.
 

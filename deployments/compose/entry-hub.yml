@@ -1,0 +1,28 @@
+# Entry-Hub. Requires ONLY its own CA token.
+name: ramusb-entry-hub
+services:
+  entry-hub:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/entry-hub/Dockerfile
+    container_name: entry-hub
+    environment:
+      RAM_USB_ENTRY_HUB_LISTEN_ADDR: "0.0.0.0:8443"
+      RAM_USB_ENTRY_HUB_TLS_CERT: "/certs/server.dev-only.crt"
+      RAM_USB_ENTRY_HUB_TLS_KEY: "/certs/server.dev-only.key"
+      RAM_USB_SECURITY_SWITCH_URL: "https://security-switch:8444"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token EntryHub --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      # EH-F-10/EH-F-11: metrics publish, reuses the same mTLS identity
+      # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
+      # static MQTT certificate/key.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+    volumes:
+      - ../../third-party/entry-hub/config:/certs:ro
+    ports:
+      - "8443:8443"
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true

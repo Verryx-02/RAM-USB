@@ -1,0 +1,26 @@
+# Test Tailscale client (Shell 9): verifies a real mesh join with the
+# pre_auth_key received from a registration. Ephemeral by nature - it is
+# recreated on every test run with a different key, unlike the other
+# files in this directory, which represent long-lived services.
+name: ramusb-tailscale-test
+services:
+  ramusb-tailscale-test:
+    image: tailscale/tailscale:latest
+    container_name: ramusb-tailscale-test
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ../../third-party/network-manager/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+    environment:
+      TS_AUTHKEY: "${TS_AUTHKEY:?mint a pre_auth_key by registering a user via /api/register and pass it here}"
+      TS_EXTRA_ARGS: "--login-server=https://network-manager-headscale:8080 --hostname=ramusb-test"
+    entrypoint: ["/bin/sh", "-c", "update-ca-certificates && exec /usr/local/bin/containerboot"]
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true

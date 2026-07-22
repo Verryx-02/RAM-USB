@@ -1,0 +1,23 @@
+# Security-Switch. Requires ONLY its own CA token.
+name: ramusb-security-switch
+services:
+  security-switch:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/security-switch/Dockerfile
+    container_name: security-switch
+    environment:
+      RAM_USB_SECURITY_SWITCH_LISTEN_ADDR: "0.0.0.0:8444"
+      RAM_USB_DATABASE_VAULT_URL: "https://database-vault:8445"
+      RAM_USB_NETWORK_MANAGER_URL: "https://network-manager:8447"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token SecuritySwitch --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      # SS-F-07/SS-F-08: metrics publish, reuses the same mTLS identity
+      # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
+      # static MQTT certificate/key.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true

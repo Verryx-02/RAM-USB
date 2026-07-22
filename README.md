@@ -66,11 +66,11 @@ git clone https://github.com/Verryx-02/RAM-USB.git
 cd RAM-USB
 ```
 
-(ONLY) Local development will run the full stack via:
-
-```bash
-docker compose -f deployments/docker-compose.dev.yml up
-```
+(ONLY) Local development runs the full stack one terminal per service,
+per `MANUAL-DISTRIBUTED-RUN.md` (`deployments/compose/*.yml`, one Docker
+Compose file per container, joined via the external `ramusb-net` Docker
+network) — deliberately mirroring how these services are actually
+distributed across separate Proxmox VMs/hosts in production (RNF-ORG-04).
 
 ---
 

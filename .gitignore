@@ -31,3 +31,4 @@ third-party/mosquitto/certs/*.srl
 # manually verifying the full stack against a real running Certificate-
 # Authority (2026-07-20 real-CA end-to-end test) - never committed.
 deployments/.env.realca-test
+deployments/.env.local

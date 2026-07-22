@@ -1,0 +1,30 @@
+# Storage-Service. Requires ONLY its own CA token.
+name: ramusb-storage-service
+services:
+  storage-service:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/storage-service/Dockerfile
+    container_name: storage-service
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - SYS_CHROOT
+    environment:
+      RAM_USB_STORAGE_SERVICE_LISTEN_ADDR: "0.0.0.0:8448"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token StorageService --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      # ST-F-12/ST-F-13: metrics publish, reuses the same mTLS identity
+      # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
+      # static MQTT certificate/key.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+    ports:
+      - "2222:2222"
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true

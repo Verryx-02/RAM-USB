@@ -1,0 +1,34 @@
+# Metrics-Collector. See services/metrics-collector/cmd/metrics-collector/
+# main.go - it has no HTTP listener of its own and does not call
+# pki.NewServer (no PKI-F-01 server role), but still bootstraps its own
+# mTLS identity via pki.NewClient (CA-F-04) for the MQTT connection
+# (buildMQTTClient), reusing the same mechanism as every other service -
+# it therefore also requires its own CA token, in addition to the
+# Postgres/MQTT connection variables. No other shell/service sees them,
+# EXCEPT RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD, which must be
+# exported with the SAME value used to start
+# metrics-collector-timescaledb.yml (separate shell, separate Compose
+# project): this shell does not duplicate that value as a literal, it only
+# references it via Compose interpolation in the connection string below.
+# A different value causes Postgres authentication to fail with an error
+# Metrics-Collector cannot self-diagnose.
+name: ramusb-metrics-collector
+services:
+  metrics-collector:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/metrics-collector/Dockerfile
+    container_name: metrics-collector
+    environment:
+      RAM_USB_METRICS_COLLECTOR_DATABASE_URL: "postgres://metrics_collector:${RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD:?set the SAME password exported for metrics-collector-timescaledb.yml}@metrics-collector-timescaledb:5432/metrics_collector?sslmode=disable"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token MetricsCollector --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      # MT-F-01/MT-F-02: MQTT subscription, reuses the same mTLS identity
+      # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
+      # static MQTT certificate/key.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true

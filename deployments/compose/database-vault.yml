@@ -1,0 +1,32 @@
+# Database-Vault. Requires its own variables - no other shell/service knows
+# or sees them - PLUS RAM_USB_DATABASE_VAULT_POSTGRES_PASSWORD, which must
+# instead be exported with the SAME value used to start postgres.yml
+# (separate shell, separate Compose project): this shell does not duplicate
+# that value as a literal, it only references it via Compose interpolation
+# in the connection string below. A different value causes Postgres
+# authentication to fail with an error Database-Vault cannot self-diagnose.
+name: ramusb-database-vault
+services:
+  database-vault:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/database-vault/Dockerfile
+    container_name: database-vault
+    environment:
+      RAM_USB_DATABASE_VAULT_LISTEN_ADDR: "0.0.0.0:8445"
+      RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR: "0.0.0.0:8446"
+      RAM_USB_DATABASE_VAULT_DATABASE_URL: "postgres://database_vault:${RAM_USB_DATABASE_VAULT_POSTGRES_PASSWORD:?set the SAME password exported for postgres.yml}@database-vault-postgres:5432/database_vault?sslmode=disable"
+      RAM_USB_STORAGE_SERVICE_URL: "https://storage-service:8448"
+      RAM_USB_MASTER_KEY: "${RAM_USB_MASTER_KEY:?generate with: openssl rand -base64 32}"
+      RAM_USB_PASSWORD_PEPPER: "${RAM_USB_PASSWORD_PEPPER:?set any dev-only string}"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token DatabaseVault --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      # DV-F-16/DV-F-17: metrics publish, reuses the same mTLS identity
+      # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
+      # static MQTT certificate/key.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true

@@ -1,0 +1,53 @@
+# Certificate-Authority + automatic application of the organization
+# template (PKI-F-02). Standalone: no variable required.
+#
+# certificate-authority-init is included here (not a separate file/shell):
+# it waits for the CA to be healthy, applies organization.x509.tpl to the
+# "admin" provisioner, then exits on its own - a single `docker compose up`
+# covers both, unlike the earlier bash procedure which required a separate
+# `docker run --rm` command for the init step.
+name: ramusb-certificate-authority
+services:
+  certificate-authority:
+    image: smallstep/step-ca:latest
+    container_name: certificate-authority
+    environment:
+      DOCKER_STEPCA_INIT_NAME: "RAM-USB Dev CA"
+      DOCKER_STEPCA_INIT_DNS_NAMES: "localhost,certificate-authority"
+      DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/ca-password.dev-only
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
+    ports:
+      - "9000:9000"
+    volumes:
+      - ramusb-ca-data:/home/step
+      - ../../third-party/certificate-authority/config/password.dev-only.txt:/run/secrets/ca-password.dev-only:ro
+      - ../../third-party/certificate-authority/config/organization.x509.tpl:/run/secrets/organization.x509.tpl:ro
+    healthcheck:
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ramusb-net
+
+  certificate-authority-init:
+    image: smallstep/step-ca:latest
+    entrypoint: ["/bin/sh", "/scripts/init-organization-template.sh"]
+    depends_on:
+      certificate-authority:
+        condition: service_healthy
+    volumes:
+      - ramusb-ca-data:/home/step:ro
+      - ../../third-party/certificate-authority/config/password.dev-only.txt:/run/secrets/ca-password.dev-only:ro
+      - ../../third-party/certificate-authority/config/organization.x509.tpl:/run/secrets/organization.x509.tpl:ro
+      - ../../third-party/certificate-authority/init-organization-template.sh:/scripts/init-organization-template.sh:ro
+    restart: "no"
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true
+
+volumes:
+  ramusb-ca-data:
