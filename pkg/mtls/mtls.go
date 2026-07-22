@@ -49,6 +49,36 @@ func ClientConfig(clientCert tls.Certificate, rootCAs *x509.CertPool, allowedOrg
 	}
 }
 
+// WithOrganization returns a clone of base (see (*tls.Config).Clone - base
+// is never mutated, the same safety property pki.ClientTLSConfig already
+// relies on for the identical reason: base is frequently a *tls.Config a
+// service reuses for several other roles at once) whose VerifyConnection
+// callback additionally rejects any peer certificate that does not carry
+// allowedOrganization (PKI-F-02), layered on top of whatever certificate
+// presentation/renewal mechanism base already carries - its Certificates,
+// GetClientCertificate, RootCAs, and ServerName fields are left untouched.
+//
+// Intended for a base built by pkg/pki (ca.BootstrapServer/BootstrapClient):
+// unlike ServerConfig/ClientConfig above, pkg/pki's own *tls.Config is
+// produced by first bootstrapping a certificate and only then returning the
+// result - VerifyConnection is never set by that process (confirmed by
+// reading github.com/smallstep/certificates/ca/tls.go's
+// GetServerTLSConfig/getClientTLSConfig), so setting it here, on the
+// already-bootstrapped value, does not hit the "TLSConfig is already set"
+// guard that only applies to ca.BootstrapServer's *input* (see pkg/pki's
+// package doc comment) - that guard checks the base *http.Server handed
+// into the bootstrap call, not the *tls.Config it returns.
+//
+// This exists for outbound connections with no HTTP layer to hook
+// PKI-F-02's check into the way WrapRoundTripper does (e.g. an MQTT
+// client, see pkg/metrics.TLSConfig) - crypto/tls itself must enforce the
+// check, at the handshake level, instead.
+func WithOrganization(base *tls.Config, allowedOrganization string) *tls.Config {
+	cfg := base.Clone()
+	cfg.VerifyConnection = verifyOrganization(allowedOrganization)
+	return cfg
+}
+
 // verifyOrganization returns a tls.Config.VerifyConnection callback that
 // accepts a connection only if the verified peer leaf certificate's
 // Subject.Organization contains exactly allowedOrganization. It runs after

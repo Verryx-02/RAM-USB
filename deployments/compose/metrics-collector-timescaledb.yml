@@ -1,0 +1,35 @@
+# TimescaleDB (MT-F-03): the hypertable where Metrics-Collector writes
+# every accepted payload. Requires RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD -
+# the SAME identical string must also be exported in the shell that starts
+# metrics-collector.yml (that file's connection string references it via
+# Compose interpolation, it does not duplicate it): a different value in
+# the two shells causes Postgres authentication to fail in a way
+# Metrics-Collector cannot self-diagnose.
+name: ramusb-metrics-collector-timescaledb
+services:
+  metrics-collector-timescaledb:
+    image: timescale/timescaledb:2.23.0-pg18
+    container_name: metrics-collector-timescaledb
+    environment:
+      POSTGRES_USER: metrics_collector
+      POSTGRES_PASSWORD: "${RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD:?set a password for this dev-only TimescaleDB instance - must match the one exported for metrics-collector.yml}"
+      POSTGRES_DB: metrics_collector
+    volumes:
+      - ramusb-metrics-collector-timescaledb-data:/var/lib/postgresql/data
+      - ../../third-party/timescaledb/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metrics_collector -d metrics_collector"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true
+
+volumes:
+  ramusb-metrics-collector-timescaledb-data:

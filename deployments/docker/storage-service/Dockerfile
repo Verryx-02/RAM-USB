@@ -17,7 +17,7 @@
 #       -t ram-usb/storage-service .
 #
 # Runs under a deliberately narrow capability set (wired for real in
-# docker-compose.dev.yml, a separate task):
+# deployments/compose/storage-service.yml):
 #
 #   --cap-drop ALL --cap-add CHOWN --cap-add SETUID --cap-add SETGID \
 #       --cap-add SYS_CHROOT

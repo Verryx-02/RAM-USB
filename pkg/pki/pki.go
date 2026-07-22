@@ -6,7 +6,7 @@
 // exchanges it exactly once, at startup, for an initial mTLS certificate
 // issued by the Certificate-Authority (the official smallstep/step-ca
 // server, run as a separate container — see
-// deployments/docker-compose.dev.yml and
+// deployments/compose/certificate-authority.yml and
 // docs/design/diagrams/08-security-pki-hierarchy.puml). Subsequent
 // renewal happens automatically, driven by the vendor SDK's own built-in
 // mechanism (renewing at 2/3 of the certificate's lifetime by default) —

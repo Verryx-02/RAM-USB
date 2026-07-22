@@ -58,8 +58,12 @@ func TestTLSConfig_AcceptsOnlyMQTTBrokerOrganization(t *testing.T) {
 			addr, stop := startTestBroker(t, tt.serverCert)
 			defer stop()
 
-			config := metrics.TLSConfig(clientCert, ca.Pool())
-			config.ServerName = "localhost"
+			base := &tls.Config{
+				Certificates: []tls.Certificate{clientCert},
+				RootCAs:      ca.Pool(),
+				ServerName:   "localhost",
+			}
+			config := metrics.TLSConfig(base)
 
 			dialer := &tls.Dialer{Config: config}
 			conn, err := dialer.DialContext(context.Background(), "tcp", addr)

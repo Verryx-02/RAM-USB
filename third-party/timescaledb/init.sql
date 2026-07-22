@@ -1,8 +1,8 @@
 -- Runs once, automatically, via the official timescale/timescaledb
 -- image's /docker-entrypoint-initdb.d/ convention (same mount pattern
--- deployments/docker-compose.dev.yml already uses for
--- certificate-authority-init) - see that compose file's
--- metrics-collector-timescaledb service.
+-- deployments/compose/certificate-authority.yml already uses for
+-- certificate-authority-init) - see
+-- deployments/compose/metrics-collector-timescaledb.yml's own service.
 --
 -- CREATE EXTENSION lives here, not in a services/metrics-collector
 -- golang-migrate migration, for a documented reason (verified live this

@@ -5,7 +5,7 @@ This is the manual system-test procedure for ST-F-02 through ST-F-11's OS-level 
 ## Prerequisites
 
 - Docker.
-- A local Postgres instance for Database-Vault: `docker compose -f deployments/docker-compose.dev.yml up -d database-vault-postgres`.
+- A local Postgres instance for Database-Vault: `docker compose -f deployments/compose/postgres.yml up -d`.
 - Database-Vault's schema applied. There is currently no automatic migration mechanism (see the project's known-gaps tracking); apply `services/database-vault/migrations/*.sql` manually via `golang-migrate` first.
 - Dev-only mTLS certificates for: Database-Vault's server identity, Database-Vault's outbound client identity toward Storage-Service (organization `DatabaseVault`), Storage-Service's server identity (organization `StorageService`), the `authorized-keys-command` binary's outbound client identity toward Database-Vault (organization `StorageService`), and a test-harness client identity standing in for Security-Switch (organization `SecuritySwitch`).
 

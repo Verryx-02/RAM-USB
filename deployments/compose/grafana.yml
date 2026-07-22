@@ -1,0 +1,28 @@
+# Grafana (MT-F-04): dashboards for response time, throughput, and active
+# connections, provisioned entirely via third-party/grafana/provisioning -
+# no manual UI configuration. Requires its own admin credentials
+# (GF_SECURITY_ADMIN_USER/PASSWORD, native env vars of the grafana/grafana
+# image) - no image default is left active.
+name: ramusb-grafana
+services:
+  grafana:
+    image: grafana/grafana:13.1
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: "${RAM_USB_GRAFANA_ADMIN_USER:?set the Grafana admin username}"
+      GF_SECURITY_ADMIN_PASSWORD: "${RAM_USB_GRAFANA_ADMIN_PASSWORD:?set a Grafana admin password}"
+    volumes:
+      - ../../third-party/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../third-party/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ramusb-grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true
+
+volumes:
+  ramusb-grafana-data:

@@ -12,31 +12,34 @@
 // reads TimescaleDB directly, not through this process.
 //
 // PKI-F-01/PKI-F-02 (mutual X.509 authentication, organization-field
-// check): this process's one connection role — an outbound MQTT client —
-// uses the same static file-based cert/key/CA convention every OTHER
-// service's own MQTT *publish* client already uses
-// (envMQTTClientCert/envMQTTClientKey/envMQTTCA, see e.g. Database-Vault's
-// cmd/database-vault/main.go buildMetricsClient), not a live pkg/pki
-// bootstrap exchange against step-ca. This mirrors Database-Vault's own
-// documented judgment call that "MQTT metrics publishing is deliberately
-// out of [CA-F-04's bootstrap] scope ... keeps its existing file-based
-// cert/key/CA convention" — extended here to the one process for which
-// MQTT is not a side effect of an HTTP server but its entire reason to
-// exist. Mosquitto still performs a real mTLS handshake
-// (require_certificate true, tls_version tlsv1.3 — NET-F-02) and the
-// Organization-derived CN identity still gates ACL access (PKI-F-02,
-// enforced by third-party/mosquitto/acl.conf's use_identity_as_username);
-// this process's certificate is minted from the same real
-// certificate-authority every other RAM-USB service's mTLS identity comes
-// from (third-party/mosquitto/generate-dev-certs.sh, which docker-execs
-// into the running CA container rather than using pkg/pki's live
-// single-use-bootstrap-token flow — see that script's own doc comment for
-// why), matching every other MQTT participant in this stack. Unlike
-// every publish-side service (for which the four RAM_USB_MQTT_* env vars
-// are optional — metrics publishing degrades gracefully if unset, since
-// publishing is a side effect of an otherwise-independent server), all
-// four are REQUIRED here (RD-04, fail-secure): without them this process
-// has no reason to run at all.
+// check): this process's one connection role — an outbound/subscribe MQTT
+// client — now obtains its mTLS identity from the Certificate-Authority
+// via pkg/pki's bootstrap-token flow (CA-F-04), the same mechanism every
+// OTHER RAM-USB service already uses for its own inbound/outbound roles,
+// rather than the static cert/key/CA files this process used before. This
+// process has no HTTP listener or outbound HTTP client of its own (see
+// above), so it calls pki.NewClient directly — the same "no inbound
+// listener to reuse an identity from" shape Entry-Hub's own
+// buildSecuritySwitchClient already established (see that file's package
+// doc comment) — purely to obtain a *tls.Config with automatic in-process
+// renewal; pki.TLSConfig extracts it, pki.ClientTLSConfig clones it with
+// ServerName forced to metrics.OrganizationMQTTBroker, and metrics.TLSConfig
+// layers PKI-F-02's organization check on top (mtls.WithOrganization).
+// Mosquitto still performs a real mTLS handshake (require_certificate
+// true, tls_version tlsv1.3 — NET-F-02) and the Organization-derived CN
+// identity still gates ACL access (PKI-F-02, enforced by
+// third-party/mosquitto/acl.conf's use_identity_as_username) — unchanged
+// by this switch, since the CA template
+// (third-party/certificate-authority/config/organization.x509.tpl)
+// mirrors a minted token's subject into both CommonName and Organization
+// regardless of which code path requested the certificate.
+// RAM_USB_CA_BOOTSTRAP_TOKEN (pki.BootstrapTokenEnvVar, CA-F-04) is
+// therefore required here for the first time, same as every other
+// service. Unlike every publish-side service (for which
+// RAM_USB_MQTT_BROKER_URL is optional — metrics publishing degrades
+// gracefully if unset, since publishing is a side effect of an otherwise-
+// independent server), it is REQUIRED here (RD-04, fail-secure): without
+// it this process has no reason to run at all.
 //
 // Every configuration value is read from an environment variable, per
 // CONTRIBUTING.md §7's "cmd/<service>/main.go: wiring, config loading,
@@ -47,8 +50,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"os"
@@ -61,6 +62,7 @@ import (
 
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
+	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/metrics-collector/internal/collector"
 	"github.com/Verryx-02/RAM-USB/services/metrics-collector/internal/schema"
 	"github.com/Verryx-02/RAM-USB/services/metrics-collector/internal/store"
@@ -71,17 +73,6 @@ const (
 	// "tls://mqtt-broker:8883". Required (see this file's package doc
 	// comment for why, unlike every publish-side service).
 	envMQTTBrokerURL = "RAM_USB_MQTT_BROKER_URL"
-
-	// envMQTTClientCert/envMQTTClientKey locate the client certificate/key
-	// this process presents when connecting to the MQTT broker over mTLS
-	// (PKI-F-01). Same file-based convention as every publish-side
-	// service's identically-named env vars.
-	envMQTTClientCert = "RAM_USB_MQTT_CLIENT_CERT"
-	envMQTTClientKey  = "RAM_USB_MQTT_CLIENT_KEY"
-
-	// envMQTTCA locates the CA certificate bundle (PEM) trusted to have
-	// issued the MQTT broker's server certificate.
-	envMQTTCA = "RAM_USB_MQTT_CA"
 
 	// envDatabaseURL is the TimescaleDB/Postgres connection string
 	// pgxpool.New parses (MT-F-03).
@@ -155,7 +146,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	mqttClient, err := buildMQTTClient()
+	mqttClient, err := buildMQTTClient(ctx)
 	if err != nil {
 		return fmt.Errorf("build mqtt client: %w", err)
 	}
@@ -197,54 +188,40 @@ func getEnvOrDefault(name, fallback string) string {
 	return value
 }
 
-// loadCertPool reads a PEM certificate bundle from path and returns a
-// pool containing it. Same shape as every other service's identically
-// named helper (e.g. Network-Manager's cmd/network-manager/main.go).
-func loadCertPool(path string) (*x509.CertPool, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path comes from this process's own operator-controlled env var config, not from any request input
-	if err != nil {
-		return nil, fmt.Errorf("read CA bundle %s: %w", path, err)
-	}
-
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(data) {
-		return nil, fmt.Errorf("no certificates found in CA bundle %s", path)
-	}
-	return pool, nil
-}
-
 // buildMQTTClient assembles and connects the mTLS MQTT client this
-// process subscribes with. Unlike every publish-side service's
-// buildMetricsClient (which returns nil, nil when metrics publishing is
-// left unconfigured), every env var here is required — see this file's
-// package doc comment for why.
-func buildMQTTClient() (mqtt.Client, error) {
+// process subscribes with, bootstrapping its own mTLS identity directly
+// via pki.NewClient (CA-F-04) - this process has no inbound listener or
+// other outbound client to reuse an identity from, same "one identity
+// role, bootstrapped directly" shape as Entry-Hub's own
+// buildSecuritySwitchClient (see this file's package doc comment).
+// pki.TLSConfig extracts the resulting *tls.Config, pki.ClientTLSConfig
+// clones it with ServerName forced to metrics.OrganizationMQTTBroker, and
+// metrics.TLSConfig layers PKI-F-02's organization check on top. Unlike
+// every publish-side service's buildMetricsClient (which returns nil, nil
+// when metrics publishing is left unconfigured), every value here is
+// required — see this file's package doc comment for why.
+func buildMQTTClient(ctx context.Context) (mqtt.Client, error) {
 	brokerURL, err := requireEnv(envMQTTBrokerURL)
 	if err != nil {
 		return nil, err
 	}
-	certPath, err := requireEnv(envMQTTClientCert)
+
+	token, err := pki.LoadBootstrapToken()
 	if err != nil {
-		return nil, err
-	}
-	keyPath, err := requireEnv(envMQTTClientKey)
-	if err != nil {
-		return nil, err
-	}
-	caPath, err := requireEnv(envMQTTCA)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load ca bootstrap token: %w", err)
 	}
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	client, err := pki.NewClient(ctx, token)
 	if err != nil {
-		return nil, fmt.Errorf("load mqtt client certificate/key: %w", err)
+		return nil, fmt.Errorf("bootstrap mqtt client identity from certificate-authority: %w", err)
 	}
 
-	rootCAs, err := loadCertPool(caPath)
+	base, err := pki.TLSConfig(client)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("extract mqtt tls config: %w", err)
 	}
 
-	return metrics.NewClient(brokerURL, cert, rootCAs, metricsClientID, connectTimeout)
+	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(base, metrics.OrganizationMQTTBroker))
+
+	return metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout)
 }

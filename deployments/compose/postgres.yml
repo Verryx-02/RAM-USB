@@ -1,0 +1,34 @@
+# Postgres for Database-Vault (user data). Requires
+# RAM_USB_DATABASE_VAULT_POSTGRES_PASSWORD - the SAME identical string must
+# also be exported in the shell that starts database-vault.yml (that
+# file's connection string references it via Compose interpolation, it
+# does not duplicate it): a different value in the two shells causes
+# Postgres authentication to fail in a way Database-Vault cannot
+# self-diagnose.
+name: ramusb-postgres
+services:
+  database-vault-postgres:
+    image: postgres:17
+    container_name: database-vault-postgres
+    environment:
+      POSTGRES_USER: database_vault
+      POSTGRES_PASSWORD: "${RAM_USB_DATABASE_VAULT_POSTGRES_PASSWORD:?set a password for this dev-only Postgres instance - must match the one exported for database-vault.yml}"
+      POSTGRES_DB: database_vault
+    ports:
+      - "5432:5432"
+    volumes:
+      - ramusb-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U database_vault -d database_vault"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true
+
+volumes:
+  ramusb-postgres-data:

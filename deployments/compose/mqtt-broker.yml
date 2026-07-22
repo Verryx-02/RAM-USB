@@ -1,0 +1,45 @@
+# Mosquitto MQTT broker (MT-F-01, MT-F-02, NET-F-02): the single message
+# bus every metrics-publishing service and metrics-collector connect to.
+# Standalone: no variable required. Like postgres.yml/headscale.yml, no
+# Compose dependency toward other files - see MANUAL-DISTRIBUTED-RUN.md
+# for the manual startup order (it must start after the
+# Certificate-Authority, because the dev-only certificates are minted from
+# it via third-party/mosquitto/generate-dev-certs.sh, but before the
+# application services and metrics-collector).
+name: ramusb-mqtt-broker
+services:
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    volumes:
+      - ../../third-party/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../../third-party/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro
+      - ../../third-party/mosquitto/certs:/mosquitto/certs:ro
+    ports:
+      - "8883:8883"
+    healthcheck:
+      # Self-connect publish using the broker's own dev-only
+      # CertificateAuthority identity. mosquitto_pub (not mosquitto_sub) is
+      # used deliberately: mosquitto_sub -C 1 -W <n> exits non-zero
+      # ("Timed out", exit 27) whenever no other client happens to publish
+      # during its wait window, which would make this healthcheck fail
+      # spuriously on an otherwise-healthy broker with no current
+      # publishers - confirmed live. A single publish (exit 0 on success,
+      # not retained, no JSON metrics.Payload body) is the practical
+      # healthcheck instead: metrics-collector's own Handle (MT-F-02)
+      # harmlessly discards it as an unparseable payload on a topic it
+      # already has a write grant for.
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-p", "8883",
+             "--cafile", "/mosquitto/certs/mqtt-dev-ca.dev-only.crt",
+             "--cert", "/mosquitto/certs/CertificateAuthority.dev-only.crt",
+             "--key", "/mosquitto/certs/CertificateAuthority.dev-only.key",
+             "-t", "metrics/Certificate-Authority", "-m", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true

@@ -1,0 +1,28 @@
+# Headscale, Network-Manager's mesh backend (NM-F-08/NM-F-09).
+# Standalone: no variable required.
+name: ramusb-headscale
+services:
+  network-manager-headscale:
+    image: headscale/headscale:0.29
+    container_name: network-manager-headscale
+    command: serve
+    volumes:
+      - ramusb-headscale-data:/var/lib/headscale
+      - ../../third-party/network-manager/headscale/config:/etc/headscale:ro
+      - ../../third-party/network-manager/headscale/dev-tls:/etc/headscale-tls:ro
+    ports:
+      - "50443:50443"
+    healthcheck:
+      test: ["CMD", "/ko-app/headscale", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true
+
+volumes:
+  ramusb-headscale-data:

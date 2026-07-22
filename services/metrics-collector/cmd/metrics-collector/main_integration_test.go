@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,14 +19,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
+	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/metrics-collector/internal/collector"
 	"github.com/Verryx-02/RAM-USB/services/metrics-collector/internal/schema"
 	"github.com/Verryx-02/RAM-USB/services/metrics-collector/internal/store"
 )
 
 // This file verifies MT-F-01 through MT-F-04 end to end against the REAL
-// running deployments/docker-compose.dev.yml stack (mqtt-broker,
-// metrics-collector-timescaledb, grafana) - not the hand-written fakes
+// running deployments/compose/{mqtt-broker,metrics-collector-timescaledb,
+// grafana}.yml containers - not the hand-written fakes
 // internal/collector/collector_test.go and internal/store/store_test.go
 // already cover. It mirrors this codebase's established real-infra
 // integration test pattern exactly: env-var-gated skip (same shape as
@@ -61,18 +63,19 @@ const (
 	// NM_TEST_HEADSCALE_ADDR convention already established elsewhere.
 	mqttBrokerURLEnvVar = "METRICS_COLLECTOR_TEST_MQTT_BROKER_URL"
 
-	// mqttCertsDirEnvVar locates third-party/mosquitto/generate-dev-certs.sh's
-	// output directory (one client cert/key pair per identity, plus the
-	// dev CA bundle - see that script's own doc comment). Optional:
-	// defaults to this repository's checked-in relative path from this
-	// test file's own directory, the same "optional env var, checked-in
-	// default path" shape as main.go's own envMigrationsDir.
-	mqttCertsDirEnvVar = "METRICS_COLLECTOR_TEST_MQTT_CERTS_DIR"
+	// caURLEnvVar/caContainerEnvVar/defaultCAContainer gate every test
+	// below that mints a real bootstrap token (every one that builds an
+	// MQTT client, via testMQTTClient) - same names/shape as
+	// services/security-switch/cmd/security-switch/main_integration_test.go's
+	// own identically-named constants, reused here rather than reinvented
+	// since both files mint tokens from the same real Certificate-Authority
+	// container the same way.
+	caURLEnvVar        = "PKI_TEST_CA_URL"
+	caContainerEnvVar  = "PKI_TEST_CA_CONTAINER"
+	defaultCAContainer = "certificate-authority"
 
-	// defaultMQTTCertsDir is mqttCertsDirEnvVar's fallback, relative to
-	// this file's own package directory
-	// (services/metrics-collector/cmd/metrics-collector).
-	defaultMQTTCertsDir = "../../../../third-party/mosquitto/certs"
+	containerRootCert     = "/home/step/certs/root_ca.crt"
+	containerPasswordFile = "/run/secrets/ca-password.dev-only" //nolint:gosec // a file path, not a credential value
 
 	// databaseURLEnvVar gates every TimescaleDB-touching test below. Same
 	// value as internal/store/store_test.go's own databaseURLEnvVar
@@ -94,19 +97,82 @@ const (
 	deliveryWaitTest = 3 * time.Second
 )
 
-func skipUnlessMQTTConfigured(t *testing.T) (brokerURL, certsDir string) {
+func skipUnlessMQTTConfigured(t *testing.T) (brokerURL string) {
 	t.Helper()
 
 	brokerURL = os.Getenv(mqttBrokerURLEnvVar)
 	if brokerURL == "" {
 		t.Skipf("%s not set; skipping the real-Mosquitto MT-F-01/MT-F-02 test. "+
-			"Run `third-party/mosquitto/generate-dev-certs.sh` then "+
-			"`docker compose -f deployments/docker-compose.dev.yml up mqtt-broker` "+
+			"Run `third-party/mosquitto/generate-dev-certs.sh certificate-authority` then "+
+			"`docker compose -f deployments/compose/mqtt-broker.yml up` "+
 			"and set this variable (e.g. tls://localhost:8883) to run it.", mqttBrokerURLEnvVar)
 	}
 
-	certsDir = getEnvOrDefault(mqttCertsDirEnvVar, defaultMQTTCertsDir)
-	return brokerURL, certsDir
+	return brokerURL
+}
+
+// skipUnlessCAConfigured and generateToken are copied from
+// services/security-switch/cmd/security-switch/main_integration_test.go's
+// identically-named/shaped functions (unexported, so not importable across
+// packages) - both files mint real bootstrap tokens from the same
+// Certificate-Authority container the same way.
+func skipUnlessCAConfigured(t *testing.T) (caURL, container string) {
+	t.Helper()
+
+	caURL = os.Getenv(caURLEnvVar)
+	if caURL == "" {
+		t.Skipf("%s not set; skipping the real-Certificate-Authority MT-F-01/MT-F-02 test. "+
+			"Run `docker compose -f deployments/compose/certificate-authority.yml up` "+
+			"(certificate-authority-init applies the organization template "+
+			"automatically) and set this variable (e.g. https://localhost:9000) "+
+			"to run it.", caURLEnvVar)
+	}
+
+	container = os.Getenv(caContainerEnvVar)
+	if container == "" {
+		container = defaultCAContainer
+	}
+
+	return caURL, container
+}
+
+// generateToken shells into the running certificate-authority container
+// and mints a real, single-use bootstrap token via `step ca token`, using
+// the same admin JWK provisioner and dev-only password file
+// deployments/compose/certificate-authority.yml bootstrapped the container
+// with. subject becomes both the certificate's CommonName and (via
+// third-party/certificate-authority/config/organization.x509.tpl)
+// Subject.Organization.
+func generateToken(ctx context.Context, t *testing.T, caURL, container, subject string) string {
+	t.Helper()
+
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skipf("docker CLI not available: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	//nolint:gosec // container/caURL/subject come from this test's own env-gated
+	// config and call sites, not untrusted request input.
+	cmd := exec.CommandContext(ctx, "docker", "exec", container,
+		"step", "ca", "token", subject,
+		"--san", subject,
+		"--ca-url", caURL,
+		"--root", containerRootCert,
+		"--provisioner", "admin",
+		"--password-file", containerPasswordFile,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			t.Fatalf("docker exec %s step ca token %s: %v\nstderr: %s", container, subject, err, exitErr.Stderr)
+		}
+		t.Fatalf("docker exec %s step ca token %s: %v", container, subject, err)
+	}
+
+	return strings.TrimSpace(string(out))
 }
 
 func skipUnlessDatabaseConfigured(t *testing.T) string {
@@ -115,7 +181,7 @@ func skipUnlessDatabaseConfigured(t *testing.T) string {
 	databaseURL := os.Getenv(databaseURLEnvVar)
 	if databaseURL == "" {
 		t.Skipf("%s not set; skipping the real-TimescaleDB MT-F-03 test. "+
-			"Run `docker compose -f deployments/docker-compose.dev.yml up metrics-collector-timescaledb` "+
+			"Run `docker compose -f deployments/compose/metrics-collector-timescaledb.yml up` "+
 			"and set this variable to run it.", databaseURLEnvVar)
 	}
 	return databaseURL
@@ -127,42 +193,47 @@ func skipUnlessGrafanaConfigured(t *testing.T) string {
 	grafanaURL := os.Getenv(grafanaURLEnvVar)
 	if grafanaURL == "" {
 		t.Skipf("%s not set; skipping the real-Grafana MT-F-04 test. "+
-			"Run `docker compose -f deployments/docker-compose.dev.yml up grafana metrics-collector-timescaledb` "+
+			"Run `docker compose -f deployments/compose/metrics-collector-timescaledb.yml up` then "+
+			"`docker compose -f deployments/compose/grafana.yml up` "+
 			"and set this variable (e.g. http://localhost:3000) to run it.", grafanaURLEnvVar)
 	}
 	return grafanaURL
 }
 
 // testMQTTClient builds and connects a real mTLS MQTT client under
-// identity (e.g. "EntryHub", "DatabaseVault", "MetricsCollector" - one of
-// third-party/mosquitto/generate-dev-certs.sh's issued identities), via
-// this package's own production metrics.NewClient - the same function
-// buildMQTTClient (main.go) and every publish-side service's own
-// buildMetricsClient call - so this test exercises the real client
-// construction path, not a hand-rolled substitute.
-func testMQTTClient(t *testing.T, identity, brokerURL, certsDir, clientID string) mqtt.Client {
+// identity (e.g. "EntryHub", "DatabaseVault", "MetricsCollector"),
+// bootstrapping that identity from the real Certificate-Authority
+// (pki.NewClient, CA-F-04) rather than loading a static cert/key file -
+// the same reused-bootstrapped-identity path every service's own
+// buildMetricsClient/buildMQTTClient now takes (pki.TLSConfig +
+// pki.ClientTLSConfig + metrics.TLSConfig), via this package's own
+// production metrics.NewClient - so this test exercises the real client
+// construction path end to end, not a hand-rolled substitute.
+func testMQTTClient(t *testing.T, caURL, container, identity, brokerURL, clientID string) mqtt.Client {
 	t.Helper()
 
-	certPath := filepath.Join(certsDir, identity+".dev-only.crt")
-	keyPath := filepath.Join(certsDir, identity+".dev-only.key")
-	caPath := filepath.Join(certsDir, "mqtt-dev-ca.dev-only.crt")
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeoutTest)
+	defer cancel()
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	token := generateToken(ctx, t, caURL, container, identity)
+	client, err := pki.NewClient(ctx, token)
 	if err != nil {
-		t.Fatalf("tls.LoadX509KeyPair(%s identity) error = %v — run third-party/mosquitto/generate-dev-certs.sh first", identity, err)
-	}
-	rootCAs, err := loadCertPool(caPath)
-	if err != nil {
-		t.Fatalf("loadCertPool(%s) error = %v", caPath, err)
+		t.Fatalf("pki.NewClient(%s) error = %v", identity, err)
 	}
 
-	client, err := metrics.NewClient(brokerURL, cert, rootCAs, clientID, connectTimeoutTest)
+	base, err := pki.TLSConfig(client)
+	if err != nil {
+		t.Fatalf("pki.TLSConfig(%s) error = %v", identity, err)
+	}
+	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(base, metrics.OrganizationMQTTBroker))
+
+	mqttClient, err := metrics.NewClient(brokerURL, tlsConfig, clientID, connectTimeoutTest)
 	if err != nil {
 		t.Fatalf("metrics.NewClient(%s) error = %v", identity, err)
 	}
-	t.Cleanup(func() { client.Disconnect(250) })
+	t.Cleanup(func() { mqttClient.Disconnect(250) })
 
-	return client
+	return mqttClient
 }
 
 // setUpRealDatabase applies services/metrics-collector/migrations against
@@ -216,7 +287,8 @@ func setUpRealDatabase(ctx context.Context, t *testing.T, databaseURL string) *p
 // functional system test ("a registration request ... producing a metric
 // in TimescaleDB").
 func TestMetricsPipeline_RealBroker_RealTimescaleDB_AcceptsMatchingPayload(t *testing.T) {
-	brokerURL, certsDir := skipUnlessMQTTConfigured(t)
+	brokerURL := skipUnlessMQTTConfigured(t)
+	caURL, container := skipUnlessCAConfigured(t)
 	databaseURL := skipUnlessDatabaseConfigured(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -224,14 +296,14 @@ func TestMetricsPipeline_RealBroker_RealTimescaleDB_AcceptsMatchingPayload(t *te
 
 	pool := setUpRealDatabase(ctx, t, databaseURL)
 
-	subscriber := testMQTTClient(t, "MetricsCollector", brokerURL, certsDir, "itest-collector-happy-path")
+	subscriber := testMQTTClient(t, caURL, container, "MetricsCollector", brokerURL, "itest-collector-happy-path")
 	handler := &collector.Handler{Store: store.Store{DB: store.PoolQuerier{Pool: pool}}}
 	subToken := subscriber.Subscribe("metrics/#", 1, handler.OnMessage)
 	if !subToken.WaitTimeout(connectTimeoutTest) || subToken.Error() != nil {
 		t.Fatalf("Subscribe(metrics/#) error = %v", subToken.Error())
 	}
 
-	publisher := testMQTTClient(t, "EntryHub", brokerURL, certsDir, "itest-entryhub-happy-path")
+	publisher := testMQTTClient(t, caURL, container, "EntryHub", brokerURL, "itest-entryhub-happy-path")
 
 	// A sentinel RequestCount value distinguishes this test's row from any
 	// other "Entry-Hub" row a concurrent/prior test run may have left
@@ -294,10 +366,11 @@ func TestMetricsPipeline_RealBroker_RealTimescaleDB_AcceptsMatchingPayload(t *te
 // is, isolating the negative result as the ACL's doing rather than a
 // broken subscriber.
 func TestMQTTACL_WriteGrant_OnlyDeliversToOwnTopic(t *testing.T) {
-	brokerURL, certsDir := skipUnlessMQTTConfigured(t)
+	brokerURL := skipUnlessMQTTConfigured(t)
+	caURL, container := skipUnlessCAConfigured(t)
 
 	received := make(chan string, 4)
-	subscriber := testMQTTClient(t, "MetricsCollector", brokerURL, certsDir, "itest-collector-write-acl")
+	subscriber := testMQTTClient(t, caURL, container, "MetricsCollector", brokerURL, "itest-collector-write-acl")
 	subToken := subscriber.Subscribe("metrics/#", 1, func(_ mqtt.Client, msg mqtt.Message) {
 		received <- msg.Topic()
 	})
@@ -305,7 +378,7 @@ func TestMQTTACL_WriteGrant_OnlyDeliversToOwnTopic(t *testing.T) {
 		t.Fatalf("Subscribe(metrics/#) error = %v", subToken.Error())
 	}
 
-	publisher := testMQTTClient(t, "EntryHub", brokerURL, certsDir, "itest-entryhub-write-acl")
+	publisher := testMQTTClient(t, caURL, container, "EntryHub", brokerURL, "itest-entryhub-write-acl")
 
 	t.Run("publish to another service's topic is never delivered", func(t *testing.T) {
 		marker := fmt.Sprintf(`{"marker":"%d"}`, time.Now().UnixNano())
@@ -353,10 +426,11 @@ func TestMQTTACL_WriteGrant_OnlyDeliversToOwnTopic(t *testing.T) {
 // delivered somewhere and the negative result isolates EntryHub's own
 // missing grant specifically.
 func TestMQTTACL_ReadGrant_OnlyMetricsCollectorReceives(t *testing.T) {
-	brokerURL, certsDir := skipUnlessMQTTConfigured(t)
+	brokerURL := skipUnlessMQTTConfigured(t)
+	caURL, container := skipUnlessCAConfigured(t)
 
 	unauthorizedReceived := make(chan string, 4)
-	unauthorizedSubscriber := testMQTTClient(t, "EntryHub", brokerURL, certsDir, "itest-entryhub-read-acl")
+	unauthorizedSubscriber := testMQTTClient(t, caURL, container, "EntryHub", brokerURL, "itest-entryhub-read-acl")
 	unauthorizedToken := unauthorizedSubscriber.Subscribe("metrics/#", 1, func(_ mqtt.Client, msg mqtt.Message) {
 		unauthorizedReceived <- msg.Topic()
 	})
@@ -365,7 +439,7 @@ func TestMQTTACL_ReadGrant_OnlyMetricsCollectorReceives(t *testing.T) {
 	}
 
 	authorizedReceived := make(chan string, 4)
-	authorizedSubscriber := testMQTTClient(t, "MetricsCollector", brokerURL, certsDir, "itest-collector-read-acl")
+	authorizedSubscriber := testMQTTClient(t, caURL, container, "MetricsCollector", brokerURL, "itest-collector-read-acl")
 	authorizedToken := authorizedSubscriber.Subscribe("metrics/#", 1, func(_ mqtt.Client, msg mqtt.Message) {
 		authorizedReceived <- msg.Topic()
 	})
@@ -373,7 +447,7 @@ func TestMQTTACL_ReadGrant_OnlyMetricsCollectorReceives(t *testing.T) {
 		t.Fatalf("Subscribe(metrics/#) error = %v", authorizedToken.Error())
 	}
 
-	publisher := testMQTTClient(t, "DatabaseVault", brokerURL, certsDir, "itest-databasevault-read-acl")
+	publisher := testMQTTClient(t, caURL, container, "DatabaseVault", brokerURL, "itest-databasevault-read-acl")
 	token := publisher.Publish("metrics/Database-Vault", 1, false, "read-acl-probe")
 	token.WaitTimeout(connectTimeoutTest)
 	if token.Error() != nil {
@@ -411,7 +485,8 @@ func TestMQTTACL_ReadGrant_OnlyMetricsCollectorReceives(t *testing.T) {
 // in TimescaleDB, the ACL would have nothing to do with preventing it -
 // only this package's own validation logic does.
 func TestMetricsPipeline_ServiceTopicMismatch_IsDiscardedNotStored(t *testing.T) {
-	brokerURL, certsDir := skipUnlessMQTTConfigured(t)
+	brokerURL := skipUnlessMQTTConfigured(t)
+	caURL, container := skipUnlessCAConfigured(t)
 	databaseURL := skipUnlessDatabaseConfigured(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -419,14 +494,14 @@ func TestMetricsPipeline_ServiceTopicMismatch_IsDiscardedNotStored(t *testing.T)
 
 	pool := setUpRealDatabase(ctx, t, databaseURL)
 
-	subscriber := testMQTTClient(t, "MetricsCollector", brokerURL, certsDir, "itest-collector-mismatch")
+	subscriber := testMQTTClient(t, caURL, container, "MetricsCollector", brokerURL, "itest-collector-mismatch")
 	handler := &collector.Handler{Store: store.Store{DB: store.PoolQuerier{Pool: pool}}}
 	subToken := subscriber.Subscribe("metrics/#", 1, handler.OnMessage)
 	if !subToken.WaitTimeout(connectTimeoutTest) || subToken.Error() != nil {
 		t.Fatalf("Subscribe(metrics/#) error = %v", subToken.Error())
 	}
 
-	publisher := testMQTTClient(t, "EntryHub", brokerURL, certsDir, "itest-entryhub-mismatch")
+	publisher := testMQTTClient(t, caURL, container, "EntryHub", brokerURL, "itest-entryhub-mismatch")
 
 	sentinel := time.Now().UnixNano() % 1_000_000
 	mismatched := metrics.Payload{
@@ -554,7 +629,7 @@ func TestGrafana_DatasourceHealthyAndDashboardLoadable(t *testing.T) {
 		}
 		// Grafana's default dev-only admin credentials
 		// (grafana/grafana:13.1's own default, not overridden by
-		// deployments/docker-compose.dev.yml's grafana service) - the same
+		// deployments/compose/grafana.yml's grafana service) - the same
 		// default this session's own manual verification used, confirmed
 		// live to authenticate API calls without the UI's forced-password-
 		// change flow blocking them.

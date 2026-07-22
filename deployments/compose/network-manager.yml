@@ -1,0 +1,26 @@
+# Network-Manager. Requires ONLY its own 2 variables (Headscale API key +
+# CA token) - no other shell/service sees them.
+name: ramusb-network-manager
+services:
+  network-manager:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/network-manager/Dockerfile
+    container_name: network-manager
+    environment:
+      RAM_USB_NETWORK_MANAGER_LISTEN_ADDR: "0.0.0.0:8447"
+      RAM_USB_HEADSCALE_ADDR: "network-manager-headscale:50443"
+      RAM_USB_HEADSCALE_API_KEY: "${RAM_USB_HEADSCALE_API_KEY:?mint with: docker exec network-manager-headscale /ko-app/headscale apikeys create --expiration 24h}"
+      RAM_USB_HEADSCALE_INSECURE_SKIP_VERIFY: "true"
+      RAM_USB_NETWORK_MANAGER_GRANTS_DB_PATH: "/tmp/grants.db"
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token NetworkManager --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      # NM-F-17/NM-F-18: metrics publish, reuses the same mTLS identity
+      # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
+      # static MQTT certificate/key.
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+    networks:
+      - ramusb-net
+
+networks:
+  ramusb-net:
+    external: true

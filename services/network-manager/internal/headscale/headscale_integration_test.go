@@ -17,7 +17,7 @@ import (
 )
 
 // headscaleTestAddrEnvVar gates this test on a real, already-running
-// network-manager-headscale container (deployments/docker-compose.dev.yml).
+// network-manager-headscale container (deployments/compose/headscale.yml).
 // Same env-var-gated-skip shape as docs/Test_Plan.md §4's "integration
 // tests run against the Docker Compose stack", and the same pattern this
 // codebase already established for DV-F-08's postgres_test.go
@@ -31,7 +31,7 @@ const headscaleTestAddrEnvVar = "NM_TEST_HEADSCALE_ADDR"
 // bootstrap-token credential, per this session's own memory notes.
 const headscaleTestContainerEnvVar = "NM_TEST_HEADSCALE_CONTAINER"
 
-const defaultHeadscaleTestContainer = "deployments-network-manager-headscale-1"
+const defaultHeadscaleTestContainer = "network-manager-headscale"
 
 // Requirement: NM-F-08, NM-F-09
 //

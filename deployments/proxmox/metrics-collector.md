@@ -6,7 +6,7 @@ example to mirror here (unlike this task's other scaffolded files, which
 had a real, filled-in counterpart elsewhere in the repo to follow). This
 file is therefore written directly from
 `services/metrics-collector/cmd/metrics-collector/main.go`'s own
-requirements and `deployments/docker-compose.dev.yml`'s dev-stack wiring,
+requirements and `deployments/compose/metrics-collector.yml`'s dev-stack wiring,
 translated to a Proxmox LXC container instead of a Compose service - not
 copied from a pattern established by another already-written proxmox note.
 
