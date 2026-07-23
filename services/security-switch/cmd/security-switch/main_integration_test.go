@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -269,7 +268,7 @@ func TestBuildDatabaseVaultClient_RealCA_EnforcesOrganization(t *testing.T) {
 
 		t.Setenv(envDatabaseVaultURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 
-		client, baseURL, err := buildDatabaseVaultClient(clientTLSConfig, (&net.Dialer{}).DialContext)
+		client, baseURL, err := buildDatabaseVaultClient(clientTLSConfig)
 		if err != nil {
 			t.Fatalf("buildDatabaseVaultClient() error = %v, want nil", err)
 		}
@@ -306,7 +305,7 @@ func TestBuildDatabaseVaultClient_RealCA_EnforcesOrganization(t *testing.T) {
 
 		t.Setenv(envDatabaseVaultURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 
-		client, baseURL, err := buildDatabaseVaultClient(clientTLSConfig, (&net.Dialer{}).DialContext)
+		client, baseURL, err := buildDatabaseVaultClient(clientTLSConfig)
 		if err != nil {
 			t.Fatalf("buildDatabaseVaultClient() error = %v, want nil", err)
 		}
@@ -356,7 +355,7 @@ func TestBuildNetworkManagerClient_RealCA_EnforcesOrganization(t *testing.T) {
 
 		t.Setenv(envNetworkManagerURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 
-		client, baseURL, err := buildNetworkManagerClient(clientTLSConfig, (&net.Dialer{}).DialContext)
+		client, baseURL, err := buildNetworkManagerClient(clientTLSConfig)
 		if err != nil {
 			t.Fatalf("buildNetworkManagerClient() error = %v, want nil", err)
 		}
@@ -393,7 +392,7 @@ func TestBuildNetworkManagerClient_RealCA_EnforcesOrganization(t *testing.T) {
 
 		t.Setenv(envNetworkManagerURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 
-		client, baseURL, err := buildNetworkManagerClient(clientTLSConfig, (&net.Dialer{}).DialContext)
+		client, baseURL, err := buildNetworkManagerClient(clientTLSConfig)
 		if err != nil {
 			t.Fatalf("buildNetworkManagerClient() error = %v, want nil", err)
 		}
@@ -486,7 +485,7 @@ func TestBuildServerTLSConfigReusedForAllThreeRoles_RealCA(t *testing.T) {
 	defer dbVaultStub.Close()
 
 	t.Setenv(envDatabaseVaultURL, strings.Replace(dbVaultStub.URL, "127.0.0.1", "localhost", 1))
-	dbVaultClient, dbVaultBaseURL, err := buildDatabaseVaultClient(ownTLSConfig, (&net.Dialer{}).DialContext)
+	dbVaultClient, dbVaultBaseURL, err := buildDatabaseVaultClient(ownTLSConfig)
 	if err != nil {
 		t.Fatalf("buildDatabaseVaultClient() error = %v, want nil", err)
 	}
@@ -513,7 +512,7 @@ func TestBuildServerTLSConfigReusedForAllThreeRoles_RealCA(t *testing.T) {
 	defer networkManagerStub.Close()
 
 	t.Setenv(envNetworkManagerURL, strings.Replace(networkManagerStub.URL, "127.0.0.1", "localhost", 1))
-	networkManagerClient, networkManagerBaseURL, err := buildNetworkManagerClient(ownTLSConfig, (&net.Dialer{}).DialContext)
+	networkManagerClient, networkManagerBaseURL, err := buildNetworkManagerClient(ownTLSConfig)
 	if err != nil {
 		t.Fatalf("buildNetworkManagerClient() error = %v, want nil", err)
 	}

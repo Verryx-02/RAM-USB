@@ -1,0 +1,14 @@
+#!/bin/sh
+# Real Tailscale client daemon (see this container's Dockerfile package doc
+# comment for why a real tailscaled, not pkg/mesh's in-process tsnet, is
+# needed here). /var/run is a fresh tmpfs on every container start, so
+# tailscaled's socket directory has to be recreated here every time too,
+# even though it was also created once at build time in the Dockerfile.
+# --state persists this node's mesh identity across container restarts on
+# the ramusb-security-switch-mesh-state named volume
+# (deployments/compose/security-switch.yml); --socket is the fixed control
+# socket path the tailscale-up oneshot (dependencies.d/tailscaled) polls
+# for readiness before calling "tailscale up".
+mkdir -p -m 0755 /var/run/tailscale
+
+exec /usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock
