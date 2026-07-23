@@ -76,8 +76,8 @@ services:
       # tag:mqtt-broker (services/network-manager/internal/headscale/
       # policy.go's TagMQTTBroker) - new tag, no existing service reused
       # this identity.
-      TS_AUTHKEY: "${RAM_USB_MQTT_BROKER_TAILSCALE_AUTHKEY:?mint with: docker exec network-manager-headscale headscale users create mqtt-broker && docker exec network-manager-headscale headscale users list --name mqtt-broker -o json && docker exec network-manager-headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:mqtt-broker}"
-      TS_EXTRA_ARGS: "--login-server=${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager-headscale:8080} --hostname=mqtt-broker"
+      TS_AUTHKEY: "${RAM_USB_MQTT_BROKER_TAILSCALE_AUTHKEY:?mint with: docker exec network-manager headscale users create mqtt-broker && docker exec network-manager headscale users list --name mqtt-broker -o json && docker exec network-manager headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:mqtt-broker}"
+      TS_EXTRA_ARGS: "--login-server=${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager:8080} --hostname=mqtt-broker"
       # Required for inbound mesh reachability - see
       # certificate-authority.yml's certificate-authority-mesh TS_USERSPACE
       # comment for the full "connection refused"/userspace-networking

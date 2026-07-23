@@ -93,8 +93,8 @@ services:
       # tag:certificate-authority (services/network-manager/internal/
       # headscale/policy.go) - reused as-is, NM-F-04's rule already grants
       # this tag reachability both ways, no new tag needed for the CA.
-      TS_AUTHKEY: "${RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY:?mint with: docker exec network-manager-headscale headscale users create certificate-authority && docker exec network-manager-headscale headscale users list --name certificate-authority -o json && docker exec network-manager-headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:certificate-authority}"
-      TS_EXTRA_ARGS: "--login-server=${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager-headscale:8080} --hostname=certificate-authority"
+      TS_AUTHKEY: "${RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY:?mint with: docker exec network-manager headscale users create certificate-authority && docker exec network-manager headscale users list --name certificate-authority -o json && docker exec network-manager headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:certificate-authority}"
+      TS_EXTRA_ARGS: "--login-server=${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager:8080} --hostname=certificate-authority"
       # Confirmed live this session: containerboot's tailscaled defaults to
       # "--tun=userspace-networking" (a gVisor netstack invisible to the OS
       # kernel/other processes in this shared namespace) even with
