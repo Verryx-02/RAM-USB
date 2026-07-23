@@ -52,8 +52,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-
-	stepca "github.com/smallstep/certificates/ca"
 )
 
 // BootstrapTokenEnvVar names the environment variable holding this
@@ -89,8 +87,16 @@ func LoadBootstrapToken() (string, error) {
 // client's certificate. The certificate renews automatically for the
 // lifetime of ctx — callers should pass a context that lives at least as
 // long as the server itself, not a short-lived per-request context.
+//
+// This is NewServerWithDialer with a nil dial — every outbound call this
+// package makes (the initial bootstrap exchange, and the server's own
+// background renewal calls back to the Certificate-Authority) goes out
+// over the process's default network stack, exactly as before dialer.go
+// was added. A caller that needs those calls routed through a mesh
+// identity instead should use NewServerWithDialer directly — see that
+// function's own doc comment for what it can and cannot route.
 func NewServer(ctx context.Context, token string, base *http.Server) (*http.Server, error) {
-	return stepca.BootstrapServer(ctx, token, base)
+	return NewServerWithDialer(ctx, token, base, nil)
 }
 
 // NewClient exchanges token for an initial certificate from the
@@ -98,6 +104,10 @@ func NewServer(ctx context.Context, token string, base *http.Server) (*http.Serv
 // it on every outbound mTLS connection (ca.BootstrapClient). The
 // certificate renews automatically, same as NewServer, for the lifetime
 // of ctx.
+//
+// This is NewClientWithDialer with a nil dial — see that function's doc
+// comment for how to route this package's outbound traffic (including
+// certificate renewal) through a mesh identity instead.
 func NewClient(ctx context.Context, token string) (*http.Client, error) {
-	return stepca.BootstrapClient(ctx, token)
+	return NewClientWithDialer(ctx, token, nil)
 }

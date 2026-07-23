@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -191,5 +193,50 @@ func TestNewServer_RealCA(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("issued certificate's issuer organization = %v, want to contain %q", leaf.Issuer.Organization, caName)
+	}
+}
+
+// Requirement: NET-F-01, NM-F-04
+//
+// End-to-end proof that NewClientWithDialer's installed dialer is actually
+// consulted for a real outbound request through a real bootstrapped
+// client - not merely installed and silently ignored. A fake dialer that
+// returns a distinguishable, never-otherwise-produced error stands in for
+// pkg/mesh.Server.Dial: if the real network were reached instead (the
+// dialer routing silently doing nothing), client.Do would instead return a
+// real TLS/connection-refused/timeout error, never this one.
+func TestNewClientWithDialer_DialerIsInvoked(t *testing.T) {
+	caURL, container := skipUnlessCAConfigured(t)
+	token := generateTestToken(t, caURL, container, "pki-test-dialer-client")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	errFakeDialerInvoked := errors.New("fake dialer invoked: real network never reached")
+	var dialCount int32
+	fakeDial := DialFunc(func(context.Context, string, string) (net.Conn, error) {
+		atomic.AddInt32(&dialCount, 1)
+		return nil, errFakeDialerInvoked
+	})
+
+	client, err := NewClientWithDialer(ctx, token, fakeDial)
+	if err != nil {
+		t.Fatalf("NewClientWithDialer() error = %v, want nil", err)
+	}
+
+	healthReq, err := http.NewRequestWithContext(ctx, http.MethodGet, caURL+"/health", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v, want nil", err)
+	}
+
+	_, err = client.Do(healthReq)
+	if err == nil {
+		t.Fatal("client.Do() error = nil, want the fake dialer's error (the real CA must never be reached once a dialer is installed)")
+	}
+	if !errors.Is(err, errFakeDialerInvoked) {
+		t.Fatalf("client.Do() error = %v, want it to wrap %v", err, errFakeDialerInvoked)
+	}
+	if atomic.LoadInt32(&dialCount) == 0 {
+		t.Fatal("fake dialer was never invoked for client.Do()")
 	}
 }
