@@ -1,7 +1,9 @@
 # Minimal dev-only Headscale configuration for Network-Manager's mesh
-# backend (NM-F-08, NM-F-09), mounted read-only into the
-# network-manager-headscale service defined in
-# deployments/compose/headscale.yml.
+# backend (NM-F-08, NM-F-09), mounted read-only into the network-manager
+# service defined in deployments/compose/network-manager.yml - Headscale
+# now runs co-located inside that same container (see
+# deployments/docker/network-manager/Dockerfile's package doc comment),
+# not a separate network-manager-headscale container/Compose project.
 #
 # Only what NM-F-08/NM-F-09 actually exercise this session is filled in
 # beyond Headscale's own defaults (github.com/juanfont/headscale
@@ -18,19 +20,27 @@
 # gRPC auth (which always requires transport security, mirroring
 # Headscale's own CLI) has a real TLS listener to connect to.
 #
-# NM-F-15 (MagicDNS base domain), NM-F-14 (coordination endpoint reachable
-# only from the private network), and NM-F-12 (admin interface exposure)
-# are explicitly out of this session's scope - base_domain below is a
-# placeholder value, not a considered choice, and this compose file
-# exposes the gRPC port to the host for local dev/test convenience (the
-# same convention already established for database-vault-postgres's
-# 5432:5432 mapping), not a statement about NM-F-14's real production
-# network boundary.
+# NM-F-14 (coordination endpoint reachable only from the private network)
+# and NM-F-12 (admin interface exposure) are satisfied by this file's own
+# listener bindings below: grpc_listen_addr and metrics_listen_addr are
+# loopback-only (127.0.0.1) because both are called only by this same
+# container's own local processes (Network-Manager's Go code for the
+# gRPC admin API, nothing at all for metrics - grepped this repo's
+# Prometheus/Grafana provisioning and MT-F-01..04's own MQTT-based metrics
+# pipeline, confirmed nothing scrapes Headscale's own /metrics endpoint) -
+# never published as a container port, let alone to the Docker host.
+# listen_addr (the coordination/control-plane HTTP endpoint every other
+# service's tsnet/tailscaled join dials) stays bound to 0.0.0.0 so it
+# remains reachable from other containers on ramusb-net, just without a
+# Docker host port publish either (see deployments/compose/
+# network-manager.yml). NM-F-15's MagicDNS base_domain below remains a
+# placeholder value, not a considered choice - still out of this session's
+# scope.
 
-server_url: https://network-manager-headscale:8080
+server_url: https://network-manager:8080
 listen_addr: 0.0.0.0:8080
-metrics_listen_addr: 0.0.0.0:9090
-grpc_listen_addr: 0.0.0.0:50443
+metrics_listen_addr: 127.0.0.1:9090
+grpc_listen_addr: 127.0.0.1:50443
 grpc_allow_insecure: false
 
 noise:

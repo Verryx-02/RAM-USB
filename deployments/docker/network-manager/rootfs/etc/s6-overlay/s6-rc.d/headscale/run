@@ -1,0 +1,8 @@
+#!/command/execlineb -P
+# Headscale itself (NM-F-08/NM-F-09's mesh coordination backend). Reads
+# /etc/headscale/config.yaml (mounted read-only by
+# deployments/compose/network-manager.yml) by its own default config
+# search path - no env vars or CLI flags needed. "serve" matches the
+# previous two-container topology's "command: serve" in the now-removed
+# deployments/compose/headscale.yml.
+/usr/local/bin/headscale serve

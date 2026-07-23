@@ -11,8 +11,9 @@
 //
 // NM-F-12 ("expose an administration interface for creating pre-auth keys
 // and managing ACL tags, reachable only from the private network") needs
-// no RAM-USB code: Headscale's own CLI, already running inside the
-// network-manager-headscale container, provides this exact capability
+// no RAM-USB code: Headscale's own CLI, already running inside this same
+// network-manager container (NM-F-14: co-located, not a separate
+// container), provides this exact capability
 // (`docker exec <container> headscale preauthkeys create --user <ID>`,
 // `docker exec <container> headscale nodes tag -i <NODE_ID> -t <TAG>`)
 // over a local Unix socket with no network listener at all - satisfying
@@ -56,23 +57,28 @@
 // applies it automatically; no manual step is required.
 //
 // Mesh membership (NM-F-03's "only Security-Switch and Certificate-Authority
-// can contact Network-Manager" clause, completed via pkg/mesh): the mTLS
-// listener above (httpServer) now joins Headscale as a real tsnet mesh node
-// and listens ONLY inside the tailnet (envListenAddr's value is a bare
-// ":port" tsnet listen address, not a host:port bound on ramusb-net
-// anymore) - exactly the same pattern
-// services/database-vault/cmd/database-vault/main.go established first for
-// its own register/login listener (see that file's package doc comment,
-// "Mesh membership", for the full reasoning) and
-// services/security-switch/cmd/security-switch/main.go later reused for its
-// outbound Database-Vault dial. Security-Switch's own outbound calls to
-// Network-Manager (SS-F-05, SS-F-09) now go through Security-Switch's
-// already-joined mesh node (meshNode.Dial there) instead of ramusb-net -
-// see that file's buildNetworkManagerClient. This process has no outbound
-// RAM-USB mTLS client role of its own (internal/headscale.Dial is a
-// separate, non-mesh gRPC dependency, see above), so its mesh node
-// (buildMeshNode) is used only to serve this one listener, never to dial
-// out.
+// can contact Network-Manager" clause): this container joins the Headscale
+// mesh via a REAL, kernel-level OS tailscaled daemon (s6-supervised, see
+// deployments/docker/network-manager/rootfs/etc/s6-overlay/s6-rc.d/
+// tailscaled/ and tailscale-up/), not pkg/mesh's in-process tsnet - unlike
+// Database-Vault/Security-Switch, this process also needs Certificate-
+// Authority-bootstrap traffic (pkg/pki) and MQTT metrics-publish traffic
+// (pkg/metrics) to go through the mesh, and neither of those libraries
+// exposes a way to route through an in-process-only netstack for their
+// internal/background traffic (confirmed by direct source reading, a hard
+// library limitation - see .claude/agent-memory/code-agent.md's "pkg/pki
+// dialer routing" entry). Once the container's only network egress is a
+// real tailscale0 interface, every outbound connection this process makes
+// is forced through it automatically, with zero application-level dial
+// injection needed - the same mechanism Storage-Service already uses (see
+// its own Dockerfile package doc comment) for the identical reason (sshd
+// needs a kernel TUN device; here it is pkg/pki and pkg/metrics that need
+// OS-level routing instead). envListenAddr is therefore a real host:port
+// (assembled by the tailscale-up s6 oneshot from this node's Tailscale-
+// assigned IPv4 address, exactly like Storage-Service's own storage-service/
+// run script - see that file for the identical pattern), and httpServer
+// below binds it directly via net/http.Server.Addr + ListenAndServeTLS,
+// never a tsnet-specific Listen call.
 package main
 
 import (
@@ -93,7 +99,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
-	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
@@ -107,58 +112,20 @@ import (
 // (RAM_USB_CA_BOOTSTRAP_TOKEN) is already established by CA-F-04 and is not
 // redefined here - it is this server's single-use bootstrap token.
 const (
-	// envListenAddr is the tsnet listen address (a bare ":port", e.g.
-	// ":8447" - tsnet.Server.Listen only ever announces on this node's own
-	// mesh address, so a host part is meaningless here) the listener
-	// accepts incoming mTLS connections from Security-Switch on (NM-F-03).
-	// Unlike before mesh membership, this is no longer a ramusb-net Docker
-	// bridge address.
+	// envListenAddr is the address this server listens on for incoming
+	// mTLS connections from Security-Switch (NM-F-03) - a real host:port,
+	// assembled by the tailscale-up s6 oneshot from this node's real
+	// Tailscale-assigned IPv4 address before this binary is ever exec'd
+	// (see deployments/docker/network-manager/rootfs/etc/s6-overlay/
+	// s6-rc.d/network-manager/run), exactly like Storage-Service's own
+	// envListenAddr.
 	envListenAddr = "RAM_USB_NETWORK_MANAGER_LISTEN_ADDR"
 
-	// envMeshDir is the persistent directory this node's tsnet mesh
-	// identity/state lives in (see pkg/mesh.Config.Dir) - backed by a
-	// dedicated Docker volume (deployments/compose/network-manager.yml), so
-	// this node keeps the same mesh identity across container restarts
-	// instead of re-joining as a new machine every time.
-	envMeshDir = "RAM_USB_NETWORK_MANAGER_MESH_DIR"
-
-	// envMeshHostname is this node's MagicDNS short name within the
-	// tailnet (see pkg/mesh.Config.Hostname) - what Security-Switch's
-	// outbound mesh Dial addresses (RAM_USB_NETWORK_MANAGER_URL in
-	// deployments/compose/security-switch.yml).
-	envMeshHostname = "RAM_USB_NETWORK_MANAGER_MESH_HOSTNAME"
-
-	// envMeshControlURL is the self-hosted Headscale server's coordination
-	// URL (see pkg/mesh.Config.ControlURL), shared by every service that
-	// joins the mesh - the same env var name
-	// Database-Vault/Security-Switch's own main.go already use, not
-	// service-specific.
-	envMeshControlURL = "RAM_USB_TAILSCALE_CONTROL_URL"
-
-	// envMeshAuthKey is this node's single-use Headscale pre-auth key (see
-	// pkg/mesh.Config.AuthKey and pkg/mesh's package doc comment, "Key
-	// distribution"), minted manually by the operator - see
-	// deployments/compose/network-manager.yml for the exact minting
-	// command.
-	envMeshAuthKey = "RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY" //nolint:gosec // an env var *name*, not a credential value
-
-	// envMeshControlCAFile optionally names a PEM file this process should
-	// trust for envMeshControlURL's TLS certificate (see
-	// pkg/mesh.Config.ControlCAFile) - shared across services exactly like
-	// envMeshControlURL, since it exists solely to trust that same URL's
-	// certificate. Left unset in any deployment where ControlURL's
-	// certificate already chains to a real, publicly trusted root; only
-	// this project's dev-only self-signed Headscale certificate
-	// (third-party/network-manager/headscale/dev-tls) needs it, per this
-	// project's convention of mounting dev-only secrets/certificates at
-	// runtime rather than baking them into the image (see
-	// deployments/compose/network-manager.yml).
-	envMeshControlCAFile = "RAM_USB_TAILSCALE_CONTROL_CA_FILE"
-
 	// envHeadscaleAddr is Headscale's gRPC coordination endpoint address
-	// (internal/headscale.Dial), e.g.
-	// "network-manager-headscale:50443". Not part of any RAM-USB
-	// mTLS/PKI-F-01/PKI-F-02 role - see this file's package doc comment.
+	// (internal/headscale.Dial), e.g. "localhost:50443" - Headscale is now
+	// co-located in this same container (NM-F-14), loopback-only. Not part
+	// of any RAM-USB mTLS/PKI-F-01/PKI-F-02 role - see this file's package
+	// doc comment.
 	envHeadscaleAddr = "RAM_USB_HEADSCALE_ADDR"
 
 	// envHeadscaleAPIKey is the bearer API key internal/headscale.Dial
@@ -243,20 +210,6 @@ func run() error {
 		return err
 	}
 
-	// meshNode is this process's own Headscale mesh identity (NM-F-03's
-	// "access to the private mesh network" clause, completed by pkg/mesh -
-	// see this file's package doc comment, "Mesh membership"), used to
-	// serve httpServer below.
-	meshNode, err := buildMeshNode(ctx)
-	if err != nil {
-		return fmt.Errorf("join mesh: %w", err)
-	}
-	defer func() {
-		if closeErr := meshNode.Close(); closeErr != nil {
-			slog.Warn("network-manager: mesh node close error", "error", logging.Sanitize(closeErr.Error()))
-		}
-	}()
-
 	// serverTLSConfig is this process's one bootstrapped TLS identity
 	// (PKI-F-01, CA-F-04) - see this file's package doc comment for why
 	// no outbound RAM-USB mTLS client role exists here.
@@ -319,22 +272,14 @@ func run() error {
 	mux.HandleFunc(httpapi.GrantPath, handler.Grant)
 
 	httpServer := &http.Server{
+		Addr: listenAddr,
 		// PKI-F-02's organization check runs here, at the HTTP-request
 		// level (mtls.RequireOrganization), not inside serverTLSConfig's
 		// handshake - see this file's package doc comment for why.
 		Handler:           mtls.RequireOrganization(server.AllowedClientOrganization, mux),
+		TLSConfig:         serverTLSConfig,
 		ReadHeaderTimeout: 10 * time.Second,
-		// No Addr/TLSConfig here: this listener is served over
-		// tlsMeshListener below (a *tls.Listener wrapping
-		// meshNode.Listen), not ListenAndServeTLS - see this file's
-		// package doc comment, "Mesh membership".
 	}
-
-	meshListener, err := meshNode.Listen("tcp", listenAddr)
-	if err != nil {
-		return fmt.Errorf("mesh listen on %s: %w", listenAddr, err)
-	}
-	tlsMeshListener := tls.NewListener(meshListener, serverTLSConfig)
 
 	// NM-F-10's sweep: periodically revoke every expired grant
 	// (grantStore.ExpiredGrants) via Headscale (headscaleRevoker) and
@@ -356,8 +301,13 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("network-manager: listening on the mesh", "addr", logging.Sanitize(listenAddr))
-		serveErr <- httpServer.Serve(tlsMeshListener)
+		slog.Info("network-manager: listening", "addr", logging.Sanitize(listenAddr))
+		// TLSConfig already carries the bootstrapped certificate (via
+		// buildServerTLSConfig's GetCertificate callback, not a static
+		// Certificates slice), so ListenAndServeTLS is called with empty
+		// file paths per net/http's documented convention for that case -
+		// same pattern as Storage-Service's own cmd/storage-service/main.go.
+		serveErr <- httpServer.ListenAndServeTLS("", "")
 	}()
 
 	select {
@@ -444,42 +394,6 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 	}
 
 	return bootstrapped.TLSConfig, nil
-}
-
-// buildMeshNode joins this process to the private Headscale mesh (NM-F-03,
-// pkg/mesh) using envMeshDir/envMeshHostname/envMeshControlURL/
-// envMeshAuthKey, failing closed (RD-04) if any is unset. ctx bounds only
-// the join itself; the returned node lives for this process's whole
-// lifetime (closed via a deferred call in run).
-func buildMeshNode(ctx context.Context) (*mesh.Server, error) {
-	dir, err := requireEnv(envMeshDir)
-	if err != nil {
-		return nil, err
-	}
-	hostname, err := requireEnv(envMeshHostname)
-	if err != nil {
-		return nil, err
-	}
-	controlURL, err := requireEnv(envMeshControlURL)
-	if err != nil {
-		return nil, err
-	}
-	authKey, err := requireEnv(envMeshAuthKey)
-	if err != nil {
-		return nil, err
-	}
-	// Optional (empty in any deployment where ControlURL's certificate
-	// already chains to a real, publicly trusted root) - see
-	// envMeshControlCAFile's own doc comment.
-	controlCAFile := os.Getenv(envMeshControlCAFile)
-
-	return mesh.Up(ctx, mesh.Config{
-		Dir:           dir,
-		Hostname:      hostname,
-		ControlURL:    controlURL,
-		AuthKey:       authKey,
-		ControlCAFile: controlCAFile,
-	})
 }
 
 // buildHeadscaleConn dials Headscale's gRPC coordination endpoint

@@ -1,0 +1,23 @@
+#!/command/with-contenv sh
+# with-contenv (not plain #!/bin/sh): S6_KEEP_ENV is left at its default (0)
+# so this longrun does NOT inherit the container's environment implicitly,
+# and this is the one process that needs every RAM_USB_* variable
+# deployments/compose/network-manager.yml's "environment:" block sets
+# (see services/network-manager/cmd/network-manager/main.go) pushed back
+# into its own environment.
+#
+# RAM_USB_NETWORK_MANAGER_LISTEN_ADDR is no longer passed through verbatim
+# from docker-compose: it is assembled here from
+# RAM_USB_NETWORK_MANAGER_TAILSCALE_IP (written by the tailscale-up
+# oneshot this longrun depends on, dependencies.d/tailscale-up, into
+# s6-overlay's container-environment directory once this node's real mesh
+# IPv4 address is known) and RAM_USB_NETWORK_MANAGER_LISTEN_PORT (a plain
+# port number, set in deployments/compose/network-manager.yml) - binding
+# this server to the Tailscale interface address only, never 0.0.0.0/
+# ramusb-net, per NET-F-01. Identical pattern to Storage-Service's own
+# storage-service/run script.
+export RAM_USB_NETWORK_MANAGER_LISTEN_ADDR="${RAM_USB_NETWORK_MANAGER_TAILSCALE_IP:?RAM_USB_NETWORK_MANAGER_TAILSCALE_IP is not set - tailscale-up must run first}:${RAM_USB_NETWORK_MANAGER_LISTEN_PORT:?RAM_USB_NETWORK_MANAGER_LISTEN_PORT is not set}"
+
+# exec replaces this shell so the network-manager binary becomes the
+# directly supervised process and receives s6's signals itself.
+exec /usr/local/bin/network-manager
