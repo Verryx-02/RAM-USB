@@ -68,29 +68,37 @@
 // organization check would reject every connection. `docker compose up`
 // applies it automatically now; no manual step is required.
 //
-// Mesh membership (DV-F-01's "access to the private mesh network" clause,
-// completed via pkg/mesh): the register/login listener Security-Switch
-// calls (SS-F-04) now joins Headscale as a real tsnet mesh node and
-// listens ONLY inside the tailnet (envListenAddr's value is a bare
-// ":port" tsnet listen address, not a host:port bound on ramusb-net
-// anymore) - see buildMeshNode and pkg/mesh's own package doc comment
-// for the reachability guarantee this provides. ST-F-11's separate
-// public-key listener (publicKeyHTTPServer) is explicitly OUT of this
-// change's scope and keeps listening on ramusb-net exactly as before, via
-// ListenAndServeTLS. The Postgres connection (envDatabaseURL) is
-// likewise unaffected - it keeps using ramusb-net, since this task moves
-// only the mTLS listener/call path, not every network dependency.
+// Mesh membership (DV-F-01's "access to the private mesh network" clause):
+// this container joins the Headscale mesh via a REAL, OS-level tailscaled
+// client (deployments/docker/database-vault/rootfs/etc/s6-overlay/s6-rc.d/
+// {tailscaled,tailscale-up,trust-mesh-ca}), the same mechanism already
+// proven for Storage-Service, instead of pkg/mesh's in-process tsnet.
+// pkg/mesh's own inbound listener and outbound Storage-Service Dial could
+// be made mesh-aware, but it exposes no way to route the Certificate-
+// Authority bootstrap/renewal calls (pkg/pki, wraps
+// github.com/smallstep/certificates/ca) or the MQTT metrics-publish
+// connection (pkg/metrics) through an in-process-only netstack - a
+// confirmed library limitation, not a code gap (see
+// .claude/agent-memory/code-agent.md's "pkg/pki dialer routing" notes). A
+// real tailscaled makes this container's only network egress a genuine
+// kernel tailscale0 interface, so every outbound connection this process
+// makes - CA bootstrap/renewal, MQTT publish, and the Storage-Service call
+// alike - is forced through the mesh automatically, with zero
+// application-level dial injection needed anywhere in this file.
 //
-// The outbound call to Storage-Service (DV-F-09, buildStorageServiceClient)
-// also dials via this same meshNode.Dial instance now that Storage-Service
-// itself joined the mesh (real tailscaled, see
-// deployments/docker/storage-service's Dockerfile/rootfs) and its Go
-// binary binds exclusively to its Tailscale interface address, never
-// ramusb-net - same func-typed dial parameter pattern as
-// Security-Switch's buildNetworkManagerClient/buildDatabaseVaultClient
-// (services/security-switch/cmd/security-switch/main.go), reusing the one
-// mesh node this process already joined for its own DV-F-01 listener
-// rather than creating a second one.
+// envListenAddr is now a real host:port: the database-vault longrun's own
+// `run` script (deployments/docker/database-vault/rootfs/etc/s6-overlay/
+// s6-rc.d/database-vault/run) assembles it from this node's
+// Tailscale-assigned IPv4 address (written by the tailscale-up oneshot)
+// plus a port env var, before exec'ing this binary - so this process binds
+// it directly via ListenAndServeTLS, the same shape as
+// publicKeyHTTPServer's own listener and as Storage-Service's own
+// cmd/storage-service/main.go. ST-F-11's separate public-key listener
+// (publicKeyHTTPServer) is unaffected either way - it stays on ramusb-net,
+// exactly as before (see internal/server/pubkey_server.go and
+// deployments/compose/database-vault.yml). The Postgres connection
+// (envDatabaseURL) is likewise unaffected - it is loopback-only inside
+// this same container, unrelated to the mesh entirely.
 package main
 
 import (
@@ -99,7 +107,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -111,7 +118,6 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
-	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
@@ -134,52 +140,13 @@ import (
 // bootstrap token, used for both inbound listeners (see
 // buildServerTLSConfig).
 const (
-	// envListenAddr is the tsnet listen address (a bare ":port", e.g.
-	// ":8445" - tsnet.Server.Listen only ever announces on this node's
-	// own mesh address, so a host part is meaningless here) this server
-	// listens on for incoming mTLS connections from Security-Switch
-	// (DV-F-01, "access to the private mesh network"). Unlike before this
-	// task, this is no longer a ramusb-net Docker bridge address.
+	// envListenAddr is the real host:port this server listens on for
+	// incoming mTLS connections from Security-Switch (DV-F-01, "access to
+	// the private mesh network") - assembled at container start by the
+	// database-vault longrun's own `run` script from this node's
+	// Tailscale-assigned IPv4 address plus a port env var, never
+	// 0.0.0.0/ramusb-net (NET-F-01).
 	envListenAddr = "RAM_USB_DATABASE_VAULT_LISTEN_ADDR"
-
-	// envMeshDir is the persistent directory this node's tsnet mesh
-	// identity/state lives in (see pkg/mesh.Config.Dir) - backed by a
-	// dedicated Docker volume (deployments/compose/database-vault.yml),
-	// so this node keeps the same mesh identity across container
-	// restarts instead of re-joining as a new machine every time.
-	envMeshDir = "RAM_USB_DATABASE_VAULT_MESH_DIR"
-
-	// envMeshHostname is this node's MagicDNS short name within the
-	// tailnet (see pkg/mesh.Config.Hostname) - what Security-Switch's
-	// outbound mesh Dial addresses (RAM_USB_DATABASE_VAULT_URL in
-	// deployments/compose/security-switch.yml).
-	envMeshHostname = "RAM_USB_DATABASE_VAULT_MESH_HOSTNAME"
-
-	// envMeshControlURL is the self-hosted Headscale server's
-	// coordination URL (see pkg/mesh.Config.ControlURL), shared by every
-	// service that joins the mesh - not service-specific, so this same
-	// env var name is reused verbatim by Security-Switch's own main.go.
-	envMeshControlURL = "RAM_USB_TAILSCALE_CONTROL_URL"
-
-	// envMeshAuthKey is this node's single-use Headscale pre-auth key
-	// (see pkg/mesh.Config.AuthKey and pkg/mesh's package doc comment,
-	// "Key distribution"), minted manually by the operator - see
-	// deployments/compose/database-vault.yml for the exact minting
-	// command.
-	envMeshAuthKey = "RAM_USB_DATABASE_VAULT_TAILSCALE_AUTHKEY" //nolint:gosec // an env var *name*, not a credential value
-
-	// envMeshControlCAFile optionally names a PEM file this process
-	// should trust for envMeshControlURL's TLS certificate (see
-	// pkg/mesh.Config.ControlCAFile) - shared across services exactly
-	// like envMeshControlURL, since it exists solely to trust that same
-	// URL's certificate. Left unset in any deployment where ControlURL's
-	// certificate already chains to a real, publicly trusted root; only
-	// this project's dev-only self-signed Headscale certificate
-	// (third-party/network-manager/headscale/dev-tls) needs it, per this
-	// project's convention of mounting dev-only secrets/certificates at
-	// runtime rather than baking them into the image (see
-	// deployments/compose/database-vault.yml).
-	envMeshControlCAFile = "RAM_USB_TAILSCALE_CONTROL_CA_FILE"
 
 	// envPublicKeyListenAddr is the address Database-Vault listens on for
 	// ST-F-11's public-key lookup, a separate mTLS listener from
@@ -189,7 +156,8 @@ const (
 	// TLS identity with the register/login listener (see
 	// buildServerTLSConfig) - only the allowed caller organization,
 	// enforced by RequireOrganization at the HTTP-request level, differs
-	// per listener.
+	// per listener. Deliberately still ramusb-net-only, not moved to the
+	// mesh interface by this task (see this file's package doc comment).
 	envPublicKeyListenAddr = "RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR"
 
 	// envDatabaseURL is the Postgres connection string pgxpool.New
@@ -286,21 +254,6 @@ func run() error {
 		return err
 	}
 
-	// meshNode is this process's own Headscale mesh identity (DV-F-01's
-	// "access to the private mesh network" clause, completed by pkg/mesh -
-	// see this file's package doc comment). Only the register/login
-	// listener below joins the mesh; publicKeyHTTPServer keeps listening
-	// on ramusb-net, unaffected.
-	meshNode, err := buildMeshNode(ctx)
-	if err != nil {
-		return fmt.Errorf("join mesh: %w", err)
-	}
-	defer func() {
-		if closeErr := meshNode.Close(); closeErr != nil {
-			slog.Warn("database-vault: mesh node close error", "error", logging.Sanitize(closeErr.Error()))
-		}
-	}()
-
 	// serverTLSConfig is this server's one bootstrapped TLS identity
 	// (PKI-F-01, CA-F-04), shared by both inbound listeners below - see
 	// buildServerTLSConfig and this file's package doc comment for why one
@@ -337,7 +290,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	storageServiceClient, storageServiceURL, err := buildStorageServiceClient(serverTLSConfig, meshNode.Dial)
+	storageServiceClient, storageServiceURL, err := buildStorageServiceClient(serverTLSConfig)
 	if err != nil {
 		return fmt.Errorf("build storage-service client: %w", err)
 	}
@@ -367,22 +320,14 @@ func run() error {
 	mux.HandleFunc(httpapi.LoginPath, handler.Login)
 
 	httpServer := &http.Server{
+		Addr: listenAddr,
 		// PKI-F-02's organization check runs here, at the HTTP-request
 		// level (mtls.RequireOrganization), not inside serverTLSConfig's
 		// handshake - see this file's package doc comment for why.
 		Handler:           mtls.RequireOrganization(server.AllowedClientOrganization, mux),
+		TLSConfig:         serverTLSConfig,
 		ReadHeaderTimeout: 10 * time.Second,
-		// No Addr/TLSConfig here: this listener is served over meshListener
-		// below (a *tls.Listener wrapping meshNode.Listen), not
-		// ListenAndServeTLS - see this file's package doc comment,
-		// "Mesh membership".
 	}
-
-	meshListener, err := meshNode.Listen("tcp", listenAddr)
-	if err != nil {
-		return fmt.Errorf("mesh listen on %s: %w", listenAddr, err)
-	}
-	tlsMeshListener := tls.NewListener(meshListener, serverTLSConfig)
 
 	// publicKeyMux/publicKeyHTTPServer are ST-F-11's separate mux/listener
 	// pair, bound to publicKeyListenAddr and sharing serverTLSConfig's one
@@ -415,8 +360,12 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("database-vault: listening on the mesh", "addr", logging.Sanitize(listenAddr))
-		serveErr <- httpServer.Serve(tlsMeshListener)
+		slog.Info("database-vault: listening", "addr", logging.Sanitize(listenAddr))
+		// TLSConfig already carries the bootstrapped certificate (via
+		// buildServerTLSConfig's GetCertificate callback, not a static
+		// Certificates slice), so ListenAndServeTLS is called with empty
+		// file paths per net/http's documented convention for that case.
+		serveErr <- httpServer.ListenAndServeTLS("", "")
 	}()
 
 	publicKeyServeErr := make(chan error, 1)
@@ -478,42 +427,6 @@ func getEnvOrDefault(name, fallback string) string {
 	return value
 }
 
-// buildMeshNode joins this process to the private Headscale mesh (DV-F-01,
-// pkg/mesh) using envMeshDir/envMeshHostname/envMeshControlURL/
-// envMeshAuthKey, failing closed (RD-04) if any is unset. ctx bounds only
-// the join itself; the returned node lives for this process's whole
-// lifetime (closed via a deferred call in run).
-func buildMeshNode(ctx context.Context) (*mesh.Server, error) {
-	dir, err := requireEnv(envMeshDir)
-	if err != nil {
-		return nil, err
-	}
-	hostname, err := requireEnv(envMeshHostname)
-	if err != nil {
-		return nil, err
-	}
-	controlURL, err := requireEnv(envMeshControlURL)
-	if err != nil {
-		return nil, err
-	}
-	authKey, err := requireEnv(envMeshAuthKey)
-	if err != nil {
-		return nil, err
-	}
-	// Optional (empty in any deployment where ControlURL's certificate
-	// already chains to a real, publicly trusted root) - see
-	// envMeshControlCAFile's own doc comment.
-	controlCAFile := os.Getenv(envMeshControlCAFile)
-
-	return mesh.Up(ctx, mesh.Config{
-		Dir:           dir,
-		Hostname:      hostname,
-		ControlURL:    controlURL,
-		AuthKey:       authKey,
-		ControlCAFile: controlCAFile,
-	})
-}
-
 // buildServerTLSConfig bootstraps this server's one TLS identity from the
 // Certificate-Authority (CA-F-04, PKI-F-01), using pki.LoadBootstrapToken's
 // single-use token exactly once. The returned *tls.Config is shared by
@@ -524,7 +437,10 @@ func buildMeshNode(ctx context.Context) (*mesh.Server, error) {
 // level, via mtls.RequireOrganization/mtls.WrapRoundTripper in run);
 // ca.BootstrapServer's default (tls.RequireAndVerifyClientCert) still
 // ensures only a certificate this CA itself issued can complete an
-// inbound handshake at all.
+// inbound handshake at all. This call, and every renewal it triggers in
+// the background, is carried over the real tailscaled interface this
+// container joins at start (see this file's package doc comment) - no
+// dial injection needed, the OS routes it.
 //
 // base is a throwaway *http.Server: pki.NewServer only ever reads/writes
 // its TLSConfig field (confirmed by reading
@@ -566,20 +482,14 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 // production) - see pkg/pki's package doc comment for why this is
 // required, not merely defensive.
 //
-// dial is set as Transport.DialContext (DV-F-01's "access to the private
-// mesh network" clause, extended to this outbound call once Storage-Service
-// itself became reachable only via its mesh interface - see this file's
-// package doc comment, "Mesh membership"): run passes meshNode.Dial, the
-// SAME mesh node instance already joined for this process's own DV-F-01
-// listener above, not a second one - see pkg/mesh's own package doc
-// comment ("Reachability guarantee"). A func-typed parameter rather than
-// a *mesh.Server one deliberately decouples this function from requiring
-// a live Headscale join in tests that exist only to prove PKI-F-02's
-// organization enforcement (main_integration_test.go, which passes a
-// plain (&net.Dialer{}).DialContext instead) - same pattern as
-// Security-Switch's buildDatabaseVaultClient/buildNetworkManagerClient
-// (services/security-switch/cmd/security-switch/main.go).
-func buildStorageServiceClient(serverTLSConfig *tls.Config, dial func(ctx context.Context, network, addr string) (net.Conn, error)) (*http.Client, string, error) {
+// No custom Transport.DialContext (unlike before this task's real-
+// tailscaled conversion): this container's only network egress is now
+// its real tailscale0 kernel interface, so the OS routes this call to
+// Storage-Service - itself reachable only via its own real tailscaled
+// (deployments/docker/storage-service) - through the mesh automatically,
+// with no application-level dial injection needed (see this file's
+// package doc comment).
+func buildStorageServiceClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
 	baseURL, err := requireEnv(envStorageServiceURL)
 	if err != nil {
 		return nil, "", err
@@ -587,7 +497,6 @@ func buildStorageServiceClient(serverTLSConfig *tls.Config, dial func(ctx contex
 
 	transport := &http.Transport{
 		TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, organizationStorageService),
-		DialContext:     dial,
 	}
 	client := &http.Client{Transport: mtls.WrapRoundTripper(transport, organizationStorageService)}
 	return client, baseURL, nil
@@ -604,7 +513,9 @@ func buildStorageServiceClient(serverTLSConfig *tls.Config, dial func(ctx contex
 // this process still serves registration/login traffic without it,
 // since DV-F-16/DV-F-17 are about what gets published when metrics are
 // published, not a hard dependency of the registration/login control
-// flow itself.
+// flow itself. This connection, like every other outbound call this
+// process makes, is carried over the real tailscaled interface (see this
+// file's package doc comment) with no dial injection.
 func buildMetricsClient(serverTLSConfig *tls.Config) (mqtt.Client, error) {
 	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
 	if !ok || brokerURL == "" {

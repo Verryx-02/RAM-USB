@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -253,7 +252,7 @@ func TestBuildStorageServiceClient_RealCA_EnforcesOrganization(t *testing.T) {
 
 		t.Setenv(envStorageServiceURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 
-		client, baseURL, err := buildStorageServiceClient(clientTLSConfig, (&net.Dialer{}).DialContext)
+		client, baseURL, err := buildStorageServiceClient(clientTLSConfig)
 		if err != nil {
 			t.Fatalf("buildStorageServiceClient() error = %v, want nil", err)
 		}
@@ -290,7 +289,7 @@ func TestBuildStorageServiceClient_RealCA_EnforcesOrganization(t *testing.T) {
 
 		t.Setenv(envStorageServiceURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 
-		client, baseURL, err := buildStorageServiceClient(clientTLSConfig, (&net.Dialer{}).DialContext)
+		client, baseURL, err := buildStorageServiceClient(clientTLSConfig)
 		if err != nil {
 			t.Fatalf("buildStorageServiceClient() error = %v, want nil", err)
 		}
