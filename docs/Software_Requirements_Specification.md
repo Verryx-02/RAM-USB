@@ -6,8 +6,8 @@ Indexes: [[RAM-USB]]
 
 ---
 
-**Version:** 1.4  
-**Status:** Amended: container base-image policy and Storage-Service container-architecture notes added; NM-F-10, NM-F-11, NM-F-17, NM-F-18, PKI-F-01, and PKI-F-02 linked to their merged commits; NM-F-12 reworded to document how Headscale's own CLI satisfies it; CA-F-01/CA-F-02 clarified as guarantees of the underlying step-ca product 
+**Version:** 1.5  
+**Status:** Amended: §2.1 component status table corrected (Storage-Service, Network-Manager, Mosquitto, Metrics-Collector, Metrics-Visualizer all merged). Container base-image policy and Storage-Service container-architecture notes added; NM-F-10, NM-F-11, NM-F-17, NM-F-18, PKI-F-01, and PKI-F-02 linked to their merged commits; NM-F-12 reworded to document how Headscale's own CLI satisfies it; CA-F-01/CA-F-02 clarified as guarantees of the underlying step-ca product 
 **Author:** Francesco Verrengia
 
 > [!NOTE] The level of detail in this document increases with each iteration, following the spiral model of requirements engineering.
@@ -71,11 +71,11 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |Entry-Hub|Done|
 |Security-Switch|Done|
 |Database-Vault|Done|
-|Storage-Service|In progress|
-|Network-Manager|In progress|
-|Mosquitto (MQTT broker)|Not started|
-|Metrics-Collector|Not started|
-|Metrics-Visualizer (Grafana)|Not started|
+|Storage-Service|Done|
+|Network-Manager|Done|
+|Mosquitto (MQTT broker)|Done|
+|Metrics-Collector|Done|
+|Metrics-Visualizer (Grafana)|Done|
 |[Certificate-Authority](https://github.com/smallstep/certificates)|In progress|
 
 ### 2.2 Main product functions
