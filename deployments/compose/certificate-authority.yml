@@ -1,12 +1,27 @@
 # Certificate-Authority + automatic application of the organization
-# template (PKI-F-02). Standalone: no variable required (except the
-# sidecar's RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY below).
+# template (PKI-F-02) + CA-F-03's metrics sidecar. Requires
+# RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY (certificate-authority-mesh's
+# sidecar), RAM_USB_CERTIFICATE_AUTHORITY_METRICS_TAILSCALE_AUTHKEY, and
+# RAM_USB_CA_BOOTSTRAP_TOKEN (certificate-authority-metrics itself).
 #
 # certificate-authority-init is included here (not a separate file/shell):
 # it waits for the CA to be healthy, applies organization.x509.tpl to the
 # "admin" provisioner, then exits on its own - a single `docker compose up`
 # covers both, unlike the earlier bash procedure which required a separate
 # `docker run --rm` command for the init step.
+#
+# certificate-authority-config-init/certificate-authority-logs-init (CA-F-03):
+# two one-shot steps that must complete BEFORE certificate-authority's own
+# first start, not after (unlike certificate-authority-init above) - see
+# third-party/certificate-authority/enable-json-logger.sh's own doc comment
+# for why step-ca's ca.json can only be patched before its first exec, and
+# .claude/agent-memory/code-agent.md's "step-ca JSON access logging" entry
+# for the live verification behind both steps. certificate-authority's own
+# `command:` override (replacing its default CMD, not its ENTRYPOINT - see
+# that same memory entry) tees step-ca's stderr, where its own JSON access
+# log always writes, into a shared volume certificate-authority-metrics
+# reads from - CA-F-03's actual metrics source, since step-ca has no
+# native /metrics endpoint.
 #
 # certificate-authority-mesh (NM-F-04, "all internal components... can
 # contact, and be contacted by, the Certificate-Authority over the mesh
@@ -38,9 +53,66 @@
 # every service, whether or not that service is itself a mesh member yet.
 name: ramusb-certificate-authority
 services:
+  # CA-F-03, phase 1: pre-seed ca.json with "logger": {"format": "json"}
+  # before certificate-authority's own first start - see this file's own
+  # top comment. Reuses the SAME image and the SAME DOCKER_STEPCA_INIT_*
+  # env vars so entrypoint.sh's own init_if_possible generates ca.json
+  # exactly as certificate-authority's own first start otherwise would;
+  # `command` (not `entrypoint`) is overridden so entrypoint.sh's final
+  # `exec "${@}"` runs enable-json-logger.sh instead of step-ca itself.
+  certificate-authority-config-init:
+    image: smallstep/step-ca:latest
+    command: ["/bin/sh", "/scripts/enable-json-logger.sh"]
+    environment:
+      DOCKER_STEPCA_INIT_NAME: "RAM-USB Dev CA"
+      DOCKER_STEPCA_INIT_DNS_NAMES: "localhost,certificate-authority"
+      DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/ca-password.dev-only
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
+    volumes:
+      - ramusb-ca-data:/home/step
+      - ../../third-party/certificate-authority/config/password.dev-only.txt:/run/secrets/ca-password.dev-only:ro
+      - ../../third-party/certificate-authority/enable-json-logger.sh:/scripts/enable-json-logger.sh:ro
+    restart: "no"
+    networks:
+      - ramusb-net
+
+  # CA-F-03, phase 2: the shared access-log volume mounts root-owned by
+  # default (a brand-new named volume, no prior image content at that
+  # path) - chown it to step-ca's own runtime uid/gid (1000:1000,
+  # confirmed live) before certificate-authority's own tee'd `command:`
+  # tries to write into it. Runs as root (the one deliberate exception -
+  # certificate-authority itself never does) purely to perform this one
+  # chown; it never runs step-ca itself.
+  certificate-authority-logs-init:
+    image: smallstep/step-ca:latest
+    user: root
+    entrypoint: ["/bin/sh", "-c", "chown 1000:1000 /var/log/certificate-authority && chmod 0755 /var/log/certificate-authority"]
+    volumes:
+      - ramusb-certificate-authority-logs:/var/log/certificate-authority
+    restart: "no"
+
   certificate-authority:
     image: smallstep/step-ca:latest
     container_name: certificate-authority
+    depends_on:
+      certificate-authority-config-init:
+        condition: service_completed_successfully
+      certificate-authority-logs-init:
+        condition: service_completed_successfully
+    # Overrides step-ca's own default CMD only - entrypoint.sh's own
+    # init logic still runs first via the image's unmodified ENTRYPOINT,
+    # but finds ca.json already present (certificate-authority-config-init
+    # above) and skips its own init_if_possible. `exec` replaces this
+    # bash instance with step-ca itself (confirmed live: `docker exec
+    # certificate-authority ps aux` shows step-ca as PID 1), so `docker
+    # stop` still delivers SIGTERM directly to it - the process
+    # substitution's `tee` is a separate, non-PID-1 child that exits on
+    # its own once step-ca closes its end of the pipe. See this file's
+    # own top comment for why `/bin/bash`, not the image's default
+    # `/bin/sh` (busybox ash, no process-substitution support).
+    command: >-
+      /bin/bash -c 'exec step-ca --password-file /home/step/secrets/password
+      /home/step/config/ca.json 2> >(tee -a /var/log/certificate-authority/access.log >&2)'
     environment:
       DOCKER_STEPCA_INIT_NAME: "RAM-USB Dev CA"
       DOCKER_STEPCA_INIT_DNS_NAMES: "localhost,certificate-authority"
@@ -50,6 +122,7 @@ services:
       - "9000:9000"
     volumes:
       - ramusb-ca-data:/home/step
+      - ramusb-certificate-authority-logs:/var/log/certificate-authority
       - ../../third-party/certificate-authority/config/password.dev-only.txt:/run/secrets/ca-password.dev-only:ro
       - ../../third-party/certificate-authority/config/organization.x509.tpl:/run/secrets/organization.x509.tpl:ro
     healthcheck:
@@ -128,3 +201,13 @@ networks:
 volumes:
   ramusb-ca-data:
   ramusb-certificate-authority-mesh-state:
+  # Written by certificate-authority's own tee'd `command:` above, read by
+  # certificate-authority-metrics (CA-F-03, a SEPARATE compose project -
+  # see deployments/compose/certificate-authority-metrics.yml, which
+  # references this exact volume via `external: true`, following this
+  # project's one-compose-file-per-container convention rather than
+  # bundling a second mesh identity's own RAM_USB_CA_BOOTSTRAP_TOKEN
+  # requirement into this file - minting that token needs
+  # certificate-authority already running, which this file's own env
+  # interpolation would otherwise deadlock on before ever starting it).
+  ramusb-certificate-authority-logs:

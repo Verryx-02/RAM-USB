@@ -7,8 +7,9 @@ password shared between a container and its own co-located datastore
 cross-terminal password paste for it).
 
 **Order**: 1-2 (PKI/mesh coordination infra) before 3-5 (Network-Manager +
-messaging infra) before 6-9 (services) before 10-12 (public/metrics/
-dashboards). Scripts run in the foreground; Ctrl+C stops that service. All
+messaging infra + CA-F-03's metrics sidecar) before 6-10 (services) before
+11-13 (public/metrics/dashboards). Scripts run in the foreground; Ctrl+C
+stops that service. All
 scripts are safe to re-run (network/user-creation steps no-op if already
 done). Passwords/master key/pepper are freshly random every run — this is a
 testing stack, not a persistence guide, so restarting with old data present
@@ -19,10 +20,10 @@ already has data (e.g. surviving a Docker restart), re-running a script
 that generates a fresh password against an already-initialized volume gets
 silently ignored by the database, and the dependent service then fails
 with `password authentication failed`/SASL error. This can no longer
-happen for Database-Vault's own Postgres (shell 6 generates and consumes
+happen for Database-Vault's own Postgres (shell 7 generates and consumes
 the same value in one script, one Compose file — the cross-shell mismatch
 this used to cause is gone by construction) — it can still happen for
-Metrics-Collector/TimescaleDB (shells 5/10, still two separate
+Metrics-Collector/TimescaleDB (shells 6/11, still two separate
 scripts/Compose projects). Fix: `docker rm -f
 metrics-collector-timescaledb` + `docker volume rm ramusb-metrics-collector-timescaledb_ramusb-metrics-collector-timescaledb-data`
 first, so the next run is a genuinely fresh init that does respect the new
@@ -34,15 +35,16 @@ password.
 | 2     | `./deployments/scripts/headscale.sh`                                              | shell 1 (its root certificate, for NM-F-12's mTLS check) |
 | 3     | `./deployments/scripts/network-manager.sh`                                        | shells 1, 2                                         |
 | 4     | `./deployments/scripts/mqtt-broker.sh`                                            | shells 1, 2                                         |
-| 5     | `./deployments/scripts/metrics-collector-timescaledb.sh`                          | —                                                   |
-| 6     | `./deployments/scripts/database-vault.sh`                                         | shells 1, 2                                         |
-| 7     | `./deployments/scripts/storage-service.sh`                                        | shells 1, 2                                         |
-| 8     | `./deployments/scripts/security-switch.sh`                                        | shells 1, 2                                         |
-| 9     | `./deployments/scripts/entry-hub.sh`                                              | shells 1, 2, 4 — mesh node (pkg/mesh)               |
-| 10    | `./deployments/scripts/metrics-collector.sh`                                      | shells 4, 5 — **prompts for shell 5's password**    |
-| 11    | `./deployments/scripts/grafana.sh`                                                | shell 5                                             |
-| 12    | `./deployments/scripts/e2e-test.sh`                                               | shells 1-11 all up                                  |
-| 13    | `./deployments/scripts/cleanup.sh` (`--wipe` to also drop volumes/mesh identities)| —                                                   |
+| 5     | `./deployments/scripts/certificate-authority-metrics.sh`                          | shells 1, 2, 4 — CA-F-03, mesh node (pkg/mesh)      |
+| 6     | `./deployments/scripts/metrics-collector-timescaledb.sh`                          | —                                                   |
+| 7     | `./deployments/scripts/database-vault.sh`                                         | shells 1, 2                                         |
+| 8     | `./deployments/scripts/storage-service.sh`                                        | shells 1, 2                                         |
+| 9     | `./deployments/scripts/security-switch.sh`                                        | shells 1, 2                                         |
+| 10    | `./deployments/scripts/entry-hub.sh`                                              | shells 1, 2, 4 — mesh node (pkg/mesh)               |
+| 11    | `./deployments/scripts/metrics-collector.sh`                                      | shells 4, 6 — **prompts for shell 6's password**    |
+| 12    | `./deployments/scripts/grafana.sh`                                                | shell 6                                             |
+| 13    | `./deployments/scripts/e2e-test.sh`                                               | shells 1-12 all up                                  |
+| 14    | `./deployments/scripts/cleanup.sh` (`--wipe` to also drop volumes/mesh identities)| —                                                   |
 
 Headscale is its own standalone deployment this session (deployments/compose/
 headscale.yml, deployments/docker/headscale/) — it can never safely be a
@@ -59,14 +61,17 @@ replaced for the first three because two libraries they depend on (CA
 bootstrap/renewal, MQTT publish) cannot route through an in-process-only
 netstack when the service also holds a server role — a confirmed library
 limitation (see `.claude/agent-memory/code-agent.md`'s "pkg/pki dialer
-routing"). Entry-Hub is a seventh mesh node, but stays on `pkg/mesh`'s
-in-process `tsnet` instead of converting to a real `tailscaled`: it holds
-no server role at all (its only `pkg/pki` use is an outbound client, whose
-transport IS interceptable, unlike a bootstrapped server's), so no library
-limitation forces the conversion — see
-`services/entry-hub/cmd/entry-hub/main.go`'s package doc comment, "Mesh
-membership", for the full reasoning. Metrics-Collector is the only
-remaining non-mesh RAM-USB service (Headscale itself is also a non-mesh
+routing"). Entry-Hub and Certificate-Authority's own metrics sidecar
+(`certificate-authority-metrics`, CA-F-03) are two further mesh nodes that
+stay on `pkg/mesh`'s in-process `tsnet` instead of converting to a real
+`tailscaled`: neither holds a server role at all (each one's only
+`pkg/pki` use is an outbound client, whose transport IS interceptable,
+unlike a bootstrapped server's), so no library limitation forces the
+conversion — see `services/entry-hub/cmd/entry-hub/main.go`'s package doc
+comment, "Mesh membership", and `services/certificate-authority/cmd/
+metrics-sidecar/main.go`'s own package doc comment, for the full
+reasoning. Metrics-Collector is the only remaining non-mesh RAM-USB
+service (Headscale itself is also a non-mesh
 container, for the reason above). Database-Vault is a single container
 bundling its own Postgres — see that Dockerfile's own package doc comment
 for why (NET-F-01: Database-Vault's own Postgres should not be reachable by
@@ -82,12 +87,13 @@ Dockerfile's own package doc comment for why that changed this session.
 | 2     | `listening and serving HTTP on: 127.0.0.1:8081` (Headscale itself) — nginx has no startup log line of its own, `curl -k https://localhost:8080/health` returning `200` confirms it |
 | 3     | `network-manager: listening addr=<tailscale-ip>:8447`                                                             |
 | 4     | `mosquitto version 2.1.2 running` + `magicsock: derp-N connected`                                                 |
-| 5     | `database system is ready to accept connections`                                                                  |
-| 6     | `database-vault: listening addr=<tailscale-ip>:8445`                                                              |
-| 7     | `Server listening on <mesh-ip> port 2222` → `storage-service: listening addr=<mesh-ip>:8448`                      |
-| 8     | `security-switch: listening addr=<tailscale-ip>:8444`                                                             |
-| 9     | `entry-hub: listening addr=0.0.0.0:8443` → `entry-hub: listening on the mesh for login addr=:8446`                |
-| 11    | `HTTP Server Listen address=[::]:3000` → http://localhost:3000                                                    |
+| 5     | `magicsock: derp-N connected` (no listener of its own - it only tails a log file and dials out; see services/certificate-authority/cmd/metrics-sidecar/main.go) |
+| 6     | `database system is ready to accept connections`                                                                  |
+| 7     | `database-vault: listening addr=<tailscale-ip>:8445`                                                              |
+| 8     | `Server listening on <mesh-ip> port 2222` → `storage-service: listening addr=<mesh-ip>:8448`                      |
+| 9     | `security-switch: listening addr=<tailscale-ip>:8444`                                                             |
+| 10    | `entry-hub: listening addr=0.0.0.0:8443` → `entry-hub: listening on the mesh for login addr=:8446`                |
+| 12    | `HTTP Server Listen address=[::]:3000` → http://localhost:3000                                                    |
 
 If a shell instead reports `Container ... Running` with no startup lines,
 it was already up from before — that's fine, skip waiting for the line.

@@ -9,6 +9,16 @@
 # documents - see MANUAL-DISTRIBUTED-RUN.md's own Known Issues). Simply
 # re-run this script once shell 2 (Headscale) is up; it is safe to re-run
 # (network/user-creation steps no-op if already done).
+#
+# CA-F-03's own metrics sidecar (certificate-authority-metrics) is a
+# SEPARATE compose project/script (deployments/scripts/
+# certificate-authority-metrics.sh) - it needs its own CA-F-04 bootstrap
+# token, minted via `docker exec certificate-authority`, which requires
+# this script's own certificate-authority container already running; see
+# deployments/compose/certificate-authority.yml's own comment on
+# ramusb-certificate-authority-logs for why bundling it into this same
+# file/project would deadlock on env interpolation before ever starting
+# certificate-authority the first time.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
