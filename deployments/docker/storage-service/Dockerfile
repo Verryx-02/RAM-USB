@@ -1,14 +1,19 @@
 # syntax=docker/dockerfile:1
 #
-# Storage-Service container image. THREE independent long-lived processes -
+# Storage-Service container image. FOUR independent long-lived processes -
 # a real `tailscaled` mesh client, a hardened sshd (ST-F-03/04/07/08/09),
-# and this repo's storage-service Go mTLS HTTP server (ST-F-01/06/10) - are
-# supervised by s6-overlay on a debian:bookworm-slim base, per the SRS 4.5
-# [!NOTE] right after Storage-Service's directory-structure diagram.
-# ST-F-11's authorized-keys-command binary is installed alongside but is
-# NOT a supervised service: sshd invokes it once per SFTP connection
-# attempt, via the AuthorizedKeysCommand directive in sshd_config (see that
-# file for the full directive set).
+# this repo's storage-service Go mTLS HTTP server (ST-F-01/06/10), and
+# cmd/identity-provisioner (ST-F-11, KI-01) - are supervised by s6-overlay
+# on a debian:bookworm-slim base, per the SRS 4.5 [!NOTE] right after
+# Storage-Service's directory-structure diagram. ST-F-11's
+# authorized-keys-command binary is installed alongside but is NOT a
+# supervised service: sshd invokes it once per SFTP connection attempt, via
+# the AuthorizedKeysCommand directive in sshd_config (see that file for the
+# full directive set) - identity-provisioner is the separate, long-lived
+# process that keeps authorized-keys-command's own mTLS identity/config
+# file on disk current (see cmd/identity-provisioner/main.go's own package
+# doc comment for why authorized-keys-command cannot bootstrap that
+# identity itself).
 #
 # `tailscaled` (a real, OS-level Tailscale client daemon), not pkg/mesh's
 # in-process tsnet: unlike Security-Switch/Database-Vault (pure Go
@@ -67,6 +72,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/storage-service \
     ./services/storage-service/cmd/storage-service
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/authorized-keys-command \
     ./services/storage-service/cmd/authorized-keys-command
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/identity-provisioner \
+    ./services/storage-service/cmd/identity-provisioner
 
 # ---- runtime stage ------------------------------------------------------
 FROM debian:bookworm-slim
@@ -156,22 +163,26 @@ RUN mkdir -p /var/lib/tailscale /var/run/tailscale
 # AuthorizedKeysCommand runs as this dedicated, unprivileged system account
 # (per this session's task instructions), with no other role on the
 # container - sshd_config's AuthorizedKeysCommandUser directive names it.
+# cmd/identity-provisioner (ST-F-11, KI-01) runs as this SAME account too
+# (see its own package doc comment for why): the only two things it needs
+# are outbound mTLS calls and write access to /etc/storage-service, exactly
+# the same unprivileged scope authorized-keys-command itself already has.
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin sshd-authkeys
 
 # /storage: root of all users (SRS 4.5's directory-structure diagram).
-# /etc/storage-service: holds authorized-keys-command.conf, per
-# services/storage-service/cmd/authorized-keys-command/main.go's fixed
-# configPath contract - its real contents are supplied by the deployment/
-# docker-compose task, not this Dockerfile.
+# /etc/storage-service: holds authorized-keys-command.conf plus the
+# cert/key/CA-root files cmd/identity-provisioner writes into it (ST-F-11,
+# KI-01).
 RUN mkdir -p /storage /etc/storage-service
 
 COPY --from=build /out/storage-service /usr/local/bin/storage-service
 COPY --from=build /out/authorized-keys-command /usr/local/bin/authorized-keys-command
+COPY --from=build /out/identity-provisioner /usr/local/bin/identity-provisioner
 # sshd(8)/sshd_config(5) refuses an AuthorizedKeysCommand binary that is
 # group- or world-writable. COPY already leaves these root-owned; chmod
 # 0755 makes the "not group/world-writable" property explicit rather than
 # relying on COPY's default.
-RUN chmod 0755 /usr/local/bin/storage-service /usr/local/bin/authorized-keys-command
+RUN chmod 0755 /usr/local/bin/storage-service /usr/local/bin/authorized-keys-command /usr/local/bin/identity-provisioner
 
 COPY deployments/docker/storage-service/sshd_config /etc/ssh/sshd_config
 
@@ -180,6 +191,17 @@ COPY deployments/docker/storage-service/sshd_config /etc/ssh/sshd_config
 # membership files - see this directory's own files for the full layout
 # s6-overlay's README documents.
 COPY deployments/docker/storage-service/rootfs/ /
+
+# /etc/storage-service ownership: sshd-authkeys, not root, since
+# identity-provisioner (ST-F-11, KI-01) runs as that account and must be
+# able to write here, and authorized-keys-command reads the same files back
+# as that same account. Deliberately AFTER the rootfs COPY above, not
+# before it: that COPY lands files directly inside /etc/storage-service
+# (tailscale-up.sh, trust-mesh-ca.sh, identity-provisioner-ready.sh) and
+# was confirmed, by inspecting a real built image, to reset this
+# directory's own ownership back to root - chown must be the LAST write to
+# this path for the final image to actually have it.
+RUN chown sshd-authkeys:sshd-authkeys /etc/storage-service
 
 # No EXPOSE: neither sshd nor storage-service publish a host/ramusb-net
 # port anymore (NET-F-01) - both bind exclusively to the Tailscale mesh

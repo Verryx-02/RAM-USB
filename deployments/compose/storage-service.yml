@@ -1,4 +1,6 @@
-# Storage-Service. Requires ONLY its own CA token.
+# Storage-Service. Requires two CA tokens (its own server identity plus
+# cmd/identity-provisioner's separate ST-F-11/KI-01 identity) and Database-
+# Vault's public-key lookup URL - no cross-Compose-project secret.
 name: ramusb-storage-service
 services:
   storage-service:
@@ -32,6 +34,15 @@ services:
       # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
       # static MQTT certificate/key.
       RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+      # ST-F-11 (KI-01): cmd/identity-provisioner's OWN bootstrap token - a
+      # SECOND "StorageService"-organization identity, distinct from
+      # RAM_USB_CA_BOOTSTRAP_TOKEN above (single-use, and this is a separate
+      # long-lived process in the same container) - and Database-Vault's
+      # public-key lookup base URL it writes into
+      # authorized-keys-command.conf (must match database-vault.yml's own
+      # RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR port, 8446).
+      RAM_USB_STORAGE_SERVICE_AKC_BOOTSTRAP_TOKEN: "${RAM_USB_STORAGE_SERVICE_AKC_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token StorageService --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      RAM_USB_DATABASE_VAULT_PUBLIC_KEY_URL: "https://database-vault:8446"
       # Real tailscaled mesh membership (rootfs/etc/s6-overlay/s6-rc.d/
       # tailscaled, tailscale-up): this node's MagicDNS short name, the
       # shared Headscale coordination URL, and a single-use pre-auth key -
