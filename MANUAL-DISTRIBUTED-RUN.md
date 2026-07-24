@@ -3,11 +3,11 @@
 One terminal per service, one script per terminal (`./deployments/scripts/`).
 Every script does its own credential minting internally, including the
 password shared between a container and its own co-located datastore
-(Network-Manager+Headscale, Database-Vault+Postgres are each now ONE
-container/ONE script — no more cross-terminal password paste for either of
-those two).
+(Database-Vault+Postgres is now ONE container/ONE script — no more
+cross-terminal password paste for it).
 
-**Order**: 1-4 (infra) before 5-7 (services) before 8-10 (public/metrics/
+**Order**: 1-2 (PKI/mesh coordination infra) before 3-5 (Network-Manager +
+messaging infra) before 6-9 (services) before 10-12 (public/metrics/
 dashboards). Scripts run in the foreground; Ctrl+C stops that service. All
 scripts are safe to re-run (network/user-creation steps no-op if already
 done). Passwords/master key/pepper are freshly random every run — this is a
@@ -19,10 +19,10 @@ already has data (e.g. surviving a Docker restart), re-running a script
 that generates a fresh password against an already-initialized volume gets
 silently ignored by the database, and the dependent service then fails
 with `password authentication failed`/SASL error. This can no longer
-happen for Database-Vault's own Postgres (shell 5 generates and consumes
+happen for Database-Vault's own Postgres (shell 6 generates and consumes
 the same value in one script, one Compose file — the cross-shell mismatch
 this used to cause is gone by construction) — it can still happen for
-Metrics-Collector/TimescaleDB (shells 4/9, still two separate
+Metrics-Collector/TimescaleDB (shells 5/10, still two separate
 scripts/Compose projects). Fix: `docker rm -f
 metrics-collector-timescaledb` + `docker volume rm ramusb-metrics-collector-timescaledb_ramusb-metrics-collector-timescaledb-data`
 first, so the next run is a genuinely fresh init that does respect the new
@@ -30,47 +30,64 @@ password.
 
 | Shell | Command                                                                            | Needs                                              |
 | ----- | ---------------------------------------------------------------------------------- | --------------------------------------------------- |
-| 1     | `./deployments/scripts/network-manager.sh`                                        | — (two-phase startup, see the script's own comment) |
-| 2     | `./deployments/scripts/certificate-authority.sh`                                  | shell 1 (its co-located Headscale healthy)          |
-| 3     | `./deployments/scripts/mqtt-broker.sh`                                            | shell 1, 2                                          |
-| 4     | `./deployments/scripts/metrics-collector-timescaledb.sh`                          | —                                                   |
-| 5     | `./deployments/scripts/database-vault.sh`                                         | shell 1, 2                                          |
-| 6     | `./deployments/scripts/storage-service.sh`                                        | shell 1, 2                                          |
-| 7     | `./deployments/scripts/security-switch.sh`                                        | shell 1, 2                                          |
-| 8     | `./deployments/scripts/entry-hub.sh`                                              | shell 2, 3 — not a mesh node                        |
-| 9     | `./deployments/scripts/metrics-collector.sh`                                      | shell 3, 4 — **prompts for shell 4's password**     |
-| 10    | `./deployments/scripts/grafana.sh`                                                | shell 4                                             |
-| 11    | `./deployments/scripts/e2e-test.sh`                                               | shells 1-10 all up                                  |
-| 12    | `./deployments/scripts/cleanup.sh` (`--wipe` to also drop volumes/mesh identities)| —                                                   |
+| 1     | `./deployments/scripts/certificate-authority.sh`                                  | — (its own mesh sidecar may need a re-run once shell 2 is up, see Known issues #9) |
+| 2     | `./deployments/scripts/headscale.sh`                                              | shell 1 (its root certificate, for NM-F-12's mTLS check) |
+| 3     | `./deployments/scripts/network-manager.sh`                                        | shells 1, 2                                         |
+| 4     | `./deployments/scripts/mqtt-broker.sh`                                            | shells 1, 2                                         |
+| 5     | `./deployments/scripts/metrics-collector-timescaledb.sh`                          | —                                                   |
+| 6     | `./deployments/scripts/database-vault.sh`                                         | shells 1, 2                                         |
+| 7     | `./deployments/scripts/storage-service.sh`                                        | shells 1, 2                                         |
+| 8     | `./deployments/scripts/security-switch.sh`                                        | shells 1, 2                                         |
+| 9     | `./deployments/scripts/entry-hub.sh`                                              | shells 1, 2, 4 — mesh node (pkg/mesh)               |
+| 10    | `./deployments/scripts/metrics-collector.sh`                                      | shells 4, 5 — **prompts for shell 5's password**    |
+| 11    | `./deployments/scripts/grafana.sh`                                                | shell 5                                             |
+| 12    | `./deployments/scripts/e2e-test.sh`                                               | shells 1-11 all up                                  |
+| 13    | `./deployments/scripts/cleanup.sh` (`--wipe` to also drop volumes/mesh identities)| —                                                   |
 
-Six services join the real Headscale mesh, all via a real OS-level
-`tailscaled` client now (Security-Switch, Database-Vault, Network-Manager,
-and Storage-Service, Certificate-Authority, MQTT-broker — the latter two as
-a Tailscale sidecar container sharing the main container's network
-namespace): `pkg/mesh`'s earlier in-process `tsnet` was replaced for the
-first three because two libraries they depend on (CA bootstrap/renewal,
-MQTT publish) cannot route through an in-process-only netstack — a
-confirmed library limitation. Entry-Hub and Metrics-Collector are not mesh
-nodes yet — Entry-Hub's own conversion is still pending, and until it
-lands, Entry-Hub cannot reach Security-Switch at all (a known, deliberate
-transitional gap, not a bug). Network-Manager and Database-Vault are each
-now a single container bundling their own third-party backend (Headscale,
-Postgres respectively) — see those two Dockerfiles' own package doc
-comments for why (NM-F-14, NET-F-01: neither backend should be reachable by
-anything but its own owning service).
+Headscale is its own standalone deployment this session (deployments/compose/
+headscale.yml, deployments/docker/headscale/) — it can never safely be a
+member of the mesh it coordinates (headscale.net's own documented
+limitation), so it is NOT a mesh node itself and, unlike every other
+service, is reached by Network-Manager over the PUBLIC network, not the
+mesh (see services/network-manager/cmd/network-manager/main.go's own
+package doc comment). Six services join the real Headscale mesh via a real
+OS-level `tailscaled` client (Security-Switch, Database-Vault,
+Network-Manager, and Storage-Service, Certificate-Authority, MQTT-broker —
+the latter two as a Tailscale sidecar container sharing the main
+container's network namespace): `pkg/mesh`'s earlier in-process `tsnet` was
+replaced for the first three because two libraries they depend on (CA
+bootstrap/renewal, MQTT publish) cannot route through an in-process-only
+netstack when the service also holds a server role — a confirmed library
+limitation (see `.claude/agent-memory/code-agent.md`'s "pkg/pki dialer
+routing"). Entry-Hub is a seventh mesh node, but stays on `pkg/mesh`'s
+in-process `tsnet` instead of converting to a real `tailscaled`: it holds
+no server role at all (its only `pkg/pki` use is an outbound client, whose
+transport IS interceptable, unlike a bootstrapped server's), so no library
+limitation forces the conversion — see
+`services/entry-hub/cmd/entry-hub/main.go`'s package doc comment, "Mesh
+membership", for the full reasoning. Metrics-Collector is the only
+remaining non-mesh RAM-USB service (Headscale itself is also a non-mesh
+container, for the reason above). Database-Vault is a single container
+bundling its own Postgres — see that Dockerfile's own package doc comment
+for why (NET-F-01: Database-Vault's own Postgres should not be reachable by
+anything but its own owning service). Network-Manager, by contrast, is no
+longer co-located with anything — see deployments/docker/network-manager/
+Dockerfile's own package doc comment for why that changed this session.
 
 ## Readiness signals
 
 | Shell | Ready when you see                                                                                            |
 | ----- | ---------------------------------------------------------------------------------------------------------------- |
-| 1     | `>>> waiting for the co-located Headscale to become healthy...` resolves, then (after phase 2) `network-manager: listening addr=<tailscale-ip>:8447`         |
-| 2     | `Serving HTTPS on :9000` + `certificate-authority-init-1 exited with code 0` + `magicsock: derp-N connected`      |
-| 3     | `mosquitto version 2.1.2 running` + `magicsock: derp-N connected`                                                 |
-| 4     | `database system is ready to accept connections`                                                                  |
-| 5     | `database-vault: listening addr=<tailscale-ip>:8445`                                                              |
-| 6     | `Server listening on <mesh-ip> port 2222` → `storage-service: listening addr=<mesh-ip>:8448`                      |
-| 7     | `security-switch: listening addr=<tailscale-ip>:8444`                                                             |
-| 10    | `HTTP Server Listen address=[::]:3000` → http://localhost:3000                                                    |
+| 1     | `Serving HTTPS on :9000` + `certificate-authority-init-1 exited with code 0` + `magicsock: derp-N connected`      |
+| 2     | `listening and serving HTTP on: 127.0.0.1:8081` (Headscale itself) — nginx has no startup log line of its own, `curl -k https://localhost:8080/health` returning `200` confirms it |
+| 3     | `network-manager: listening addr=<tailscale-ip>:8447`                                                             |
+| 4     | `mosquitto version 2.1.2 running` + `magicsock: derp-N connected`                                                 |
+| 5     | `database system is ready to accept connections`                                                                  |
+| 6     | `database-vault: listening addr=<tailscale-ip>:8445`                                                              |
+| 7     | `Server listening on <mesh-ip> port 2222` → `storage-service: listening addr=<mesh-ip>:8448`                      |
+| 8     | `security-switch: listening addr=<tailscale-ip>:8444`                                                             |
+| 9     | `entry-hub: listening addr=0.0.0.0:8443` → `entry-hub: listening on the mesh for login addr=:8446`                |
+| 11    | `HTTP Server Listen address=[::]:3000` → http://localhost:3000                                                    |
 
 If a shell instead reports `Container ... Running` with no startup lines,
 it was already up from before — that's fine, skip waiting for the line.
@@ -81,7 +98,7 @@ it was already up from before — that's fine, skip waiting for the line.
    service's mesh identity without deleting the old node first leaves it
    `offline` and auto-suffixes the new one (`mqtt-broker-1`, `-2`, ...) —
    a call can then resolve to the stale node and time out with no error at
-   all. Check: `docker exec network-manager headscale nodes list` for
+   all. Check: `docker exec headscale headscale nodes list` for
    duplicate hostnames. Fix: `headscale nodes delete --identifier
    <stale-id> --force` on each offline duplicate, then re-run the script
    that was resolving wrong.
@@ -95,7 +112,7 @@ it was already up from before — that's fine, skip waiting for the line.
    production-ready mechanism. See RISK-04 in the SRS.
 4. `third-party/mosquitto/acl.conf` has world-readable permissions;
    Mosquitto warns at startup — should be `chmod 0700`.
-5. The MQTT healthcheck (shell 3) reuses `metrics/Certificate-Authority`,
+5. The MQTT healthcheck (shell 4) reuses `metrics/Certificate-Authority`,
    the topic CA-F-03's real metrics will eventually use — harmless
    (MT-F-02 discards it) but noisy.
 6. Grafana downloads a set of unused default plugins from the internet on
@@ -106,16 +123,35 @@ it was already up from before — that's fine, skip waiting for the line.
    for its own mTLS identity — `sshd` fails secure (RD-04) on any real
    SFTP attempt until this exists. Registration/login/POSIX-user-creation
    all work regardless.
-8. **Network-Manager's own dev-only mesh-control-plane TLS cert must carry
-   `network-manager` in its SAN**, not the old `network-manager-headscale`
-   hostname — regenerate it (see
-   `third-party/network-manager/headscale/dev-tls/README.txt` for the
-   updated command) before the first run after this session's
-   Network-Manager+Headscale container merge, or every other service's
-   mesh join fails TLS hostname verification.
-9. **Entry-Hub cannot reach Security-Switch right now.** Security-Switch's
-   listener (shell 7) binds exclusively to its real Tailscale interface as
-   of this session's conversion; Entry-Hub (shell 8) has not yet joined the
-   mesh itself and still dials it over plain `ramusb-net`. Registration and
-   login will fail at the Security-Switch hop until Entry-Hub's own mesh
-   conversion lands — known, deliberate, not a bug to chase.
+8. **Every mesh-joined service's dev-only mesh-control-plane TLS cert must
+   carry `headscale` in its SAN** (this session's architectural change:
+   Headscale is its own standalone deployment again, no longer
+   `network-manager`) — regenerate it (see
+   `third-party/headscale/dev-tls/README.txt` for the updated command,
+   `deployments/scripts/headscale.sh` does this automatically if the file
+   is missing) before the first run after this session's Headscale/
+   Network-Manager split, or every mesh-joined service's own join fails
+   TLS hostname verification.
+9. **Certificate-Authority's own mesh sidecar may exit before Headscale
+   exists.** Shell 1 runs before shell 2 (Headscale) in this procedure,
+   but its own Tailscale sidecar (`certificate-authority-mesh`) tries to
+   join the mesh immediately — with no Headscale reachable yet, it retries
+   for ~30-40s and then exits entirely (a known, accepted quirk of the
+   Tailscale sidecar pattern this project uses for non-Go containers, see
+   `.claude/agent-memory/code-agent.md`'s "Sidecar mesh pattern" notes).
+   Simply re-run `./deployments/scripts/certificate-authority.sh` once
+   shell 2 is up; it is safe to re-run.
+10. ~~Entry-Hub cannot reach Security-Switch.~~ Resolved: Entry-Hub joins
+    the mesh itself (`pkg/mesh`) and dials Security-Switch over it
+    (`RouteThroughDialer`), same as every other mesh-joined caller.
+11. **Headscale's own coordination endpoint (port 8080) is published
+    straight to the Docker host** (`deployments/compose/headscale.yml`'s
+    `ports:`), per NM-F-14's wording — a real end-user Tailscale client can
+    point its `--login-server`/control URL directly at it. `/api/v1/*` on
+    that SAME port additionally requires a valid RAM-USB-internal-CA
+    client certificate whose organization is exactly `NetworkManager`
+    (NM-F-12) — enforced by the nginx reverse proxy in front of Headscale
+    (`deployments/docker/headscale/nginx.conf`), verified live this
+    session with `curl --cert`/`openssl s_client` against a real running
+    container, with and without a certificate and with the correct/wrong
+    organization.
