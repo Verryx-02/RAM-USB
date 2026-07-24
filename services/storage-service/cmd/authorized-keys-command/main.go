@@ -236,6 +236,21 @@ func parseConfig(r io.Reader) (config, error) {
 // used by database-vault/cmd/database-vault/main.go's own
 // buildStorageServiceClient, the established precedent for building an
 // outbound mTLS *http.Client in this codebase.
+//
+// ServerName is forced to organizationDatabaseVault, not left to default to
+// the dialed network address ("database-vault") - confirmed live this
+// session (a real deployment against the real Certificate-Authority):
+// without this, crypto/tls's own independent hostname check runs BEFORE
+// PKI-F-02's mtls.ClientConfig VerifyConnection organization check ever
+// gets a chance to run, and rejects every real certificate this CA issues
+// with "x509: certificate is valid for DatabaseVault, not database-vault" -
+// every certificate's SAN is always the organization string
+// (third-party/certificate-authority/config/organization.x509.tpl), never
+// the dialed hostname. Same reasoning, and the same fix, as
+// pkg/pki.ClientTLSConfig's own doc comment already documents for every
+// other outbound mTLS caller in this codebase - this one differs only in
+// starting from mtls.ClientConfig (a manually loaded disk identity, not a
+// pkg/pki-bootstrapped *tls.Config) instead of cloning an existing base.
 func buildClient(cfg config) (*http.Client, error) {
 	cert, err := tls.LoadX509KeyPair(cfg.clientCertPath, cfg.clientKeyPath)
 	if err != nil {
@@ -247,9 +262,12 @@ func buildClient(cfg config) (*http.Client, error) {
 		return nil, err
 	}
 
+	tlsConfig := mtls.ClientConfig(cert, rootCAs, organizationDatabaseVault)
+	tlsConfig.ServerName = organizationDatabaseVault
+
 	return &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: mtls.ClientConfig(cert, rootCAs, organizationDatabaseVault),
+			TLSClientConfig: tlsConfig,
 		},
 	}, nil
 }
