@@ -35,7 +35,7 @@ rectangle "RAM-USB System" {
 
   component "**Certificate-Authority**\n[smallstep/certificates]\nmTLS issuance & rotation" as CA <<certAuthority>>
   component "**Observability**\n[Mosquitto, Metrics-Collector,\nGrafana, TimescaleDB]\nMetrics pipeline & dashboards" as Observability <<infra>>
-  component "**Headscale**\n[Headscale]\nMesh coordination server\n(own public VPS, NM-F-14)" as Headscale <<meshCoordinator>>
+  component "**Headscale**\nMesh coordination server\n(own public VPS, NM-F-14)" as Headscale <<meshCoordinator>>
 }
 
 User -down-> EntryHub : **HTTPS**\nregister / login / health

@@ -4,7 +4,7 @@
 title Deployment Diagram
 
 skinparam nodesep 30
-skinparam ranksep 50
+skinparam ranksep 110
 skinparam ArrowFontSize 11
 skinparam roundCorner 12
 skinparam linetype ortho
@@ -41,15 +41,14 @@ node "Public VPS\n(dedicated, NET-F-01)" as EntryHubVPS {
 }
 
 node "Public VPS\n(dedicated, NM-F-14)" as HeadscaleVPS {
-  node "**Headscale**\n[Headscale]\ncoordination + admin API" as Headscale <<public>>
+  node "**Headscale**\ncoordination + admin API" as Headscale <<public>>
 }
 
 cloud "**Headscale Mesh VPN**\nprivate network, mTLS\ncerts from private CA, TLS 1.3" as Mesh
 
-' single hidden-edge chain (not a web of repeated/weighted edges) to force
-' a clean left-to-right rank: User-Client, then its two public entry
-' points, matching NET-F-01's framing of "the system's only two
-' deliberately public-facing surfaces".
+' hidden-edge chain to force a clean left-to-right rank for User-Client's
+' two public entry points: Entry-Hub before Headscale, matching the
+' registration-then-mesh-join reading order (CL-F-04).
 UserClient -[hidden]right- EntryHubVPS
 EntryHubVPS -[hidden]right- HeadscaleVPS
 
@@ -64,7 +63,7 @@ node "Proxmox VE Host" as Proxmox {
         node "**Certificate-Authority**\n[smallstep/certificates]" as CA <<certAuthority>>
       }
       node " " as MosquittoDocker <<docker>> {
-        node "**Mosquitto**\n[MQTT broker]" as Mosquitto <<infra>>
+        node "**MQTT-Broker**\n[Mosquitto]" as Mosquitto <<infra>>
       }
       node " " as MetricsCollectorDocker <<docker>> {
         node "**Metrics-Collector**\n[Go]" as MetricsCollector <<infra>>
@@ -99,6 +98,18 @@ node "Proxmox VE Host" as Proxmox {
 
   SecuritySwitchDocker -[hidden]down- DatabaseVaultDocker
 }
+
+' Proxmox is pinned onto its own rank strictly below both public VPS boxes
+' (not same-rank/beside them) specifically because Network-Manager's real
+' REST API edge to Headscale is the only real edge that reaches outside
+' Proxmox. Graphviz treats a same-rank ("flat") edge between two nodes at
+' the same rank as something to actively avoid, so whichever hidden-edge
+' shape was tried to keep Proxmox beside Entry-Hub/Headscale in the same
+' row got silently overridden and Headscale ended up back next to Proxmox's
+' right edge. Forcing Proxmox down onto the next rank instead sidesteps
+' that conflict entirely and reliably keeps Entry-Hub before Headscale.
+EntryHubVPS -[hidden]down- Proxmox
+HeadscaleVPS -[hidden]down- Proxmox
 
 UserClient -down-> EntryHub : HTTPS :443 (public internet)\nLet's Encrypt cert
 UserClient -right-> Headscale : joins after bootstrap\n(pre-auth key, CL-F-04)
