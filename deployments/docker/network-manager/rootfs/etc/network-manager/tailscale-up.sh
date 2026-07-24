@@ -11,17 +11,31 @@
 # configuration steps that can only happen once this node's mesh IPv4
 # address is known. network-manager (the Go binary, dependencies.d/
 # tailscale-up) waits for this to finish before starting, since it binds
-# exclusively to that address (NET-F-01). Identical shape to Storage-
-# Service's own tailscale-up.sh, with two differences specific to this
-# container: the login-server target below (Headscale is CO-LOCATED in
-# this same container, not reached over ramusb-net) and --accept-dns=false
-# (NM-F-16).
+# exclusively to that address (NET-F-01).
+#
+# Network-Manager joins the SAME way every other mesh-joined service does
+# now (dialing RAM_USB_TAILSCALE_CONTROL_URL, an ordinary ramusb-net/
+# public dial to the separately-deployed Headscale container) - this
+# session's architectural change withdrew Headscale's earlier co-location
+# inside this same container (see cmd/network-manager/main.go's own
+# package doc comment, and Headscale's own documented "do not join the
+# tailnet you coordinate" limitation), so the earlier hardcoded
+# "https://localhost:8080" login-server this script used is gone: there is
+# no longer a co-located Headscale to reach over loopback at all.
+#
+# --accept-dns=false (NM-F-16, kept as literally worded in the SRS even
+# though the specific circular-DNS-dependency scenario that originally
+# motivated it - Headscale's own MagicDNS nameserver answers being served
+# by this very container - no longer applies once Headscale runs on a
+# separate host/container): unlike Storage-Service's/Security-Switch's own
+# nodes, which accept Headscale-pushed DNS at its default.
 #
 # with-contenv (see the up file, not this file's own shebang, which is
 # never invoked by the kernel): this is the one oneshot that needs
-# RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY/RAM_USB_NETWORK_MANAGER_MESH_HOSTNAME
-# pushed back into its environment (S6_KEEP_ENV stays at its default 0,
-# same convention as the network-manager longrun's own run script).
+# RAM_USB_TAILSCALE_CONTROL_URL/RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY/
+# RAM_USB_NETWORK_MANAGER_MESH_HOSTNAME pushed back into its environment
+# (S6_KEEP_ENV stays at its default 0, same convention as the
+# network-manager longrun's own run script).
 set -eu
 
 # Headscale's dev-only self-signed control-plane certificate, if present, is
@@ -50,24 +64,8 @@ while [ ! -S /var/run/tailscale/tailscaled.sock ]; do
 	sleep 1
 done
 
-# Headscale is co-located inside this SAME container (NM-F-14) - this
-# node's own mesh join talks to it over loopback, not the ramusb-net
-# hostname ("network-manager") every OTHER service's own mesh join uses to
-# reach this container's Headscale (see deployments/compose/
-# network-manager.yml's RAM_USB_TAILSCALE_CONTROL_URL, a DIFFERENT value
-# for those other services). Hardcoded, not read from
-# RAM_USB_TAILSCALE_CONTROL_URL: that env var's value
-# (https://network-manager:8080, dialed by every OTHER service) would not
-# even resolve correctly from inside this container for this purpose.
-#
-# --accept-dns=false (NM-F-16): this node must not accept the DNS
-# configuration Headscale pushes to mesh members, to avoid a circular
-# reference in its own host's DNS resolution (Headscale's MagicDNS
-# nameserver answers are themselves served by this same co-located
-# container) - unlike Storage-Service's node, which has no such circular
-# dependency and leaves --accept-dns at its default.
 tailscale up \
-	--login-server="https://localhost:8080" \
+	--login-server="${RAM_USB_TAILSCALE_CONTROL_URL:?RAM_USB_TAILSCALE_CONTROL_URL is not set}" \
 	--authkey="${RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY:?RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY is not set}" \
 	--hostname="${RAM_USB_NETWORK_MANAGER_MESH_HOSTNAME:-network-manager}" \
 	--accept-dns=false \

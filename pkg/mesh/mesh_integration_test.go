@@ -20,7 +20,7 @@ import (
 // Same env-var-gated-skip shape as
 // services/network-manager/internal/headscale/headscale_integration_test.go
 // (NM_TEST_HEADSCALE_ADDR/NM_TEST_HEADSCALE_CONTAINER): this test requires
-// a real, already-running network-manager-headscale container
+// a real, already-running standalone headscale container
 // (deployments/compose/headscale.yml) reachable at its control URL, plus
 // "docker exec" access to mint real users/pre-auth keys via the real
 // "headscale" CLI - not a fake/stub. Verified live against that stack.
@@ -44,7 +44,7 @@ const meshTestControlURLEnvVar = "MESH_TEST_HEADSCALE_CONTROL_URL"
 // CLI - mirrors headscale_integration_test.go's mintAPIKey pattern.
 const meshTestContainerEnvVar = "MESH_TEST_HEADSCALE_CONTAINER"
 
-const defaultMeshTestContainer = "network-manager-headscale"
+const defaultMeshTestContainer = "headscale"
 
 // Requirement: SS-F-01, DV-F-01
 //

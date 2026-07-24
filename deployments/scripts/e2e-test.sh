@@ -1,6 +1,6 @@
 #!/bin/bash
-# Shell 11 - end-to-end test: register, real client mesh join, login, verify.
-# Run only once shells 1-10 are all up and quiet.
+# Shell 12 - end-to-end test: register, real client mesh join, login, verify.
+# Run only once shells 1-11 are all up and quiet.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
@@ -39,8 +39,8 @@ EOF
 # database-vault-postgres container anymore.
 docker exec database-vault psql -U database_vault -d database_vault \
   -c "SELECT posix_username, registered_at FROM users ORDER BY registered_at DESC LIMIT 5;"
-# Headscale now lives inside the network-manager container itself.
-docker exec network-manager headscale nodes list
+# Headscale is its own standalone container this session.
+docker exec headscale headscale nodes list
 
 echo "waiting 65s for metrics to publish (EH-F-10/SS-F-07/etc. publish every 60s)..."
 sleep 65

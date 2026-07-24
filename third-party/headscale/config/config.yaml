@@ -1,0 +1,86 @@
+# Minimal dev-only Headscale configuration for the standalone Headscale
+# deployment (deployments/compose/headscale.yml,
+# deployments/docker/headscale/) - Headscale is now a fully separate
+# container/deployment from Network-Manager (see
+# services/network-manager/cmd/network-manager/main.go's own package doc
+# comment for why: Headscale's own documented limitation is that its
+# coordination server can never safely be a member of the mesh it
+# coordinates, so it cannot be co-located with any mesh-joined service).
+#
+# Only what NM-F-08/NM-F-09/NM-F-01..07 actually exercise this session is
+# filled in beyond Headscale's own defaults (github.com/juanfont/headscale
+# v0.29.2's config-example.yaml, confirmed via go doc/source read this
+# session): SQLite persistence (Headscale's own recommended choice -
+# Postgres is explicitly "highly discouraged" upstream, a completely
+# separate concern from this project's own Postgres use for
+# Database-Vault's user records), and policy.mode: database (NOT
+# policy.mode: file - NM-F-09/NM-F-10 need to change ACL policy at runtime
+# without a process reload/SIGHUP, and only "database" mode supports
+# that).
+#
+# tls_cert_path/tls_key_path/tls_letsencrypt_hostname are all left EMPTY
+# (Headscale's own default) - this session's architectural change: TLS is
+# now terminated by the reverse proxy in front of Headscale (see
+# deployments/docker/headscale/'s own Dockerfile doc comment for the full
+# per-path mTLS design NM-F-12 needs), not by Headscale itself. Headscale
+# therefore serves plain HTTP on listen_addr - confirmed via
+# config-example.yaml that this is Headscale's own documented supported
+# mode (running behind a reverse proxy that handles TLS), not an
+# unsupported workaround.
+#
+# grpc_listen_addr is intentionally OMITTED (Headscale's own default,
+# 127.0.0.1:50443, applies but is never used): this session removed every
+# RAM-USB use of Headscale's gRPC API in favor of its REST API
+# (`/api/v1/*`, served on the SAME listener as the coordination protocol,
+# confirmed by reading github.com/juanfont/headscale@v0.29.2's
+# hscontrol/app.go this session - see services/network-manager/internal/
+# headscale/client.go's own package doc comment for the full reasoning) -
+# the gRPC listener has no remaining RAM-USB consumer, and the operator's
+# own `headscale apikeys create`/`headscale users create` CLI commands (run
+# via `docker exec` directly inside this container) use Headscale's own
+# embedded/local database access when run on the same machine as the
+# server, not gRPC, so no `cli:` remote stanza is needed either.
+#
+# listen_addr (the coordination/REST-API HTTP endpoint the reverse proxy
+# forwards to) is loopback-only (127.0.0.1) - only this container's own
+# nginx process reaches it; NM-F-14's actual public exposure is the
+# reverse proxy's own listener (deployments/docker/headscale/nginx.conf),
+# not this one directly. NM-F-15's MagicDNS base_domain below remains a
+# placeholder value, not a considered choice - still out of this session's
+# scope.
+
+server_url: https://headscale:8080
+listen_addr: 127.0.0.1:8081
+metrics_listen_addr: 127.0.0.1:9090
+
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+
+derp:
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+
+log:
+  level: info
+  format: text
+
+policy:
+  mode: database
+
+dns:
+  magic_dns: true
+  base_domain: ramusb-mesh.internal
+  override_local_dns: false
+  nameservers:
+    global:
+      - 1.1.1.1

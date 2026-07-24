@@ -4,22 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
-	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
-	"google.golang.org/grpc"
 )
 
 // This file implements NM-F-01, NM-F-02, NM-F-04, NM-F-05, NM-F-06, and
 // NM-F-07: the static mesh-reachability rules restricting which components
 // may contact which others, translated from
 // docs/design/diagrams/09-security-trust-zones.puml into a real Headscale
-// ACL policy document pushed via the gRPC SetPolicy call (available
-// because deployments' network-manager-headscale config sets
-// policy.mode: database - see client.go's package doc comment for why that
-// mode was chosen). Unlike NM-F-08/NM-F-09 (per-request, dynamic tag
-// assignment on an individual node), these six rules are static for the
-// lifetime of the deployment, so PushPolicy is meant to be called once at
-// Network-Manager startup, not per request.
+// ACL policy document pushed via PUT /api/v1/policy (available because
+// deployments/docker/headscale's own config sets policy.mode: database -
+// see client.go's package doc comment for why that mode was chosen, and
+// for why this package now reaches Headscale over REST through a reverse
+// proxy, not gRPC directly). Unlike NM-F-08/NM-F-09 (per-request, dynamic
+// tag assignment on an individual node), these six rules are static for
+// the lifetime of the deployment, so PushPolicy is meant to be called once
+// at Network-Manager startup, not per request.
 //
 // Schema confirmed empirically against a real headscale/headscale:0.29
 // container this session (docker compose's network-manager-headscale
@@ -30,12 +28,11 @@ import (
 //     "tagOwners"/"acls", each ACL entry "action"/"src"/"dst", a
 //     "tag:x:*" suffix on every dst entry for "any port") before any Go
 //     code was written.
-//   - A throwaway SetPolicy/GetPolicy gRPC round trip against the same
-//     live container (go doc github.com/juanfont/headscale/gen/go/
-//     headscale/v1 confirmed SetPolicyRequest{Policy string}/
-//     SetPolicyResponse{Policy string, UpdatedAt}) confirmed the policy
-//     Headscale returns from GetPolicy afterward is byte-for-byte the
-//     document that was pushed.
+//   - A throwaway SetPolicy/GetPolicy round trip against the same live
+//     container (this session, over the new REST transport - see
+//     rest.go's Client.SetPolicy/GetPolicy) confirmed the policy Headscale
+//     returns from GetPolicy afterward is byte-for-byte the document that
+//     was pushed.
 //   - Reading github.com/juanfont/headscale@v0.29.2's hscontrol/policy/v2
 //     package (not imported - see policyDocument's own doc comment for
 //     why) confirmed every "tag:" literal referenced by an ACL's src/dst
@@ -197,7 +194,12 @@ func buildACLs() []policyACL {
 		{ // NM-F-03 (already implemented at the mTLS boundary; included
 			// here so the network layer does not block it - see this
 			// function's own doc comment): only Security-Switch and
-			// Certificate-Authority can contact Network-Manager.
+			// Certificate-Authority can contact Network-Manager's own mTLS
+			// listener - Entry-Hub no longer needs mesh reachability to
+			// Network-Manager now that NM-F-14's Headscale coordination
+			// endpoint is directly public-facing (EH-F-12 withdrawn; see
+			// services/network-manager/cmd/network-manager/main.go's own
+			// package doc comment).
 			Action: "accept",
 			Src:    []string{TagSecuritySwitch, TagCertificateAuthority},
 			Dst:    []string{dstAny(TagNetworkManager)},
@@ -295,14 +297,14 @@ func PolicyDocument() ([]byte, error) {
 	return data, nil
 }
 
-// PolicyPusher is the narrow subset of Headscale's gRPC API PushPolicy
+// PolicyPusher is the narrow subset of Headscale's REST API PushPolicy
 // needs - SetPolicy to push the document, GetPolicy for a caller wanting
-// to confirm what is currently active. v1.NewHeadscaleServiceClient's
-// result already satisfies this through Go's ordinary structural typing,
-// same pattern as the Service interface above.
+// to confirm what is currently active. *Client (rest.go) satisfies this
+// through Go's ordinary structural typing, same pattern as the Service
+// interface in client.go.
 type PolicyPusher interface {
-	SetPolicy(ctx context.Context, in *v1.SetPolicyRequest, opts ...grpc.CallOption) (*v1.SetPolicyResponse, error)
-	GetPolicy(ctx context.Context, in *v1.GetPolicyRequest, opts ...grpc.CallOption) (*v1.GetPolicyResponse, error)
+	SetPolicy(ctx context.Context, policy string) error
+	GetPolicy(ctx context.Context) (string, error)
 }
 
 // PushPolicy implements NM-F-01/02/04/05/06/07 (plus NM-F-03, see
@@ -316,7 +318,7 @@ func PushPolicy(ctx context.Context, svc PolicyPusher) error {
 		return err
 	}
 
-	if _, err := svc.SetPolicy(ctx, &v1.SetPolicyRequest{Policy: string(doc)}); err != nil {
+	if err := svc.SetPolicy(ctx, string(doc)); err != nil {
 		return fmt.Errorf("%w: set policy: %w", ErrHeadscaleRequestFailed, err)
 	}
 

@@ -1,29 +1,31 @@
 # syntax=docker/dockerfile:1
 #
-# Network-Manager container image. THREE independent long-lived processes -
-# a real `tailscaled` mesh client, Headscale itself (NM-F-08/NM-F-09's mesh
-# coordination backend), and this repo's network-manager Go mTLS HTTP
-# server (NM-F-03, NM-F-08, NM-F-09) - are supervised by s6-overlay on a
-# debian:bookworm-slim base, matching the deployment diagram
-# (docs/design/diagrams/02-architecture-deployment.puml's single
-# "NetworkManagerDocker" node) and closing NM-F-14 ("the Headscale
-# coordination endpoint must be reachable only from the private network"):
-# co-locating both processes in one container lets Headscale's gRPC admin
-# API (port 50443, called only by this same container's own Go process,
-# services/network-manager/internal/headscale/client.go) bind to
-# 127.0.0.1 and never be published as a container port at all, instead of
-# the previous two-container topology, which had to publish 50443 straight
-# to the Docker host for local dev/test convenience (see this repo's git
-# history for deployments/compose/headscale.yml, now removed).
+# Network-Manager container image. TWO independent long-lived processes -
+# a real `tailscaled` mesh client and this repo's network-manager Go mTLS
+# HTTP server (NM-F-03, NM-F-08, NM-F-09) - are supervised by s6-overlay on
+# a debian:bookworm-slim base, matching the deployment diagram
+# (docs/design/diagrams/02-architecture-deployment.puml's "NetworkManagerDocker"
+# node). Headscale itself is NOT part of this image - a prior version of
+# this Dockerfile co-located it here; that co-location was withdrawn this
+# session after finding Headscale's own documented limitation
+# (headscale.net's FAQ): "running headscale on a machine that is also in
+# the tailnet it coordinates... is not supported" - Headscale's own
+# coordination server can never safely be a member of the mesh it
+# coordinates, which co-locating it with this mesh-joined container
+# effectively assumed it would be. Headscale is now its own separate
+# deployment (deployments/compose/headscale.yml, deployments/docker/
+# headscale/ - a reverse proxy plus Headscale itself, no Network-Manager
+# code) - see services/network-manager/cmd/network-manager/main.go's own
+# package doc comment for the full reasoning and how this container now
+# reaches it (a REST call over the public network, through that reverse
+# proxy, NOT the mesh - Headscale itself cannot be a mesh member).
 #
-# Headscale's own coordination/control-plane HTTP endpoint (port 8080)
-# stays bound to 0.0.0.0 and reachable on ramusb-net without being
-# published to the Docker host: every other service's mesh join
-# (RAM_USB_TAILSCALE_CONTROL_URL, plus Storage-Service/Certificate-
-# Authority/MQTT-broker's own Tailscale clients/sidecars) dials this
-# container by its ramusb-net name ("network-manager") to perform ITS OWN
-# mesh join - locking this endpoint to loopback would break every other
-# service's mesh membership, not just Network-Manager's own.
+# This container is now a REGULAR mesh-joined service, structurally
+# identical to Security-Switch's own Dockerfile/rootfs (tailscaled +
+# trust-mesh-ca + tailscale-up + the service's own Go longrun, no more
+# Headscale-specific s6 units) - it dials the separately-deployed Headscale
+# for its OWN mesh join (RAM_USB_TAILSCALE_CONTROL_URL) exactly like every
+# other mesh-joined service does, no longer "https://localhost:8080".
 #
 # `tailscaled` (a real, OS-level Tailscale client daemon), not pkg/mesh's
 # in-process tsnet: this process needs Certificate-Authority-bootstrap
@@ -33,28 +35,28 @@
 # (confirmed by direct source reading this session - a hard library
 # limitation, not a code gap). A real tailscaled makes the container's
 # only network egress a genuine kernel tailscale0 interface, so every
-# outbound connection this process makes - including internal library HTTP
-# calls that know nothing about mesh - is forced through it automatically,
-# with zero application-level dial injection needed. Exactly the same
-# mechanism Storage-Service already uses (see that Dockerfile's own
-# package doc comment) for the analogous reason (there, sshd needs a
-# kernel TUN device).
+# outbound connection this process makes THROUGH THE MESH - including
+# internal library HTTP calls that know nothing about mesh - is forced
+# through it automatically, with zero application-level dial injection
+# needed. Exactly the same mechanism Storage-Service already uses (see
+# that Dockerfile's own package doc comment) for the analogous reason
+# (there, sshd needs a kernel TUN device). The one outbound call this
+# process makes that deliberately does NOT go through tailscaled/the mesh
+# is its own Headscale admin-API REST call (buildHeadscaleAPIClient in
+# main.go) - Headscale is not itself a mesh member, so there is no mesh
+# path to it at all.
 #
 # Why debian:bookworm-slim, not distroless (see the [!NOTE] right after the
 # SRS's §2's directory-structure diagram for this project's base-image
-# policy, RNF-SEC-03): Network-Manager's own code
-# (services/network-manager/cmd/network-manager/main.go's run()) calls
-# PushPolicy/CreateMeshUser against Headscale's gRPC API at startup, which
-# needs Headscale already serving - a real startup-order dependency between
-# multiple long-lived processes that only a supervisor with a shell can
-# express, and now also needs a real tailscaled + iproute2/iptables, which
-# themselves need a real shell/package manager. distroless has no shell,
-# so s6-overlay (the same version already proven working for Storage-
-# Service, deployments/docker/storage-service/Dockerfile) is used here
-# too. This container runs entirely as root throughout, for consistency
-# with Storage-Service - even though nothing here strictly needs root
-# beyond tailscaled's own NET_ADMIN/NET_RAW requirement (no chroot/
-# setuid/useradd, unlike Storage-Service); revisit this choice if a
+# policy, RNF-SEC-03): this process needs a real tailscaled + iproute2/
+# iptables, which themselves need a real shell/package manager - the same
+# reasoning Storage-Service's own Dockerfile documents. distroless has no
+# shell, so s6-overlay (the same version already proven working for
+# Storage-Service, deployments/docker/storage-service/Dockerfile) is used
+# here too. This container runs entirely as root throughout, for
+# consistency with Storage-Service - even though nothing here strictly
+# needs root beyond tailscaled's own NET_ADMIN/NET_RAW requirement (no
+# chroot/setuid/useradd, unlike Storage-Service); revisit this choice if a
 # non-root s6-overlay pattern gets established elsewhere in this project.
 #
 # Runs under a deliberately narrow capability set (wired for real in
@@ -76,7 +78,6 @@
 
 ARG GO_VERSION=1.26
 ARG S6_OVERLAY_VERSION=3.2.3.2
-ARG HEADSCALE_VERSION=0.29
 ARG TAILSCALE_VERSION=1.98.9
 
 # ---- build stage: compile a fully static binary ------------------------
@@ -94,27 +95,22 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/network-manager \
     ./services/network-manager/cmd/network-manager
 
-# ---- headscale-src stage: source of the official Headscale binary ------
-# headscale/headscale is a ko-built image; its binary lives at
-# /ko-app/headscale (confirmed by this repo's own existing healthcheck/
-# admin-CLI invocations of that exact path, e.g. the "docker exec
-# network-manager-headscale /ko-app/headscale health" healthcheck the
-# previous two-container topology used).
-FROM headscale/headscale:${HEADSCALE_VERSION} AS headscale-src
-
 # ---- runtime stage -------------------------------------------------------
 FROM debian:bookworm-slim
 ARG S6_OVERLAY_VERSION
 ARG TAILSCALE_VERSION
 ARG TARGETARCH
 
-# ca-certificates: Headscale's own config.yaml sets derp.urls to
-# https://controlplane.tailscale.com/derpmap/default, an outbound HTTPS
-# call at Headscale startup that needs a real trust store; also gives the
-# real tailscaled client a genuine OS trust store to extend via
-# update-ca-certificates for Headscale's own dev-only self-signed
-# control-plane certificate (see rootfs/etc/s6-overlay/s6-rc.d/
-# trust-mesh-ca/) - same reasoning as Storage-Service's Dockerfile.
+# ca-certificates: this process's own outbound calls (Certificate-Authority
+# bootstrap, MQTT metrics publish, and Headscale's admin-API REST calls -
+# the latter trusting either the real system trust store, in production
+# with a real Let's Encrypt reverse-proxy certificate, or a mounted
+# dev-only cert via RAM_USB_NETWORK_MANAGER_HEADSCALE_API_CA_FILE) need a
+# real trust store; also gives the real tailscaled client a genuine OS
+# trust store to extend via update-ca-certificates for the mesh's own
+# dev-only self-signed control-plane certificate (see rootfs/etc/
+# s6-overlay/s6-rc.d/trust-mesh-ca/) - same reasoning as Storage-Service's
+# Dockerfile.
 # curl, xz-utils: fetch/extract the s6-overlay and tailscale release
 # tarballs below.
 # iproute2, iptables: tailscaled's own runtime dependencies for managing
@@ -130,11 +126,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iptables \
     && rm -rf /var/lib/apt/lists/*
 
-# s6-overlay: process supervision for the headscale/network-manager
-# longruns plus the headscale-ready oneshot. TARGETARCH is set
-# automatically by BuildKit to the image's target platform (amd64/arm64);
-# mapped here to s6-overlay's own release-asset architecture names
-# (x86_64/aarch64) - identical block to Storage-Service's Dockerfile.
+# s6-overlay: process supervision for the tailscaled/tailscale-up/
+# trust-mesh-ca oneshots plus the network-manager longrun. TARGETARCH is
+# set automatically by BuildKit to the image's target platform
+# (amd64/arm64); mapped here to s6-overlay's own release-asset
+# architecture names (x86_64/aarch64) - identical block to Storage-
+# Service's Dockerfile.
 RUN set -eu; \
     case "${TARGETARCH}" in \
       amd64) S6_ARCH=x86_64 ;; \
@@ -166,31 +163,28 @@ RUN set -eu; \
     install -m 0755 "/tmp/tailscale_${TAILSCALE_VERSION}_${TS_ARCH}/tailscaled" /usr/sbin/tailscaled; \
     rm -rf /tmp/tailscale.tgz "/tmp/tailscale_${TAILSCALE_VERSION}_${TS_ARCH}"
 
-# /var/lib/headscale: Headscale's SQLite data dir + noise private key path
-# (third-party/network-manager/headscale/config/config.yaml). /var/lib/tailscale,
-# /var/run/tailscale: the real tailscaled client's own state/socket
-# directories (RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY's join target) -
-# created here (root-owned, this container's only user) so they exist even
-# before the named volume in deployments/compose/network-manager.yml is
-# mounted over /var/lib/tailscale.
-RUN mkdir -p /var/lib/headscale /var/lib/tailscale /var/run/tailscale
+# /var/lib/tailscale, /var/run/tailscale: the real tailscaled client's own
+# state/socket directories (RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY's
+# join target) - created here (root-owned, this container's only user) so
+# they exist even before the named volume in deployments/compose/
+# network-manager.yml is mounted over /var/lib/tailscale.
+RUN mkdir -p /var/lib/tailscale /var/run/tailscale
 
 COPY --from=build /out/network-manager /usr/local/bin/network-manager
-COPY --from=headscale-src /ko-app/headscale /usr/local/bin/headscale
-RUN chmod 0755 /usr/local/bin/network-manager /usr/local/bin/headscale
+RUN chmod 0755 /usr/local/bin/network-manager
 
-# s6-rc.d service definitions (trust-mesh-ca/tailscaled/tailscale-up/
-# headscale/headscale-ready/network-manager longruns and oneshots) plus
-# their user-bundle membership files - see this directory's own files for
-# the full layout s6-overlay's README documents.
+# s6-rc.d service definitions (trust-mesh-ca/tailscaled/tailscale-up
+# oneshots plus the network-manager longrun) plus their user-bundle
+# membership files - see this directory's own files for the full layout
+# s6-overlay's README documents.
 COPY deployments/docker/network-manager/rootfs/ /
 
-# No EXPOSE: NM-F-03's mTLS listener binds only to this node's real
-# Tailscale mesh interface address (assigned at runtime by tailscale-up,
-# never a fixed value), Headscale's gRPC admin API is loopback-only
-# (127.0.0.1:50443, this container's own process only), and Headscale's
-# coordination endpoint (8080) is reachable on ramusb-net without being
-# published to the Docker host - none of these has a fixed value worth
-# documenting via EXPOSE.
+# NM-F-03's mTLS listener binds only to this node's real Tailscale mesh
+# interface address (assigned at runtime by tailscale-up, never a fixed
+# value) - no fixed value worth documenting via EXPOSE, and (unlike the
+# earlier co-located version of this image) this container publishes
+# nothing to the Docker host at all: Headscale's own public coordination
+# endpoint now lives in the separate deployments/compose/headscale.yml
+# deployment instead.
 
 ENTRYPOINT ["/init"]

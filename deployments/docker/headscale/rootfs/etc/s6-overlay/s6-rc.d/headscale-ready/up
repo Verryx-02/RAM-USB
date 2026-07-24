@@ -1,0 +1,1 @@
+with-contenv /bin/sh /etc/headscale-ready/headscale-ready.sh

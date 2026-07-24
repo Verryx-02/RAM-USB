@@ -1,6 +1,6 @@
 #!/bin/bash
-# Shell 9 - Metrics-Collector. Not a mesh node, reaches mqtt-broker over
-# ramusb-net. Requires shell 4 (metrics-collector-timescaledb.sh) already
+# Shell 10 - Metrics-Collector. Not a mesh node, reaches mqtt-broker over
+# ramusb-net. Requires shell 5 (metrics-collector-timescaledb.sh) already
 # running.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."

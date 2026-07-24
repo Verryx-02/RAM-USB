@@ -43,12 +43,12 @@ services:
       # ramusb-storage-service-mesh-state volume below, not a Go-managed
       # directory.
       RAM_USB_STORAGE_SERVICE_MESH_HOSTNAME: "storage-service"
-      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager-headscale:8080}"
+      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://headscale:8080}"
       RAM_USB_STORAGE_SERVICE_TAILSCALE_AUTHKEY: >-
         ${RAM_USB_STORAGE_SERVICE_TAILSCALE_AUTHKEY:?mint with:
-        docker exec network-manager-headscale headscale users create storage-service
-        && docker exec network-manager-headscale headscale users list --name storage-service -o json
-        && docker exec network-manager-headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:storage-service}
+        docker exec headscale headscale users create storage-service
+        && docker exec headscale headscale users list --name storage-service -o json
+        && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:storage-service}
     volumes:
       - ramusb-storage-service-mesh-state:/var/lib/tailscale
       # Dev-only: Headscale's self-signed control-plane certificate,
@@ -59,7 +59,7 @@ services:
       # standard mechanism applies directly. Leave this volume unmounted
       # once RAM_USB_TAILSCALE_CONTROL_URL carries a publicly-trusted-root
       # certificate.
-      - ../../third-party/network-manager/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
     # No "ports:" - sshd no longer binds 0.0.0.0/ramusb-net at all (fixed a
     # NET-F-01 violation: only Entry-Hub's port should ever be published),
     # it binds exclusively to this node's Tailscale interface address. SFTP

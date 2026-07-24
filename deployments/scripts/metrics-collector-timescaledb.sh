@@ -1,5 +1,5 @@
 #!/bin/bash
-# Shell 4 - TimescaleDB (Metrics-Collector's data).
+# Shell 5 - TimescaleDB (Metrics-Collector's data).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 

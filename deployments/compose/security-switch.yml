@@ -52,12 +52,12 @@ services:
       # persistent state lives in the ramusb-security-switch-mesh-state
       # volume below, not a Go-managed directory.
       RAM_USB_SECURITY_SWITCH_MESH_HOSTNAME: "security-switch"
-      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager:8080}"
+      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://headscale:8080}"
       RAM_USB_SECURITY_SWITCH_TAILSCALE_AUTHKEY: >-
         ${RAM_USB_SECURITY_SWITCH_TAILSCALE_AUTHKEY:?mint with:
-        docker exec network-manager headscale users create security-switch
-        && docker exec network-manager headscale users list --name security-switch -o json
-        && docker exec network-manager headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:security-switch}
+        docker exec headscale headscale users create security-switch
+        && docker exec headscale headscale users list --name security-switch -o json
+        && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:security-switch}
     volumes:
       - ramusb-security-switch-mesh-state:/var/lib/tailscale
       # Dev-only: Headscale's self-signed control-plane certificate,
@@ -68,7 +68,7 @@ services:
       # directly. Leave this volume unmounted once
       # RAM_USB_TAILSCALE_CONTROL_URL carries a publicly-trusted-root
       # certificate.
-      - ../../third-party/network-manager/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
     # No "ports:" - security-switch no longer binds 0.0.0.0/ramusb-net at
     # all, it binds exclusively to this node's Tailscale interface address
     # (NET-F-01). networks: ramusb-net is kept for now (a later task

@@ -1,0 +1,7 @@
+#!/command/with-contenv sh
+# exec replaces this shell so nginx's master process becomes the directly
+# supervised process and receives s6's signals itself. "daemon off;" keeps
+# nginx in the foreground, required for any real process supervisor
+# (s6-overlay, same reasoning every other longrun `exec`s its own
+# foreground-mode binary directly).
+exec nginx -c /etc/nginx/nginx.conf -g "daemon off;"

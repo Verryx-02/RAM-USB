@@ -1,21 +1,20 @@
-# Network-Manager, now co-located with its own Headscale mesh backend in
-# one container (see deployments/docker/network-manager/Dockerfile's
-# package doc comment, NM-F-14) - absorbs everything the previous
-# deployments/compose/headscale.yml (now removed) provisioned separately.
-# Requires ONLY its own 2 secret variables (Headscale API key + CA token)
-# plus the mesh pre-auth-key variable below - no other shell/service sees
-# them.
+# Network-Manager. Requires its own CA token, its own mesh pre-auth key,
+# and Headscale's own bearer API key (all three minted on the separately-
+# deployed Headscale/reverse-proxy container - deployments/compose/
+# headscale.yml - by an operator, out-of-band, via
+# deployments/scripts/network-manager.sh).
 #
-# Joins the private mesh via a REAL, kernel-level tailscaled daemon (see
-# the Dockerfile's package doc comment for why, unlike Database-Vault/
-# Security-Switch's in-process pkg/mesh tsnet) - same mechanism as
-# Storage-Service's own deployments/compose/storage-service.yml.
-# ramusb-net is still required here: Network-Manager's own outbound calls
-# to Certificate-Authority (CA-F-04 bootstrap) and MQTT-Broker (NM-F-17
-# metrics publish) are not yet verified/switched to prefer the mesh route
-# over ramusb-net - that verification is separate, later work once
-# Database-Vault's and Security-Switch's own real-tailscaled conversions
-# also land.
+# This session's architectural change: Headscale is no longer co-located
+# here (see deployments/docker/network-manager/Dockerfile's own package
+# doc comment for why - Headscale's own documented limitation is that it
+# can never safely join the mesh it coordinates). Network-Manager is now a
+# REGULAR mesh-joined service, structurally identical to Security-Switch's
+# own deployments/compose/security-switch.yml, plus one deliberate
+# exception: its own outbound call to Headscale's admin API
+# (RAM_USB_NETWORK_MANAGER_HEADSCALE_API_URL/_API_KEY/_API_CA_FILE below)
+# crosses the PUBLIC network, not the mesh - see
+# services/network-manager/cmd/network-manager/main.go's own package doc
+# comment for the full reasoning.
 name: ramusb-network-manager
 services:
   network-manager:
@@ -26,8 +25,8 @@ services:
     cap_add:
       # NET_ADMIN/NET_RAW: the real tailscaled client's own minimum
       # requirement to create/manage the mesh TUN interface (see the
-      # Dockerfile's package doc comment) - not needed by Headscale or
-      # network-manager themselves.
+      # Dockerfile's package doc comment) - not needed by
+      # network-manager itself.
       - NET_ADMIN
       - NET_RAW
     devices:
@@ -40,12 +39,22 @@ services:
       # calls (SS-F-05, SS-F-09) is reachable only from inside the
       # Headscale mesh.
       RAM_USB_NETWORK_MANAGER_LISTEN_PORT: "8447"
-      # Headscale's gRPC admin API is now loopback-only inside this same
-      # container (127.0.0.1:50443, third-party/network-manager/headscale/
-      # config/config.yaml's grpc_listen_addr) - NM-F-14/NM-F-12.
-      RAM_USB_HEADSCALE_ADDR: "localhost:50443"
-      RAM_USB_HEADSCALE_API_KEY: "${RAM_USB_HEADSCALE_API_KEY:?mint with: docker exec network-manager /usr/local/bin/headscale apikeys create --expiration 24h}"
-      RAM_USB_HEADSCALE_INSECURE_SKIP_VERIFY: "true"
+      # NM-F-08/NM-F-09/NM-F-01..07: Headscale's admin REST API, reached
+      # over the PUBLIC network through the separately-deployed reverse
+      # proxy (deployments/compose/headscale.yml) - NOT the mesh, see this
+      # file's own top-level comment for why. "headscale" here is that
+      # container's ramusb-net Docker DNS name in this dev/test stack; in
+      # production this would be Headscale's own dedicated VPS's real
+      # public hostname.
+      RAM_USB_NETWORK_MANAGER_HEADSCALE_API_URL: "https://headscale:8080"
+      RAM_USB_NETWORK_MANAGER_HEADSCALE_API_KEY: "${RAM_USB_NETWORK_MANAGER_HEADSCALE_API_KEY:?mint with: docker exec headscale headscale apikeys create --expiration 24h}"
+      # Dev-only: trusts the reverse proxy's own self-signed public-facing
+      # certificate (third-party/headscale/dev-tls - NEVER RAM-USB's
+      # internal Certificate-Authority, see cmd/network-manager/main.go's
+      # own package doc comment for why those are different trust roots).
+      # Leave unset once that certificate chains to a real, publicly
+      # trusted root (a real Let's Encrypt certificate in production).
+      RAM_USB_NETWORK_MANAGER_HEADSCALE_API_CA_FILE: "/etc/headscale-api-ca/cert.dev-only.pem"
       RAM_USB_NETWORK_MANAGER_GRANTS_DB_PATH: "/tmp/grants.db"
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token NetworkManager --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
       # NM-F-17/NM-F-18: metrics publish, reuses the same mTLS identity
@@ -53,53 +62,39 @@ services:
       # static MQTT certificate/key.
       RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
       # Real tailscaled mesh membership (rootfs/etc/s6-overlay/s6-rc.d/
-      # tailscaled, tailscale-up): this node's MagicDNS short name and a
-      # single-use pre-auth key - see services/network-manager/internal/
-      # headscale/policy.go for the tag:network-manager ACL rule this
-      # key's --tags must match. No RAM_USB_NETWORK_MANAGER_MESH_DIR
-      # anymore (that was pkg/mesh's own Go-managed tsnet state directory,
-      # now removed) - the real tailscaled's equivalent persistent state
-      # lives in the ramusb-network-manager-tailscale-state volume below.
+      # tailscaled, tailscale-up): this node's MagicDNS short name, the
+      # shared Headscale coordination URL, and a single-use pre-auth key -
+      # see services/network-manager/internal/headscale/policy.go for the
+      # tag:network-manager ACL rule this key's --tags must match. Same
+      # shape as every other mesh-joined service's own compose file now
+      # (Security-Switch, Database-Vault, Storage-Service) - Network-
+      # Manager is no longer special-cased here.
       RAM_USB_NETWORK_MANAGER_MESH_HOSTNAME: "network-manager"
-      # Network-Manager's own mesh join (rootfs/etc/network-manager/
-      # tailscale-up.sh) always targets https://localhost:8080 directly,
-      # hardcoded in that script, NOT this variable - Headscale is
-      # co-located in this same container. RAM_USB_TAILSCALE_CONTROL_URL
-      # still needs to be set here, though: it is what EVERY OTHER
-      # service's own mesh join dials to reach this container's Headscale
-      # over ramusb-net (e.g. https://network-manager:8080) - kept
-      # required (fail-secure) for consistency with every other service's
-      # compose file even though this container's own join does not read
-      # it.
-      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager:8080}"
+      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://headscale:8080}"
       RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY: >-
         ${RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY:?mint with:
-        docker exec network-manager headscale users create network-manager
-        && docker exec network-manager headscale users list --name network-manager -o json
-        && docker exec network-manager headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:network-manager}
+        docker exec headscale headscale users create network-manager
+        && docker exec headscale headscale users list --name network-manager -o json
+        && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:network-manager}
     volumes:
       - ramusb-network-manager-tailscale-state:/var/lib/tailscale
-      - ramusb-headscale-data:/var/lib/headscale
-      - ../../third-party/network-manager/headscale/config:/etc/headscale:ro
-      - ../../third-party/network-manager/headscale/dev-tls:/etc/headscale-tls:ro
-      # Dev-only: Headscale's own self-signed control-plane certificate
-      # (the same one served at /etc/headscale-tls above), trusted a
-      # second time at this fixed path via the real OS trust store
+      # Dev-only: the reverse proxy's own self-signed certificate, trusted
+      # a second time at this fixed path via the real OS trust store
       # (update-ca-certificates, see rootfs/etc/s6-overlay/s6-rc.d/
       # trust-mesh-ca/) for tailscaled's own control-plane dial to
-      # https://localhost:8080 - unlike the removed pkg/mesh SSL_CERT_FILE
-      # workaround, this base image has a real shell/package manager, so
-      # the standard mechanism applies directly, identical to Storage-
-      # Service's own convention. Leave this volume unmounted once a real,
-      # publicly trusted root is used instead.
-      - ../../third-party/network-manager/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
-    # No "ports:" block (NM-F-14): the previous two-container topology
-    # published Headscale's gRPC admin API straight to the Docker host
-    # ("50443:50443") for local dev/test convenience - now that Headscale
-    # is co-located and its gRPC API is loopback-only (see
-    # third-party/network-manager/headscale/config/config.yaml), there is
-    # nothing left in this container that should ever be published to the
-    # host at all. NM-F-03's mTLS listener binds only to this node's real
+      # RAM_USB_TAILSCALE_CONTROL_URL - identical mechanism to every other
+      # mesh-joined service's own compose file.
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+      # Same cert file, mounted a second time at the path
+      # RAM_USB_NETWORK_MANAGER_HEADSCALE_API_CA_FILE names above - a
+      # deliberately separate trust decision from the OS-trust-store mount
+      # right above, even though it happens to be the same file in this
+      # dev/test stack (see that env var's own doc comment for why).
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/etc/headscale-api-ca/cert.dev-only.pem:ro
+    # No "ports:" block - network-manager no longer publishes anything to
+    # the Docker host at all: Headscale's own public coordination endpoint
+    # now lives entirely in the separate deployments/compose/headscale.yml
+    # deployment. NM-F-03's mTLS listener binds only to this node's real
     # Tailscale mesh interface address, never ramusb-net either.
     networks:
       - ramusb-net
@@ -110,4 +105,3 @@ networks:
 
 volumes:
   ramusb-network-manager-tailscale-state:
-  ramusb-headscale-data:

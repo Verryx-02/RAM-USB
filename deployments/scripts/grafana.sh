@@ -1,5 +1,5 @@
 #!/bin/bash
-# Shell 10 - Grafana. Requires shell 4 (metrics-collector-timescaledb.sh)
+# Shell 11 - Grafana. Requires shell 5 (metrics-collector-timescaledb.sh)
 # already running.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."

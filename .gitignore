@@ -7,7 +7,7 @@ CLAUDE.md
 graphify-out/
 
 # Generated dev-only TLS key material (third-party/entry-hub/generate-dev-cert.sh,
-# third-party/network-manager/headscale/dev-tls/README.txt's openssl command) -
+# third-party/headscale/dev-tls/README.txt's openssl command) -
 # real key bytes, regenerated on demand, never committed (unlike the
 # zero-entropy *.dev-only.txt placeholder files elsewhere under third-party/).
 # The headscale key was committed by mistake on 2026-07-16 (found via
@@ -15,7 +15,16 @@ graphify-out/
 # to entry-hub's equivalent; tracking removed via `git rm --cached`, see
 # git-agent's advisory for the exact commit.
 third-party/entry-hub/config/*.dev-only.*
-third-party/network-manager/headscale/dev-tls/*.dev-only.pem
+third-party/headscale/dev-tls/*.dev-only.pem
+
+# third-party/headscale/ca-root/: RAM-USB's internal Certificate-Authority
+# root certificate, extracted as a plain file (docker cp) by
+# deployments/scripts/headscale.sh so nginx can trust it for NM-F-12's
+# client-certificate verification - this container has no pkg/pki
+# bootstrap flow of its own to obtain it through. Not a private key, but
+# still regenerated fresh on every run, same convention as every other
+# dev-only extracted artifact in this project.
+third-party/headscale/ca-root/*.dev-only.crt
 
 # third-party/mosquitto/generate-dev-certs.sh's output: the real
 # Certificate-Authority's root cert (copied verbatim) plus a real-CA-issued

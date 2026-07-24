@@ -118,7 +118,7 @@
 // the SRS's container base image policy, no shell/package manager, an
 // immutable read-only trust store even if one existed) there is no way
 // to run update-ca-certificates at runtime, so a self-signed dev-only
-// Headscale certificate (third-party/network-manager/headscale/dev-tls)
+// Headscale certificate (third-party/headscale/dev-tls)
 // can never be trusted through the OS trust store inside that image.
 //
 // Confirmed by reading the Go standard library's own source
@@ -209,7 +209,7 @@ type Config struct {
 
 	// Hostname is this node's name within the tailnet, and therefore its
 	// MagicDNS short name (Headscale's dns.magic_dns=true, see
-	// third-party/network-manager/headscale/config/config.yaml) - how
+	// third-party/headscale/config/config.yaml) - how
 	// this node's mesh peers address it.
 	Hostname string
 

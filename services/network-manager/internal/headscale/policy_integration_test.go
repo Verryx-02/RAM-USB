@@ -4,34 +4,33 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"net/http"
 	"os"
 	"testing"
 	"time"
-
-	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
 
 	hs "github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
 )
 
 // Requirement: NM-F-01, NM-F-02, NM-F-04, NM-F-05, NM-F-06, NM-F-07
 //
-// Confirms PushPolicy against a real Headscale server end to end: a real
-// gRPC SetPolicy call, and a real GetPolicy readback proving Headscale
-// accepted and stored exactly the document PolicyDocument built - not
-// merely that this package's own marshaling round-trips through
-// encoding/json in-process (that is TestPolicyDocument_Content's job,
-// which needs no live server). Gated the same way as
-// TestCreateMeshUser_AndGrantStorageAccess_RealHeadscale
-// (headscale_integration_test.go): skipped unless
-// NM_TEST_HEADSCALE_ADDR is set.
+// Confirms PushPolicy against a real Headscale server end to end, over the
+// REST transport (see headscale_integration_test.go's own doc comment for
+// why): a real PUT /api/v1/policy call, and a real GET /api/v1/policy
+// readback proving Headscale accepted and stored exactly the document
+// PolicyDocument built - not merely that this package's own marshaling
+// round-trips through encoding/json in-process (that is
+// TestPolicyDocument_Content's job, which needs no live server). Gated the
+// same way as TestCreateMeshUser_AndGrantStorageAccess_RealHeadscale:
+// skipped unless NM_TEST_HEADSCALE_ADDR is set.
 //
-// What this test does NOT cover, and could not practically cover without
-// a full multi-node mesh: actually attempting a connection between two
+// What this test does NOT cover, and could not practically cover without a
+// full multi-node mesh: actually attempting a connection between two
 // tagged nodes and confirming it is allowed/blocked by this policy. That
-// would need real Tailscale/Headscale clients on both ends of every one
-// of NM-F-01/02/04/05/06/07's rules - out of reach for this task per its
-// own stated scope boundary; a real policy round trip plus the exact-
-// content unit test are this task's practical verification ceiling.
+// would need real Tailscale/Headscale clients on both ends of every one of
+// NM-F-01/02/04/05/06/07's rules - out of reach for this task per its own
+// stated scope boundary; a real policy round trip plus the exact-content
+// unit test are this task's practical verification ceiling.
 func TestPushPolicy_RealHeadscale(t *testing.T) {
 	addr := os.Getenv(headscaleTestAddrEnvVar)
 	if addr == "" {
@@ -45,13 +44,13 @@ func TestPushPolicy_RealHeadscale(t *testing.T) {
 
 	apiKey := mintAPIKey(t, container)
 
-	conn, err := hs.Dial(addr, apiKey, &tls.Config{InsecureSkipVerify: true}) //nolint:gosec // dev-only self-signed cert, see third-party/network-manager/headscale/dev-tls/README.txt
-	if err != nil {
-		t.Fatalf("Dial() error = %v", err)
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // dev-only self-signed reverse-proxy cert, see deployments/docker/headscale/README.txt
+		},
+		Timeout: 15 * time.Second,
 	}
-	defer func() { _ = conn.Close() }()
-
-	client := v1.NewHeadscaleServiceClient(conn)
+	client := hs.NewClient(addr, httpClient, apiKey)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -60,7 +59,7 @@ func TestPushPolicy_RealHeadscale(t *testing.T) {
 		t.Fatalf("PushPolicy() error = %v", err)
 	}
 
-	got, err := client.GetPolicy(ctx, &v1.GetPolicyRequest{})
+	got, err := client.GetPolicy(ctx)
 	if err != nil {
 		t.Fatalf("GetPolicy() error = %v", err)
 	}
@@ -75,7 +74,7 @@ func TestPushPolicy_RealHeadscale(t *testing.T) {
 	// the policy, and this test's job is to confirm the *content*
 	// round-trips, not byte-identical formatting.
 	var gotDoc, wantDoc map[string]any
-	if err := json.Unmarshal([]byte(got.GetPolicy()), &gotDoc); err != nil {
+	if err := json.Unmarshal([]byte(got), &gotDoc); err != nil {
 		t.Fatalf("json.Unmarshal(GetPolicy() result) error = %v", err)
 	}
 	if err := json.Unmarshal(want, &wantDoc); err != nil {

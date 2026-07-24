@@ -5,9 +5,6 @@ import (
 	"errors"
 	"testing"
 	"time"
-
-	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
-	"google.golang.org/grpc"
 )
 
 // fakeService is a hand-written fake of Service (CONTRIBUTING.md §7.5,
@@ -15,58 +12,74 @@ import (
 // no real Headscale server).
 type fakeService struct {
 	createUserErr error
-	gotCreateUser *v1.CreateUserRequest
+	createUserID  uint64
+	gotCreateUser struct {
+		name  string
+		email string
+	}
 
-	createPreAuthKeyResp *v1.CreatePreAuthKeyResponse
-	createPreAuthKeyErr  error
-	gotCreatePreAuthKey  *v1.CreatePreAuthKeyRequest
+	createPreAuthKeyErr error
+	preAuthKey          string
+	preAuthKeyID        uint64
+	gotCreatePreAuthKey struct {
+		userID     uint64
+		expiration time.Time
+		aclTags    []string
+	}
 
-	listNodesResp *v1.ListNodesResponse
+	listNodesResp []Node
 	listNodesErr  error
 
 	setTagsErr error
-	gotSetTags *v1.SetTagsRequest
+	gotSetTags struct {
+		nodeID uint64
+		tags   []string
+	}
 
-	getNodeResp *v1.GetNodeResponse
+	getNodeResp Node
 	getNodeErr  error
-	gotGetNode  *v1.GetNodeRequest
+	gotGetNode  uint64
 }
 
-func (f *fakeService) CreateUser(_ context.Context, in *v1.CreateUserRequest, _ ...grpc.CallOption) (*v1.CreateUserResponse, error) {
-	f.gotCreateUser = in
+func (f *fakeService) CreateUser(_ context.Context, name, email string) (uint64, error) {
+	f.gotCreateUser.name = name
+	f.gotCreateUser.email = email
 	if f.createUserErr != nil {
-		return nil, f.createUserErr
+		return 0, f.createUserErr
 	}
-	return &v1.CreateUserResponse{User: &v1.User{Name: in.GetName(), Email: in.GetEmail()}}, nil
+	return f.createUserID, nil
 }
 
-func (f *fakeService) CreatePreAuthKey(_ context.Context, in *v1.CreatePreAuthKeyRequest, _ ...grpc.CallOption) (*v1.CreatePreAuthKeyResponse, error) {
-	f.gotCreatePreAuthKey = in
+func (f *fakeService) CreatePreAuthKey(_ context.Context, userID uint64, expiration time.Time, aclTags []string) (string, uint64, error) {
+	f.gotCreatePreAuthKey.userID = userID
+	f.gotCreatePreAuthKey.expiration = expiration
+	f.gotCreatePreAuthKey.aclTags = aclTags
 	if f.createPreAuthKeyErr != nil {
-		return nil, f.createPreAuthKeyErr
+		return "", 0, f.createPreAuthKeyErr
 	}
-	return f.createPreAuthKeyResp, nil
+	return f.preAuthKey, f.preAuthKeyID, nil
 }
 
-func (f *fakeService) ListNodes(_ context.Context, _ *v1.ListNodesRequest, _ ...grpc.CallOption) (*v1.ListNodesResponse, error) {
+func (f *fakeService) ListNodes(_ context.Context) ([]Node, error) {
 	if f.listNodesErr != nil {
 		return nil, f.listNodesErr
 	}
 	return f.listNodesResp, nil
 }
 
-func (f *fakeService) SetTags(_ context.Context, in *v1.SetTagsRequest, _ ...grpc.CallOption) (*v1.SetTagsResponse, error) {
-	f.gotSetTags = in
+func (f *fakeService) SetTags(_ context.Context, nodeID uint64, tags []string) error {
+	f.gotSetTags.nodeID = nodeID
+	f.gotSetTags.tags = tags
 	if f.setTagsErr != nil {
-		return nil, f.setTagsErr
+		return f.setTagsErr
 	}
-	return &v1.SetTagsResponse{Node: &v1.Node{Id: in.GetNodeId(), Tags: in.GetTags()}}, nil
+	return nil
 }
 
-func (f *fakeService) GetNode(_ context.Context, in *v1.GetNodeRequest, _ ...grpc.CallOption) (*v1.GetNodeResponse, error) {
-	f.gotGetNode = in
+func (f *fakeService) GetNode(_ context.Context, nodeID uint64) (Node, error) {
+	f.gotGetNode = nodeID
 	if f.getNodeErr != nil {
-		return nil, f.getNodeErr
+		return Node{}, f.getNodeErr
 	}
 	return f.getNodeResp, nil
 }
@@ -76,17 +89,21 @@ func TestCreateMeshUser(t *testing.T) {
 	tests := []struct {
 		name                string
 		createUserErr       error
+		createUserID        uint64
 		createPreAuthKeyErr error
-		preAuthKeyResp      *v1.CreatePreAuthKeyResponse
+		preAuthKey          string
+		preAuthKeyID        uint64
 		wantKey             string
 		wantKeyID           uint64
 		wantErr             error
 	}{
 		{
-			name:           "success returns the generated pre-auth key and its numeric id",
-			preAuthKeyResp: &v1.CreatePreAuthKeyResponse{PreAuthKey: &v1.PreAuthKey{Key: "authkey-abc123", Id: 42}},
-			wantKey:        "authkey-abc123",
-			wantKeyID:      42,
+			name:         "success returns the generated pre-auth key and its numeric id",
+			createUserID: 7,
+			preAuthKey:   "authkey-abc123",
+			preAuthKeyID: 42,
+			wantKey:      "authkey-abc123",
+			wantKeyID:    42,
 		},
 		{
 			name:          "CreateUser failure is wrapped in ErrHeadscaleRequestFailed",
@@ -99,18 +116,20 @@ func TestCreateMeshUser(t *testing.T) {
 			wantErr:             ErrHeadscaleRequestFailed,
 		},
 		{
-			name:           "empty key in response is treated as a failure",
-			preAuthKeyResp: &v1.CreatePreAuthKeyResponse{PreAuthKey: &v1.PreAuthKey{Key: ""}},
-			wantErr:        ErrHeadscaleRequestFailed,
+			name:       "empty key in response is treated as a failure",
+			preAuthKey: "",
+			wantErr:    ErrHeadscaleRequestFailed,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fake := &fakeService{
-				createUserErr:        tt.createUserErr,
-				createPreAuthKeyErr:  tt.createPreAuthKeyErr,
-				createPreAuthKeyResp: tt.preAuthKeyResp,
+				createUserErr:       tt.createUserErr,
+				createUserID:        tt.createUserID,
+				createPreAuthKeyErr: tt.createPreAuthKeyErr,
+				preAuthKey:          tt.preAuthKey,
+				preAuthKeyID:        tt.preAuthKeyID,
 			}
 
 			key, keyID, err := CreateMeshUser(context.Background(), fake, "User@Example.com")
@@ -133,14 +152,14 @@ func TestCreateMeshUser(t *testing.T) {
 
 			// NM-F-13: the pre-auth key is created with only the
 			// permanent membership tag, never the reachability tag.
-			if got := fake.gotCreatePreAuthKey.GetAclTags(); len(got) != 1 || got[0] != TagMeshMember {
-				t.Fatalf("CreatePreAuthKey AclTags = %v, want [%s]", got, TagMeshMember)
+			if got := fake.gotCreatePreAuthKey.aclTags; len(got) != 1 || got[0] != TagMeshMember {
+				t.Fatalf("CreatePreAuthKey aclTags = %v, want [%s]", got, TagMeshMember)
 			}
-			if fake.gotCreatePreAuthKey.GetExpiration() == nil {
-				t.Fatal("CreatePreAuthKey Expiration = nil, want an explicit deadline (the flagged omitted-expiration bug)")
+			if fake.gotCreatePreAuthKey.expiration.IsZero() {
+				t.Fatal("CreatePreAuthKey expiration = zero, want an explicit deadline (the flagged omitted-expiration bug)")
 			}
-			if fake.gotCreatePreAuthKey.GetReusable() {
-				t.Fatal("CreatePreAuthKey Reusable = true, want false (single registration, single use)")
+			if fake.gotCreatePreAuthKey.userID != tt.createUserID {
+				t.Fatalf("CreatePreAuthKey userID = %d, want %d", fake.gotCreatePreAuthKey.userID, tt.createUserID)
 			}
 
 			// The generated username must be deterministic and
@@ -149,16 +168,15 @@ func TestCreateMeshUser(t *testing.T) {
 			// native Email field must carry the real address (still
 			// useful for a human operator inspecting Headscale
 			// directly, even though NM-F-09 no longer looks the user
-			// up by it - see the package doc comment's "Bug fix"
-			// section).
-			if fake.gotCreateUser.GetEmail() != "User@Example.com" {
-				t.Fatalf("CreateUser Email = %q, want the exact caller-supplied email", fake.gotCreateUser.GetEmail())
+			// up by it - see GrantStorageAccess's own doc comment).
+			if fake.gotCreateUser.email != "User@Example.com" {
+				t.Fatalf("CreateUser email = %q, want the exact caller-supplied email", fake.gotCreateUser.email)
 			}
 			if got := meshUsername("User@Example.com"); got != meshUsername("user@example.com") {
 				t.Fatalf("meshUsername is not case-insensitive: %q != %q", got, meshUsername("user@example.com"))
 			}
-			if fake.gotCreateUser.GetName() != meshUsername("User@Example.com") {
-				t.Fatalf("CreateUser Name = %q, want %q", fake.gotCreateUser.GetName(), meshUsername("User@Example.com"))
+			if fake.gotCreateUser.name != meshUsername("User@Example.com") {
+				t.Fatalf("CreateUser name = %q, want %q", fake.gotCreateUser.name, meshUsername("User@Example.com"))
 			}
 		})
 	}
@@ -199,7 +217,7 @@ func TestGrantStorageAccess(t *testing.T) {
 	tests := []struct {
 		name              string
 		preAuthKeyID      uint64
-		listNodesResp     *v1.ListNodesResponse
+		listNodesResp     []Node
 		listNodesErr      error
 		setTagsErr        error
 		wantErr           error
@@ -210,9 +228,9 @@ func TestGrantStorageAccess(t *testing.T) {
 		{
 			name:         "success adds TagStorageAccess alongside the existing TagMeshMember",
 			preAuthKeyID: 100,
-			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
-				{Id: 42, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 100}},
-			}},
+			listNodesResp: []Node{
+				{ID: 42, Tags: []string{TagMeshMember}, PreAuthKeyID: 100},
+			},
 			wantTags:          []string{TagMeshMember, TagStorageAccess},
 			wantNodeID:        42,
 			wantSetTagsNodeID: 42,
@@ -220,9 +238,9 @@ func TestGrantStorageAccess(t *testing.T) {
 		{
 			name:         "already-granted node is not given a duplicate tag",
 			preAuthKeyID: 100,
-			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
-				{Id: 42, Tags: []string{TagMeshMember, TagStorageAccess}, PreAuthKey: &v1.PreAuthKey{Id: 100}},
-			}},
+			listNodesResp: []Node{
+				{ID: 42, Tags: []string{TagMeshMember, TagStorageAccess}, PreAuthKeyID: 100},
+			},
 			wantTags:          []string{TagMeshMember, TagStorageAccess},
 			wantNodeID:        42,
 			wantSetTagsNodeID: 42,
@@ -230,21 +248,20 @@ func TestGrantStorageAccess(t *testing.T) {
 		{
 			// This is the actual proof this session's live-reproduced
 			// bug is fixed: several other users' nodes are also on the
-			// mesh, each with its own distinct PreAuthKey.Id (none of
-			// them owned by a "user" this package's now-removed
-			// per-user ListUsers/ListNodes(User:...) lookup could ever
-			// have matched anyway, since every node here is tagged, not
-			// user-owned). GrantStorageAccess must select the ONE node
-			// whose PreAuthKey.Id equals the caller-supplied
-			// preAuthKeyID - not the first node in the list, not a
-			// random one.
+			// mesh, each with its own distinct PreAuthKeyID (none of
+			// them owned by a "user" a per-user ListUsers/ListNodes
+			// lookup could ever have matched anyway, since every node
+			// here is tagged, not user-owned). GrantStorageAccess must
+			// select the ONE node whose PreAuthKeyID equals the
+			// caller-supplied preAuthKeyID - not the first node in the
+			// list, not a random one.
 			name:         "selects the one node whose pre-auth key id matches, among several other users' nodes",
 			preAuthKeyID: 200,
-			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
-				{Id: 10, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 100}},
-				{Id: 20, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 200}},
-				{Id: 30, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 300}},
-			}},
+			listNodesResp: []Node{
+				{ID: 10, Tags: []string{TagMeshMember}, PreAuthKeyID: 100},
+				{ID: 20, Tags: []string{TagMeshMember}, PreAuthKeyID: 200},
+				{ID: 30, Tags: []string{TagMeshMember}, PreAuthKeyID: 300},
+			},
 			wantTags:          []string{TagMeshMember, TagStorageAccess},
 			wantNodeID:        20,
 			wantSetTagsNodeID: 20,
@@ -256,24 +273,24 @@ func TestGrantStorageAccess(t *testing.T) {
 			// users' nodes exist, but none carries this preAuthKeyID.
 			name:         "no mesh node for this pre-auth key id is a fail-secure ErrMeshUserNotFound",
 			preAuthKeyID: 999,
-			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
-				{Id: 10, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 100}},
-				{Id: 20, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 200}},
-			}},
+			listNodesResp: []Node{
+				{ID: 10, Tags: []string{TagMeshMember}, PreAuthKeyID: 100},
+				{ID: 20, Tags: []string{TagMeshMember}, PreAuthKeyID: 200},
+			},
 			wantErr: ErrMeshUserNotFound,
 		},
 		{
 			name:          "empty node list is a fail-secure ErrMeshUserNotFound",
 			preAuthKeyID:  100,
-			listNodesResp: &v1.ListNodesResponse{Nodes: nil},
+			listNodesResp: nil,
 			wantErr:       ErrMeshUserNotFound,
 		},
 		{
 			name:         "a node with no pre-auth key at all never matches",
 			preAuthKeyID: 100,
-			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
-				{Id: 10, Tags: []string{TagMeshMember}, PreAuthKey: nil},
-			}},
+			listNodesResp: []Node{
+				{ID: 10, Tags: []string{TagMeshMember}, PreAuthKeyID: 0},
+			},
 			wantErr: ErrMeshUserNotFound,
 		},
 		{
@@ -285,9 +302,9 @@ func TestGrantStorageAccess(t *testing.T) {
 		{
 			name:         "SetTags failure is wrapped in ErrHeadscaleRequestFailed",
 			preAuthKeyID: 100,
-			listNodesResp: &v1.ListNodesResponse{Nodes: []*v1.Node{
-				{Id: 42, Tags: []string{TagMeshMember}, PreAuthKey: &v1.PreAuthKey{Id: 100}},
-			}},
+			listNodesResp: []Node{
+				{ID: 42, Tags: []string{TagMeshMember}, PreAuthKeyID: 100},
+			},
 			setTagsErr: errors.New("boom"),
 			wantErr:    ErrHeadscaleRequestFailed,
 		},
@@ -318,19 +335,16 @@ func TestGrantStorageAccess(t *testing.T) {
 			if nodeID != tt.wantNodeID {
 				t.Fatalf("GrantStorageAccess() nodeID = %d, want %d", nodeID, tt.wantNodeID)
 			}
-			if fake.gotSetTags == nil {
-				t.Fatal("SetTags was not called")
+			if fake.gotSetTags.nodeID != tt.wantSetTagsNodeID {
+				t.Fatalf("SetTags nodeID = %d, want %d", fake.gotSetTags.nodeID, tt.wantSetTagsNodeID)
 			}
-			if fake.gotSetTags.GetNodeId() != tt.wantSetTagsNodeID {
-				t.Fatalf("SetTags NodeId = %d, want %d", fake.gotSetTags.GetNodeId(), tt.wantSetTagsNodeID)
-			}
-			gotTags := fake.gotSetTags.GetTags()
+			gotTags := fake.gotSetTags.tags
 			if len(gotTags) != len(tt.wantTags) {
-				t.Fatalf("SetTags Tags = %v, want %v", gotTags, tt.wantTags)
+				t.Fatalf("SetTags tags = %v, want %v", gotTags, tt.wantTags)
 			}
 			for i, tag := range tt.wantTags {
 				if gotTags[i] != tag {
-					t.Fatalf("SetTags Tags = %v, want %v", gotTags, tt.wantTags)
+					t.Fatalf("SetTags tags = %v, want %v", gotTags, tt.wantTags)
 				}
 			}
 		})
@@ -348,7 +362,7 @@ func TestGrantDuration_Is12Hours(t *testing.T) {
 func TestRemoveNodeTag(t *testing.T) {
 	tests := []struct {
 		name        string
-		getNodeResp *v1.GetNodeResponse
+		getNodeResp Node
 		getNodeErr  error
 		setTagsErr  error
 		tag         string
@@ -357,13 +371,13 @@ func TestRemoveNodeTag(t *testing.T) {
 	}{
 		{
 			name:        "removes the tag, keeping the rest",
-			getNodeResp: &v1.GetNodeResponse{Node: &v1.Node{Id: 42, Tags: []string{TagMeshMember, TagStorageAccess}}},
+			getNodeResp: Node{ID: 42, Tags: []string{TagMeshMember, TagStorageAccess}},
 			tag:         TagStorageAccess,
 			wantTags:    []string{TagMeshMember},
 		},
 		{
 			name:        "removing the only tag fails closed, SetTags is never called",
-			getNodeResp: &v1.GetNodeResponse{Node: &v1.Node{Id: 42, Tags: []string{TagStorageAccess}}},
+			getNodeResp: Node{ID: 42, Tags: []string{TagStorageAccess}},
 			tag:         TagStorageAccess,
 			wantErr:     ErrCannotRemoveLastTag,
 		},
@@ -374,14 +388,8 @@ func TestRemoveNodeTag(t *testing.T) {
 			wantErr:    ErrHeadscaleRequestFailed,
 		},
 		{
-			name:        "nil node in response is a fail-secure ErrMeshUserNotFound",
-			getNodeResp: &v1.GetNodeResponse{Node: nil},
-			tag:         TagStorageAccess,
-			wantErr:     ErrMeshUserNotFound,
-		},
-		{
 			name:        "SetTags failure is wrapped in ErrHeadscaleRequestFailed",
-			getNodeResp: &v1.GetNodeResponse{Node: &v1.Node{Id: 42, Tags: []string{TagMeshMember, TagStorageAccess}}},
+			getNodeResp: Node{ID: 42, Tags: []string{TagMeshMember, TagStorageAccess}},
 			tag:         TagStorageAccess,
 			setTagsErr:  errors.New("boom"),
 			wantErr:     ErrHeadscaleRequestFailed,
@@ -402,7 +410,7 @@ func TestRemoveNodeTag(t *testing.T) {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("RemoveNodeTag() error = %v, want %v", err, tt.wantErr)
 				}
-				if errors.Is(tt.wantErr, ErrCannotRemoveLastTag) && fake.gotSetTags != nil {
+				if errors.Is(tt.wantErr, ErrCannotRemoveLastTag) && fake.gotSetTags.tags != nil {
 					t.Fatal("SetTags was called despite the last-tag guard")
 				}
 				return
@@ -410,13 +418,13 @@ func TestRemoveNodeTag(t *testing.T) {
 			if err != nil {
 				t.Fatalf("RemoveNodeTag() unexpected error = %v", err)
 			}
-			gotTags := fake.gotSetTags.GetTags()
+			gotTags := fake.gotSetTags.tags
 			if len(gotTags) != len(tt.wantTags) {
-				t.Fatalf("SetTags Tags = %v, want %v", gotTags, tt.wantTags)
+				t.Fatalf("SetTags tags = %v, want %v", gotTags, tt.wantTags)
 			}
 			for i, tag := range tt.wantTags {
 				if gotTags[i] != tag {
-					t.Fatalf("SetTags Tags = %v, want %v", gotTags, tt.wantTags)
+					t.Fatalf("SetTags tags = %v, want %v", gotTags, tt.wantTags)
 				}
 			}
 		})
@@ -426,18 +434,18 @@ func TestRemoveNodeTag(t *testing.T) {
 // Requirement: NM-F-10
 func TestRevokeStorageAccess_RemovesOnlyTheStorageTag(t *testing.T) {
 	fake := &fakeService{
-		getNodeResp: &v1.GetNodeResponse{Node: &v1.Node{Id: 7, Tags: []string{TagMeshMember, TagStorageAccess}}},
+		getNodeResp: Node{ID: 7, Tags: []string{TagMeshMember, TagStorageAccess}},
 	}
 
 	if err := RevokeStorageAccess(context.Background(), fake, 7); err != nil {
 		t.Fatalf("RevokeStorageAccess() unexpected error = %v", err)
 	}
-	if fake.gotGetNode.GetNodeId() != 7 {
-		t.Fatalf("GetNode NodeId = %d, want 7", fake.gotGetNode.GetNodeId())
+	if fake.gotGetNode != 7 {
+		t.Fatalf("GetNode nodeID = %d, want 7", fake.gotGetNode)
 	}
-	gotTags := fake.gotSetTags.GetTags()
+	gotTags := fake.gotSetTags.tags
 	if len(gotTags) != 1 || gotTags[0] != TagMeshMember {
-		t.Fatalf("SetTags Tags = %v, want [%s]", gotTags, TagMeshMember)
+		t.Fatalf("SetTags tags = %v, want [%s]", gotTags, TagMeshMember)
 	}
 }
 

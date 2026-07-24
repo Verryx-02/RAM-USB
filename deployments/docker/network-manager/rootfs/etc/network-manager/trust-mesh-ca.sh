@@ -16,13 +16,15 @@
 # observe a stale cert pool on its very first read. Identical reasoning and
 # shape to Storage-Service's own trust-mesh-ca.sh.
 #
-# This container is co-located with the Headscale coordination server this
-# node's own tailscale-up joins (localhost:8080) - the certificate trusted
-# here is the SAME dev-only self-signed certificate Headscale itself serves
-# (third-party/network-manager/headscale/dev-tls), mounted a second time at
-# this fixed path by deployments/compose/network-manager.yml so the OS
+# Headscale is a separately-deployed container this session (see
+# cmd/network-manager/main.go's own package doc comment for why) - this
+# node's own tailscale-up dials it like every other mesh-joined service
+# does, over RAM_USB_TAILSCALE_CONTROL_URL. The certificate trusted here is
+# the SAME dev-only self-signed certificate that separate Headscale
+# deployment's reverse proxy serves (third-party/headscale/dev-tls),
+# mounted here by deployments/compose/network-manager.yml so the OS
 # trust-store mechanism applies to it exactly like Storage-Service's own
-# (external) Headscale certificate.
+# (also external) Headscale certificate trust.
 set -eu
 
 if [ -f /usr/local/share/ca-certificates/headscale-dev.crt ]; then

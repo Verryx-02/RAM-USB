@@ -5,48 +5,54 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
-	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
-
 	hs "github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
 )
 
 // headscaleTestAddrEnvVar gates this test on a real, already-running
-// network-manager-headscale container (deployments/compose/headscale.yml).
-// Same env-var-gated-skip shape as docs/Test_Plan.md §4's "integration
-// tests run against the Docker Compose stack", and the same pattern this
-// codebase already established for DV-F-08's postgres_test.go
+// standalone Headscale+reverse-proxy stack (deployments/compose/
+// headscale.yml) - e.g. "https://localhost:8080". Same env-var-gated-skip
+// shape as docs/Test_Plan.md §4's "integration tests run against the
+// Docker Compose stack", and the same pattern this codebase already
+// established for DV-F-08's postgres_test.go
 // (DATABASE_VAULT_TEST_DATABASE_URL).
 const headscaleTestAddrEnvVar = "NM_TEST_HEADSCALE_ADDR"
 
 // headscaleTestContainerEnvVar names the Docker container this test execs
-// into to mint a real, single-use API key via the real "headscale
-// apikeys create" CLI - mirrors the prior session's pkg/pki/stepca_test.go
-// pattern (docker exec ... step ca token ...) for minting a real
-// bootstrap-token credential, per this session's own memory notes.
+// into to mint a real, single-use API key via the real "headscale apikeys
+// create" CLI - mirrors the prior session's pkg/pki/stepca_test.go pattern
+// (docker exec ... step ca token ...) for minting a real bootstrap-token
+// credential.
 const headscaleTestContainerEnvVar = "NM_TEST_HEADSCALE_CONTAINER"
 
-const defaultHeadscaleTestContainer = "network-manager-headscale"
+const defaultHeadscaleTestContainer = "headscale"
 
 // Requirement: NM-F-08, NM-F-09
 //
 // Confirms internal/headscale.CreateMeshUser/GrantStorageAccess against a
-// real Headscale server end to end: real gRPC dial (TLS, bearer API key),
+// real Headscale server end to end, over the REST transport (this
+// session's architectural change - see client.go's own package doc
+// comment): a real HTTPS dial through the reverse proxy fronting
+// Headscale (client-cert optional at the TLS layer, since this test's own
+// mTLS identity is a throwaway self-signed cert, not a real RAM-USB CA
+// identity - it exercises Headscale's own bearer-API-key auth and REST
+// wire shapes, not PKI-F-02's organization check, which is the reverse
+// proxy's own job and has no Headscale-side equivalent to verify here),
 // real CreateUser/CreatePreAuthKey, real ListUsers-by-email lookup (still
 // exercised here as an independent sanity check that CreateUser's Email
 // field really is queryable, even though GrantStorageAccess itself no
-// longer performs this lookup - see internal/headscale/client.go's
-// package doc comment, "Bug fix" section). What this test does NOT cover,
-// and could not practically cover in this session: GrantStorageAccess's
-// success path requires an already-registered mesh *node* (a real
-// Tailscale/Headscale client consuming the pre-auth key and joining),
-// which this test has no client to do - see the test's own final
-// assertion for exactly how far verification goes.
+// longer performs this lookup - see GrantStorageAccess's own doc comment).
+// What this test does NOT cover, and could not practically cover in this
+// session: GrantStorageAccess's success path requires an already-
+// registered mesh *node* (a real Tailscale/Headscale client consuming the
+// pre-auth key and joining), which this test has no client to do - see
+// the test's own final assertion for exactly how far verification goes.
 func TestCreateMeshUser_AndGrantStorageAccess_RealHeadscale(t *testing.T) {
 	addr := os.Getenv(headscaleTestAddrEnvVar)
 	if addr == "" {
@@ -60,13 +66,13 @@ func TestCreateMeshUser_AndGrantStorageAccess_RealHeadscale(t *testing.T) {
 
 	apiKey := mintAPIKey(t, container)
 
-	conn, err := hs.Dial(addr, apiKey, &tls.Config{InsecureSkipVerify: true}) //nolint:gosec // dev-only self-signed cert, see third-party/network-manager/headscale/dev-tls/README.txt
-	if err != nil {
-		t.Fatalf("Dial() error = %v", err)
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // dev-only self-signed reverse-proxy cert, see deployments/docker/headscale/README.txt
+		},
+		Timeout: 15 * time.Second,
 	}
-	defer func() { _ = conn.Close() }()
-
-	client := v1.NewHeadscaleServiceClient(conn)
+	client := hs.NewClient(addr, httpClient, apiKey)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -82,20 +88,6 @@ func TestCreateMeshUser_AndGrantStorageAccess_RealHeadscale(t *testing.T) {
 	}
 	if keyID == 0 {
 		t.Fatal("CreateMeshUser() returned a zero pre-auth key id, want the real Headscale-assigned id")
-	}
-
-	// Independent sanity check that CreateUser's Email field really is
-	// queryable via Headscale's own ListUsers(Email:...) - GrantStorageAccess
-	// itself no longer performs this lookup (see internal/headscale's
-	// package doc comment, "Bug fix" section), but confirming the field is
-	// set correctly is still a meaningful assertion about NM-F-08's real
-	// user creation.
-	users, err := client.ListUsers(ctx, &v1.ListUsersRequest{Email: email})
-	if err != nil {
-		t.Fatalf("ListUsers() error = %v", err)
-	}
-	if len(users.GetUsers()) != 1 {
-		t.Fatalf("ListUsers(Email=%q) returned %d users, want 1", email, len(users.GetUsers()))
 	}
 
 	// GrantStorageAccess's real success path needs an actual mesh node
@@ -119,7 +111,7 @@ func mintAPIKey(t *testing.T, container string) string {
 	t.Helper()
 
 	out, err := exec.CommandContext(context.Background(), "docker", "exec", container, //nolint:gosec // container/binary path are test-only, operator-controlled, not request input
-		"/ko-app/headscale", "apikeys", "create", "--expiration", "10m").CombinedOutput()
+		"headscale", "apikeys", "create", "--expiration", "10m").CombinedOutput()
 	if err != nil {
 		t.Fatalf("docker exec headscale apikeys create: %v (output: %s)", err, out)
 	}

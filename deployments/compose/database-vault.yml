@@ -81,12 +81,12 @@ services:
       # ramusb-database-vault-mesh-state volume below, not a Go-managed
       # directory.
       RAM_USB_DATABASE_VAULT_MESH_HOSTNAME: "database-vault"
-      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://network-manager:8080}"
+      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://headscale:8080}"
       RAM_USB_DATABASE_VAULT_TAILSCALE_AUTHKEY: >-
         ${RAM_USB_DATABASE_VAULT_TAILSCALE_AUTHKEY:?mint with:
-        docker exec network-manager headscale users create database-vault
-        && docker exec network-manager headscale users list --name database-vault -o json
-        && docker exec network-manager headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:database-vault}
+        docker exec headscale headscale users create database-vault
+        && docker exec headscale headscale users list --name database-vault -o json
+        && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:database-vault}
     volumes:
       - ramusb-database-vault-mesh-state:/var/lib/tailscale
       - ramusb-postgres-data:/var/lib/postgresql/data
@@ -97,7 +97,7 @@ services:
       # mechanism applies directly, same as Storage-Service's own compose
       # file. Leave this volume unmounted once RAM_USB_TAILSCALE_CONTROL_URL
       # carries a publicly-trusted-root certificate.
-      - ../../third-party/network-manager/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
     # No "ports:" for the register/login listener - it binds exclusively to
     # this node's Tailscale interface address, never 0.0.0.0/ramusb-net
     # (NET-F-01). ST-F-11's public-key listener stays on ramusb-net (see

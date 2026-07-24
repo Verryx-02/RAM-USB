@@ -20,7 +20,7 @@ func TestUp_RejectsIncompleteConfig(t *testing.T) {
 	valid := Config{
 		Dir:        t.TempDir(),
 		Hostname:   "test-node",
-		ControlURL: "https://network-manager-headscale:8080",
+		ControlURL: "https://headscale:8080",
 		AuthKey:    "test-auth-key",
 	}
 
@@ -144,7 +144,7 @@ func writeTestLeafPEM(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("mtls.NewTestCA() error = %v", err)
 	}
-	leaf, err := ca.IssueLeaf("network-manager-headscale", "test-leaf")
+	leaf, err := ca.IssueLeaf("headscale", "test-leaf")
 	if err != nil {
 		t.Fatalf("IssueLeaf() error = %v", err)
 	}
