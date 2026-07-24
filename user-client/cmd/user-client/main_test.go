@@ -8,10 +8,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
 	"github.com/Verryx-02/RAM-USB/user-client/internal/clientstate"
+	"github.com/Verryx-02/RAM-USB/user-client/internal/execrunner"
+	"github.com/Verryx-02/RAM-USB/user-client/internal/mesh"
+	"github.com/Verryx-02/RAM-USB/user-client/internal/restic"
 	"github.com/Verryx-02/RAM-USB/user-client/internal/sshkey"
 )
 
@@ -29,6 +35,43 @@ func isolateConfigDir(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("XDG_CONFIG_HOME", "")
+}
+
+// setupConfigDir redirects sshkey.ConfigDir() (and, transitively,
+// clientstate/reposecret's own os.UserConfigDir()-based storage) to a
+// fresh temporary directory for the duration of one test, so a test never
+// touches the real invoking user's ~/.config/ram-usb (or macOS
+// equivalent). Setting XDG_CONFIG_HOME to the empty string forces Linux's
+// os.UserConfigDir() fallback path (HOME + "/.config") instead of
+// inheriting whatever XDG_CONFIG_HOME the test host happens to have set.
+func setupConfigDir(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	dir, err := sshkey.ConfigDir()
+	if err != nil {
+		t.Fatalf("sshkey.ConfigDir() error = %v, want nil", err)
+	}
+	return dir
+}
+
+// setupRegisteredClient additionally seeds dir with a real key pair
+// (CL-F-01) and a persisted POSIX username (as a prior "register" run
+// would have left behind), the local state runBackup/runRestore's own
+// resticConfig requires before backing up or restoring.
+func setupRegisteredClient(t *testing.T) (dir, posixUsername string) {
+	t.Helper()
+	dir = setupConfigDir(t)
+	if _, err := sshkey.EnsureKeyPair(dir); err != nil {
+		t.Fatalf("sshkey.EnsureKeyPair() error = %v, want nil", err)
+	}
+	posixUsername = "user000001"
+	if err := clientstate.SavePosixUsername(dir, posixUsername); err != nil {
+		t.Fatalf("clientstate.SavePosixUsername() error = %v, want nil", err)
+	}
+	return dir, posixUsername
 }
 
 // captureStderr redirects os.Stderr for the duration of fn and returns
@@ -270,7 +313,7 @@ func TestRunLogin_MissingCredentials(t *testing.T) {
 func TestRunRegister_MissingEntryHubURL(t *testing.T) {
 	isolateConfigDir(t)
 	t.Setenv(envEntryHubURL, "")
-	err := runRegister([]string{"--email=user@example.com", "--password=" + validPassword})
+	err := runRegister([]string{"--email=user@example.com", "--password=" + validPassword}, &execrunner.Fake{})
 	if err == nil {
 		t.Fatal("runRegister() error = nil, want an error when RAM_USB_ENTRY_HUB_URL is unset")
 	}
@@ -286,7 +329,7 @@ func TestRunRegister_LocalValidationFailure_DoesNotContactServer(t *testing.T) {
 	defer server.Close()
 
 	t.Setenv(envEntryHubURL, server.URL)
-	err := runRegister([]string{"--email=not-an-email", "--password=" + validPassword})
+	err := runRegister([]string{"--email=not-an-email", "--password=" + validPassword}, &execrunner.Fake{})
 	if err == nil {
 		t.Fatal("runRegister() error = nil, want a local validation error")
 	}
@@ -305,7 +348,7 @@ func TestRunRegister_MapsEntryHubErrorStatus(t *testing.T) {
 	defer server.Close()
 
 	t.Setenv(envEntryHubURL, server.URL)
-	err := runRegister([]string{"--email=user@example.com", "--password=" + validPassword})
+	err := runRegister([]string{"--email=user@example.com", "--password=" + validPassword}, &execrunner.Fake{})
 	if err == nil {
 		t.Fatal("runRegister() error = nil, want an error")
 	}
@@ -340,14 +383,11 @@ func TestRunRegister_Success_PersistsPosixUsername(t *testing.T) {
 
 	// No RAM_USB_HEADSCALE_URL set, and the server above returns no
 	// pre_auth_key: this keeps the test inside the branch that returns
-	// before ever reaching mesh.Join, whose only caller in main.go passes
-	// a hardcoded execrunner.Real{} that would spawn a real `tailscale`
-	// process (see this file's final report for why that path is not
-	// covered here without a main.go refactor).
+	// before ever reaching mesh.Join.
 	t.Setenv(envEntryHubURL, server.URL)
 	t.Setenv(envHeadscaleURL, "")
 
-	err := runRegister([]string{"--email=user@example.com", "--password=" + validPassword})
+	err := runRegister([]string{"--email=user@example.com", "--password=" + validPassword}, &execrunner.Fake{})
 	if err != nil {
 		t.Fatalf("runRegister() error = %v, want nil", err)
 	}
@@ -388,11 +428,96 @@ func TestRunRegister_PreauthKeyWithoutHeadscaleURL_SkipsMeshJoin(t *testing.T) {
 	t.Setenv(envHeadscaleURL, "")
 
 	// With RAM_USB_HEADSCALE_URL unset, runRegister must return before
-	// calling mesh.Join (which would otherwise try to exec a real
-	// `tailscale` binary via the hardcoded execrunner.Real{}).
-	err := runRegister([]string{"--email=user@example.com", "--password=" + validPassword})
+	// calling mesh.Join.
+	err := runRegister([]string{"--email=user@example.com", "--password=" + validPassword}, &execrunner.Fake{})
 	if err != nil {
 		t.Fatalf("runRegister() error = %v, want nil", err)
+	}
+}
+
+// Requirement: CL-F-04
+func TestRunRegister_JoinsMeshOnSuccess(t *testing.T) {
+	setupConfigDir(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"posix_username": "user000001",
+			"pre_auth_key":   "preauth-abc",
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv(envEntryHubURL, server.URL)
+	t.Setenv(envHeadscaleURL, "https://headscale.example.com")
+
+	fake := &execrunner.Fake{Output: []byte("Success.")}
+
+	err := runRegister([]string{"--email=user@example.com", "--password=Str0ng!Pass"}, fake)
+	if err != nil {
+		t.Fatalf("runRegister() error = %v, want nil", err)
+	}
+
+	want := [][]string{{"tailscale", "up", "--login-server=https://headscale.example.com", "--authkey=preauth-abc"}}
+	if !reflect.DeepEqual(fake.Calls, want) {
+		t.Errorf("fake.Calls = %v, want %v", fake.Calls, want)
+	}
+}
+
+// Requirement: CL-F-04
+func TestRunRegister_MeshJoinFailure_IsPropagated(t *testing.T) {
+	setupConfigDir(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"posix_username": "user000002",
+			"pre_auth_key":   "preauth-def",
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv(envEntryHubURL, server.URL)
+	t.Setenv(envHeadscaleURL, "https://headscale.example.com")
+
+	fake := &execrunner.Fake{
+		Output: []byte("tailscale: needs sudo"),
+		Err:    errors.New("exit status 1"),
+	}
+
+	err := runRegister([]string{"--email=user@example.com", "--password=Str0ng!Pass"}, fake)
+	if !errors.Is(err, mesh.ErrJoinFailed) {
+		t.Fatalf("runRegister() error = %v, want to wrap mesh.ErrJoinFailed", err)
+	}
+	if len(fake.Calls) != 1 {
+		t.Errorf("fake.Calls = %v, want exactly one tailscale invocation", fake.Calls)
+	}
+}
+
+// Requirement: CL-F-04
+func TestRunRegister_NoHeadscaleURL_SkipsMeshJoin(t *testing.T) {
+	setupConfigDir(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"posix_username": "user000003",
+			"pre_auth_key":   "preauth-ghi",
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv(envEntryHubURL, server.URL)
+	t.Setenv(envHeadscaleURL, "")
+
+	fake := &execrunner.Fake{}
+
+	err := runRegister([]string{"--email=user@example.com", "--password=Str0ng!Pass"}, fake)
+	if err != nil {
+		t.Fatalf("runRegister() error = %v, want nil", err)
+	}
+	if len(fake.Calls) != 0 {
+		t.Errorf("fake.Calls = %v, want no tailscale invocation without a login server", fake.Calls)
 	}
 }
 
@@ -408,11 +533,87 @@ func TestRunBackup_ArgumentValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := runBackup(tt.args)
+			err := runBackup(tt.args, &execrunner.Fake{})
 			if err == nil {
 				t.Fatal("runBackup() error = nil, want an error")
 			}
 		})
+	}
+}
+
+// Requirement: CL-F-06
+func TestRunBackup_Success(t *testing.T) {
+	_, posixUsername := setupRegisteredClient(t)
+	t.Setenv(envStorageHost, "storage-service.mesh")
+
+	fake := &execrunner.Fake{Output: []byte("snapshot abc123 saved")}
+	localPath := filepath.Join(t.TempDir(), "documents")
+
+	err := runBackup([]string{localPath}, fake)
+	if err != nil {
+		t.Fatalf("runBackup() error = %v, want nil", err)
+	}
+
+	if len(fake.Calls) != 2 {
+		t.Fatalf("fake.Calls = %v, want exactly 2 invocations (init, backup)", fake.Calls)
+	}
+	initCall, backupCall := fake.Calls[0], fake.Calls[1]
+
+	if initCall[0] != "restic" || initCall[len(initCall)-1] != "init" {
+		t.Errorf("first call = %v, want a \"restic ... init\" invocation", initCall)
+	}
+	if backupCall[0] != "restic" {
+		t.Errorf("second call = %v, want to invoke restic", backupCall)
+	}
+	if got := backupCall[len(backupCall)-2:]; !reflect.DeepEqual(got, []string{"backup", localPath}) {
+		t.Errorf("second call's trailing args = %v, want [backup %s]", got, localPath)
+	}
+	if !containsSubstring(backupCall, posixUsername) {
+		t.Errorf("backup call = %v, want it to address repository user %q", backupCall, posixUsername)
+	}
+}
+
+// Requirement: CL-F-06
+func TestRunBackup_InitFailure_IsPropagated(t *testing.T) {
+	setupRegisteredClient(t)
+	t.Setenv(envStorageHost, "storage-service.mesh")
+
+	fake := &execrunner.Fake{
+		Output: []byte("permission denied"),
+		Err:    errors.New("exit status 1"),
+	}
+
+	err := runBackup([]string{filepath.Join(t.TempDir(), "documents")}, fake)
+	if !errors.Is(err, restic.ErrRepositoryOperationFailed) {
+		t.Fatalf("runBackup() error = %v, want to wrap restic.ErrRepositoryOperationFailed", err)
+	}
+	if len(fake.Calls) != 1 {
+		t.Errorf("fake.Calls = %v, want backup never attempted after init failed", fake.Calls)
+	}
+}
+
+// Requirement: CL-F-06
+func TestRunBackup_BackupFailure_IsPropagated(t *testing.T) {
+	setupRegisteredClient(t)
+	t.Setenv(envStorageHost, "storage-service.mesh")
+
+	// "already initialized" is restic.Init's own success marker (Init is
+	// safe to call on every backup, not just the first) - combining it
+	// with a non-nil Err makes Init succeed while every OTHER restic
+	// invocation (Backup here) still observes the failure, without
+	// needing to reconstruct restic's internal -r/-o flag values to key
+	// execrunner.Fake.ErrFor precisely.
+	fake := &execrunner.Fake{
+		Output: []byte("already initialized"),
+		Err:    errors.New("exit status 1"),
+	}
+
+	err := runBackup([]string{filepath.Join(t.TempDir(), "documents")}, fake)
+	if !errors.Is(err, restic.ErrRepositoryOperationFailed) {
+		t.Fatalf("runBackup() error = %v, want to wrap restic.ErrRepositoryOperationFailed", err)
+	}
+	if len(fake.Calls) != 2 {
+		t.Errorf("fake.Calls = %v, want both init (succeeding) and backup (failing) attempted", fake.Calls)
 	}
 }
 
@@ -429,11 +630,59 @@ func TestRunRestore_ArgumentValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := runRestore(tt.args)
+			err := runRestore(tt.args, &execrunner.Fake{})
 			if err == nil {
 				t.Fatal("runRestore() error = nil, want an error")
 			}
 		})
+	}
+}
+
+// Requirement: CL-F-07
+func TestRunRestore_Success(t *testing.T) {
+	_, posixUsername := setupRegisteredClient(t)
+	t.Setenv(envStorageHost, "storage-service.mesh")
+
+	fake := &execrunner.Fake{Output: []byte("restored 12 files")}
+	target := t.TempDir()
+
+	err := runRestore([]string{"--target=" + target, "latest"}, fake)
+	if err != nil {
+		t.Fatalf("runRestore() error = %v, want nil", err)
+	}
+
+	if len(fake.Calls) != 1 {
+		t.Fatalf("fake.Calls = %v, want exactly 1 invocation", fake.Calls)
+	}
+	call := fake.Calls[0]
+	if call[0] != "restic" {
+		t.Errorf("call = %v, want to invoke restic", call)
+	}
+	if got := call[len(call)-4:]; !reflect.DeepEqual(got, []string{"restore", "latest", "--target", target}) {
+		t.Errorf("call's trailing args = %v, want [restore latest --target %s]", got, target)
+	}
+	if !containsSubstring(call, posixUsername) {
+		t.Errorf("restore call = %v, want it to address repository user %q", call, posixUsername)
+	}
+}
+
+// Requirement: CL-F-07
+func TestRunRestore_Failure_IsPropagated(t *testing.T) {
+	setupRegisteredClient(t)
+	t.Setenv(envStorageHost, "storage-service.mesh")
+
+	fake := &execrunner.Fake{
+		Output: []byte("no such snapshot"),
+		Err:    errors.New("exit status 1"),
+	}
+	target := t.TempDir()
+
+	err := runRestore([]string{"--target=" + target, "does-not-exist"}, fake)
+	if !errors.Is(err, restic.ErrRepositoryOperationFailed) {
+		t.Fatalf("runRestore() error = %v, want to wrap restic.ErrRepositoryOperationFailed", err)
+	}
+	if len(fake.Calls) != 1 {
+		t.Errorf("fake.Calls = %v, want exactly 1 invocation", fake.Calls)
 	}
 }
 
@@ -442,7 +691,7 @@ func TestResticConfig_MissingKeyPair(t *testing.T) {
 	isolateConfigDir(t)
 	t.Setenv(envStorageHost, "storage-service.mesh")
 
-	_, err := resticConfig()
+	_, err := resticConfig(&execrunner.Fake{})
 	if err == nil {
 		t.Fatal("resticConfig() error = nil, want an error when no ssh key pair was generated yet")
 	}
@@ -461,7 +710,7 @@ func TestResticConfig_MissingPosixUsername(t *testing.T) {
 		t.Fatalf("sshkey.EnsureKeyPair() error = %v", err)
 	}
 
-	_, err = resticConfig()
+	_, err = resticConfig(&execrunner.Fake{})
 	if err == nil {
 		t.Fatal("resticConfig() error = nil, want an error when no posix username was saved yet")
 	}
@@ -483,7 +732,7 @@ func TestResticConfig_MissingStorageHost(t *testing.T) {
 		t.Fatalf("clientstate.SavePosixUsername() error = %v", err)
 	}
 
-	_, err = resticConfig()
+	_, err = resticConfig(&execrunner.Fake{})
 	if err == nil {
 		t.Fatal("resticConfig() error = nil, want an error when RAM_USB_STORAGE_HOST is unset")
 	}
@@ -506,7 +755,7 @@ func TestResticConfig_Success(t *testing.T) {
 		t.Fatalf("clientstate.SavePosixUsername() error = %v", err)
 	}
 
-	cfg, err := resticConfig()
+	cfg, err := resticConfig(&execrunner.Fake{})
 	if err != nil {
 		t.Fatalf("resticConfig() error = %v, want nil", err)
 	}
@@ -523,6 +772,19 @@ func TestResticConfig_Success(t *testing.T) {
 		t.Error("cfg.RepositoryPassword is empty, want a generated repository password")
 	}
 	if cfg.Runner == nil {
-		t.Error("cfg.Runner is nil, want the real execrunner")
+		t.Error("cfg.Runner is nil, want the explicitly injected execrunner.Fake")
 	}
+}
+
+// containsSubstring reports whether any element of args contains want as a
+// substring - restic's own "-o sftp.command=ssh -i ... -l <user> ..."
+// value is a single space-containing CLI argument, not split across
+// separate elements, so an exact-equality check would never match.
+func containsSubstring(args []string, want string) bool {
+	for _, a := range args {
+		if strings.Contains(a, want) {
+			return true
+		}
+	}
+	return false
 }
