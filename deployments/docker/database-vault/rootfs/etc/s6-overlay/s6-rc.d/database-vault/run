@@ -31,6 +31,18 @@
 # tailscale-up).
 export RAM_USB_DATABASE_VAULT_LISTEN_ADDR="${RAM_USB_DATABASE_VAULT_TAILSCALE_IP:?RAM_USB_DATABASE_VAULT_TAILSCALE_IP is not set - tailscale-up must run first}:${RAM_USB_DATABASE_VAULT_LISTEN_PORT:?RAM_USB_DATABASE_VAULT_LISTEN_PORT is not set}"
 
+# s6-overlay's /init-spawned longrun tree does NOT start this process at
+# the image's WORKDIR (/app, see the Dockerfile's own comment above the
+# migrations COPY) the way a plain `docker run --entrypoint sh <image> -c
+# pwd` would suggest - confirmed live, the binary otherwise fails every
+# single start resolving its default relative migrations path
+# (services/database-vault/migrations, see
+# services/database-vault/internal/schema/schema.go) with "open .: no such
+# file or directory". `cd` here, before exec, restores the cwd the
+# Dockerfile's layout (and main.go's defaultMigrationsDir constant) already
+# assumes, without needing a RAM_USB_DATABASE_VAULT_MIGRATIONS_DIR override.
+cd /app || exit 1
+
 # exec replaces this shell so the database-vault binary becomes the
 # directly supervised process and receives s6's signals itself.
 exec /app/database-vault
