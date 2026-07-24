@@ -36,26 +36,27 @@ skinparam cloud {
 
 node "**User-Client**\n[laptop/desktop]\nrestic + SSH key + Tailscale" as UserClient <<external>>
 
+node "Public VPS\n(dedicated, NET-F-01)" as EntryHubVPS {
+  node "**Entry-Hub**\n[Go]\nHTTPS :443" as EntryHub <<public>>
+}
+
+node "Public VPS\n(dedicated, NM-F-14)" as HeadscaleVPS {
+  node "**Headscale**\n[Headscale]\ncoordination + admin API" as Headscale <<public>>
+}
+
 cloud "**Headscale Mesh VPN**\nprivate network, mTLS\ncerts from private CA, TLS 1.3" as Mesh
 
-' invisible layout-only spacers: reserve enough vertical room for the
-' two-line "HTTPS :443.../Let's Encrypt cert" arrow label so it never
-' touches the Proxmox VE Host boundary
-rectangle "<color:white>X</color>\n<color:white>X</color>\n<color:white>X</color>" as VGap1 #line:transparent;back:transparent
-
-' invisible layout-only spacer: reserve enough horizontal room between
-' User-Client and the Mesh cloud for the two-line "joins after bootstrap
-' (pre-auth key, CL-F-04)" arrow label, without inflating the global
-' nodesep used everywhere else (Problem 1/2 fix - kept local on purpose)
-rectangle "<color:white>______________________________________________________________________________________________________________________________________________</color>" as HGap1 #line:transparent;back:transparent
+' single hidden-edge chain (not a web of repeated/weighted edges) to force
+' a clean left-to-right rank: User-Client, then its two public entry
+' points, matching NET-F-01's framing of "the system's only two
+' deliberately public-facing surfaces".
+UserClient -[hidden]right- EntryHubVPS
+EntryHubVPS -[hidden]right- HeadscaleVPS
 
 node "Proxmox VE Host" as Proxmox {
 
   rectangle "LXC Containers" as LXCGroup #line.dashed;line:AAAAAA;back:FDFDFD {
     together {
-      node " " as EntryHubDocker <<docker>> {
-        node "**Entry-Hub**\n[Go]\nHTTPS :443" as EntryHub <<public>>
-      }
       node " " as SecuritySwitchDocker <<docker>> {
         node "**Security-Switch**\n[Go]" as SecuritySwitch <<service>>
       }
@@ -73,7 +74,6 @@ node "Proxmox VE Host" as Proxmox {
       }
     }
 
-    EntryHubDocker -[hidden]right- SecuritySwitchDocker
     SecuritySwitchDocker -[hidden]right- CADocker
     CADocker -[hidden]right- MosquittoDocker
     MosquittoDocker -[hidden]right- MetricsCollectorDocker
@@ -89,7 +89,7 @@ node "Proxmox VE Host" as Proxmox {
         node "**Storage-Service**\n[Go, SFTP]" as StorageService <<service>>
       }
       node " " as NetworkManagerDocker <<docker>> {
-        node "**Network-Manager**\n[Go, Headscale]" as NetworkManager <<service>>
+        node "**Network-Manager**\n[Go]" as NetworkManager <<service>>
       }
     }
 
@@ -97,27 +97,16 @@ node "Proxmox VE Host" as Proxmox {
     StorageServiceDocker -[hidden]right- NetworkManagerDocker
   }
 
-  EntryHubDocker -[hidden]down- DatabaseVaultDocker
+  SecuritySwitchDocker -[hidden]down- DatabaseVaultDocker
 }
 
-' repeated edges: strengthens the pull so the layout engine centers
-' User-Client's column as closely as possible on the Entry-Hub Docker box
-' instead of only loosely below it (exact centering is bounded by how
-' GraphViz anchors edges to a nested cluster rather than a plain node)
-UserClient -[hidden]down- VGap1
-UserClient -[hidden]down- VGap1
-VGap1 -[hidden]down- EntryHubDocker
-VGap1 -[hidden]down- EntryHubDocker
-Mesh -[hidden]down- VGap1
-
-UserClient -[hidden]right- HGap1
-HGap1 -[hidden]right- Mesh
-
-UserClient -right-> Mesh : joins after bootstrap\n(pre-auth key, CL-F-04)
-UserClient -down-> EntryHubDocker : HTTPS :443 (public internet)\nLet's Encrypt cert
+UserClient -down-> EntryHub : HTTPS :443 (public internet)\nLet's Encrypt cert
+UserClient -right-> Headscale : joins after bootstrap\n(pre-auth key, CL-F-04)
+Headscale ..> Mesh : coordinates only\n(cannot itself be a member, NM-F-12)
+NetworkManagerDocker -up-> Headscale : REST API :443 (mTLS + token)\npre-auth key / ACL policy
 
 legend
-  Only Entry-Hub is publicly reachable.
+  Entry-Hub and Headscale are the only publicly reachable nodes (NET-F-01).
   Every other node communicates exclusively over
   the mesh, mutually authenticated with private-CA certificates.
 end legend
