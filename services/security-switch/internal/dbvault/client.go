@@ -25,15 +25,14 @@
 package dbvault
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/Verryx-02/RAM-USB/pkg/validation"
+	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/httpclient"
 )
 
 // RegisterPath and LoginPath must match
@@ -135,7 +134,7 @@ var (
 // (expected to already be configured with mtls.ClientConfig verifying
 // OrganizationDatabaseVault) and waits for its response (SS-F-04).
 func Register(ctx context.Context, client *http.Client, baseURL string, req validation.RegisterRequest) Result {
-	respBody, status, err := forward(ctx, client, baseURL+RegisterPath, req)
+	respBody, status, err := httpclient.Post(ctx, client, baseURL+RegisterPath, req, ErrDatabaseVaultUnreachable, ErrDatabaseVaultTimeout)
 	if err != nil {
 		return Result{Outcome: OutcomeUnknown, Err: err}
 	}
@@ -157,7 +156,7 @@ func Register(ctx context.Context, client *http.Client, baseURL string, req vali
 // Login forwards req to Database-Vault's LoginPath over client and waits
 // for its response (SS-F-04).
 func Login(ctx context.Context, client *http.Client, baseURL string, req validation.LoginRequest) Result {
-	respBody, status, err := forward(ctx, client, baseURL+LoginPath, req)
+	respBody, status, err := httpclient.Post(ctx, client, baseURL+LoginPath, req, ErrDatabaseVaultUnreachable, ErrDatabaseVaultTimeout)
 	if err != nil {
 		return Result{Outcome: OutcomeUnknown, Err: err}
 	}
@@ -174,37 +173,4 @@ func Login(ctx context.Context, client *http.Client, baseURL string, req validat
 	default:
 		return Result{Outcome: OutcomeUnknown, Err: fmt.Errorf("%w: status %d", ErrDatabaseVaultUnexpectedResponse, status)}
 	}
-}
-
-// forward marshals body as JSON, POSTs it to url over client, and returns
-// the raw response bytes and status code. Any failure short of receiving a
-// complete HTTP response is reported as ErrDatabaseVaultUnreachable, or
-// ErrDatabaseVaultTimeout if the failure was a context deadline.
-func forward(ctx context.Context, client *http.Client, url string, body any) ([]byte, int, error) {
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return nil, 0, fmt.Errorf("dbvault: encode request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(encoded))
-	if err != nil {
-		return nil, 0, fmt.Errorf("dbvault: build request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, 0, fmt.Errorf("%w: %w", ErrDatabaseVaultTimeout, err)
-		}
-		return nil, 0, fmt.Errorf("%w: %w", ErrDatabaseVaultUnreachable, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, 0, fmt.Errorf("%w: read response: %w", ErrDatabaseVaultUnreachable, err)
-	}
-
-	return respBody, resp.StatusCode, nil
 }

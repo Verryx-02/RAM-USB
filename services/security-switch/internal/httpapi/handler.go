@@ -97,8 +97,9 @@ func (h *Handler) logger() *slog.Logger {
 // them failed" - DV-F-10's own rollback exists only for "POSIX user
 // creation failed", a different failure a step earlier in the chain, and
 // building a new cross-service rollback path for this one case is out of
-// this task's scope. Responding with a mapped 5xx (mapMeshUserError,
-// mirroring SS-F-06's error-mapping conventions) at least tells the
+// this task's scope. Responding with a mapped 5xx
+// (mapNetworkManagerLikeError, mirroring SS-F-06's error-mapping
+// conventions) at least tells the
 // caller registration did not fully succeed, even though the account and
 // POSIX user now exist - accepted as the honest, fail-secure-adjacent
 // outcome (RD-04: on uncertainty, deny/report failure) rather than
@@ -139,7 +140,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 			// rollback is attempted for this specific failure.
 			isError = true
 			h.logger().Error("register: network-manager mesh user creation failed", "error", err)
-			writeAppError(w, mapMeshUserError(err))
+			writeAppError(w, mapNetworkManagerLikeError(err, networkmanager.ErrMeshUserCreationDenied))
 			return
 		}
 
@@ -197,7 +198,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			// did not itself succeed.
 			isError = true
 			h.logger().Error("login: network-manager grant failed", "error", err)
-			writeAppError(w, mapNetworkManagerError(err))
+			writeAppError(w, mapNetworkManagerLikeError(err, networkmanager.ErrGrantDenied))
 			return
 		}
 		h.logger().Info("login: succeeded, network-manager grant confirmed")
@@ -230,33 +231,30 @@ func mapDBVaultError(err error) *apperrors.AppError {
 	}
 }
 
-// mapNetworkManagerError implements SS-F-06 for the outbound call to
-// Network-Manager: an explicit denial maps to 403 (the request was
-// refused, not merely unreachable), a timeout to 504, and any other
-// unreachable/unexpected failure to 502.
-func mapNetworkManagerError(err error) *apperrors.AppError {
+// mapNetworkManagerLikeError implements SS-F-06 for both outbound calls to
+// Network-Manager - GrantAccess's login-time grant (SS-F-05) and
+// CreateMeshUser's registration-time mesh-user creation (SS-F-09): an
+// explicit denial maps to 403 (the request was refused, not merely
+// unreachable), a timeout to 504, and any other unreachable/unexpected
+// failure to 502. denied is the caller's own denial sentinel -
+// networkmanager.ErrGrantDenied for GrantAccess,
+// networkmanager.ErrMeshUserCreationDenied for CreateMeshUser - the one
+// axis the two calls differ on; ErrNetworkManagerTimeout/
+// ErrNetworkManagerUnreachable are already shared by both operations at
+// the source (networkmanager/client.go).
+//
+// The two mappings were originally kept as separate functions
+// (mapNetworkManagerError/mapMeshUserError) specifically so a future
+// divergence between how a login-time grant denial and a registration-time
+// mesh-user denial should be handled would not require disentangling one
+// function used for two purposes - the two operations happen at different
+// points in the request lifecycle (login vs. registration) even though
+// they currently map identically. Merged on request; if that divergence
+// materializes, split this back into two functions rather than adding a
+// branch keyed on which sentinel was passed in.
+func mapNetworkManagerLikeError(err error, denied error) *apperrors.AppError {
 	switch {
-	case errors.Is(err, networkmanager.ErrGrantDenied):
-		return apperrors.NewForbidden(err)
-	case errors.Is(err, networkmanager.ErrNetworkManagerTimeout):
-		return apperrors.NewGatewayTimeout(err)
-	case errors.Is(err, networkmanager.ErrNetworkManagerUnreachable):
-		return apperrors.NewBadGateway(err)
-	default:
-		return apperrors.NewInternal(err)
-	}
-}
-
-// mapMeshUserError implements SS-F-06 for the outbound call to
-// Network-Manager's mesh-user-creation endpoint (SS-F-09): an explicit
-// denial maps to 403, a timeout to 504, and any other unreachable/
-// unexpected failure to 502 - the same mapping shape as
-// mapNetworkManagerError, over networkmanager.ErrMeshUserCreationDenied
-// instead of ErrGrantDenied (a distinct sentinel for a distinct
-// operation, see networkmanager/client.go's doc comment on that sentinel).
-func mapMeshUserError(err error) *apperrors.AppError {
-	switch {
-	case errors.Is(err, networkmanager.ErrMeshUserCreationDenied):
+	case errors.Is(err, denied):
 		return apperrors.NewForbidden(err)
 	case errors.Is(err, networkmanager.ErrNetworkManagerTimeout):
 		return apperrors.NewGatewayTimeout(err)
