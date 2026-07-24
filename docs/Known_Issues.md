@@ -34,10 +34,21 @@ Each entry: **ID**, **Found** (date, context), **Area**, **Description**,
   Dockerfile, `tailscale-up.sh`, or any other startup script actually
   creates that file's *contents* (the directory is created, empty). The
   binary's own comment calls this "a separate, not-yet-scoped task."
-- **Status:** OPEN. Until this is provisioned, every real SFTP connection
-  attempt fails closed (RD-04) — registration/login/POSIX-user-creation
-  all work regardless, this only blocks the actual backup/restore path
-  (UC-03/UC-04).
+- **Status:** FIXED, 2026-07-24. A new s6-supervised `identity-provisioner`
+  process (`services/storage-service/cmd/identity-provisioner/`) bootstraps
+  its own mTLS identity (organization `StorageService`, a second CA-F-04
+  token distinct from `storage-service`'s own) at container start and
+  periodically re-encodes the SDK's auto-renewing certificate to disk,
+  writing `authorized-keys-command.conf` last so a new
+  `identity-provisioner-ready` s6 oneshot can gate `sshd`'s start on its
+  existence. Verified live end-to-end: a real `sftp` client inside the
+  container triggers `AuthorizedKeysCommand`, which completes a real mTLS
+  round-trip to Database-Vault. Two pre-existing bugs found and fixed as a
+  side effect: `pkg/pki.RootCA` needed `stepca.WithRootSHA256`; and
+  `authorized-keys-command`'s outbound client never forced `ServerName`,
+  so Go's hostname check rejected every real connection before PKI-F-02's
+  organization check ever ran. `MANUAL-DISTRIBUTED-RUN.md`'s "Known issue
+  #7" still describes this now-fixed gap and needs updating separately.
 
 ## KI-02 — EH-F-03's mesh-only login listener is undocumented outside the code
 
