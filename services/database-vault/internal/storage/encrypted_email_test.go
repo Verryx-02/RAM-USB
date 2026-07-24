@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 
@@ -8,7 +9,7 @@ import (
 )
 
 // Requirement: DV-F-08
-func TestMarshalUnmarshalEncryptedEmail_RoundTrip(t *testing.T) {
+func TestMarshalEncryptedEmail_ByteLayout(t *testing.T) {
 	tests := []struct {
 		name string
 		enc  encryption.EncryptedEmail
@@ -46,40 +47,35 @@ func TestMarshalUnmarshalEncryptedEmail_RoundTrip(t *testing.T) {
 				t.Fatalf("marshalEncryptedEmail() error = %v, want nil", err)
 			}
 
-			got, err := unmarshalEncryptedEmail(marshaled)
-			if err != nil {
-				t.Fatalf("unmarshalEncryptedEmail() error = %v, want nil", err)
+			// Verify the on-disk layout directly, byte by byte, rather
+			// than through unmarshalEncryptedEmail: a 1-byte salt length,
+			// a 1-byte nonce length, then salt, nonce, and ciphertext back
+			// to back (see marshalEncryptedEmail's doc comment).
+			wantLen := 2 + len(tt.enc.Salt) + len(tt.enc.Nonce) + len(tt.enc.Ciphertext)
+			if len(marshaled) != wantLen {
+				t.Fatalf("len(marshaled) = %d, want %d", len(marshaled), wantLen)
 			}
 
-			if string(got.Salt) != string(tt.enc.Salt) {
-				t.Errorf("Salt = %q, want %q", got.Salt, tt.enc.Salt)
+			if got := int(marshaled[0]); got != len(tt.enc.Salt) {
+				t.Errorf("salt length header = %d, want %d", got, len(tt.enc.Salt))
 			}
-			if string(got.Nonce) != string(tt.enc.Nonce) {
-				t.Errorf("Nonce = %q, want %q", got.Nonce, tt.enc.Nonce)
+			if got := int(marshaled[1]); got != len(tt.enc.Nonce) {
+				t.Errorf("nonce length header = %d, want %d", got, len(tt.enc.Nonce))
 			}
-			if string(got.Ciphertext) != string(tt.enc.Ciphertext) {
-				t.Errorf("Ciphertext = %q, want %q", got.Ciphertext, tt.enc.Ciphertext)
-			}
-		})
-	}
-}
 
-// Requirement: DV-F-08
-func TestUnmarshalEncryptedEmail_Malformed(t *testing.T) {
-	tests := []struct {
-		name string
-		data []byte
-	}{
-		{name: "empty", data: []byte{}},
-		{name: "only one length byte", data: []byte{16}},
-		{name: "declared lengths exceed available data", data: []byte{16, 12, 1, 2, 3}},
-	}
+			body := marshaled[2:]
+			gotSalt := body[:len(tt.enc.Salt)]
+			gotNonce := body[len(tt.enc.Salt) : len(tt.enc.Salt)+len(tt.enc.Nonce)]
+			gotCiphertext := body[len(tt.enc.Salt)+len(tt.enc.Nonce):]
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := unmarshalEncryptedEmail(tt.data)
-			if !errors.Is(err, ErrMalformedEncryptedEmail) {
-				t.Fatalf("unmarshalEncryptedEmail() error = %v, want wrapping ErrMalformedEncryptedEmail", err)
+			if !bytes.Equal(gotSalt, tt.enc.Salt) {
+				t.Errorf("salt bytes = %q, want %q", gotSalt, tt.enc.Salt)
+			}
+			if !bytes.Equal(gotNonce, tt.enc.Nonce) {
+				t.Errorf("nonce bytes = %q, want %q", gotNonce, tt.enc.Nonce)
+			}
+			if !bytes.Equal(gotCiphertext, tt.enc.Ciphertext) {
+				t.Errorf("ciphertext bytes = %q, want %q", gotCiphertext, tt.enc.Ciphertext)
 			}
 		})
 	}

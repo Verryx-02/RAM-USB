@@ -35,8 +35,7 @@ const (
 	hkdfInfo = "RAM-USB/database-vault/email-encryption"
 )
 
-// EncryptedEmail holds everything DV-F-08 needs to persist and
-// DecryptEmail needs to reverse an EncryptEmail call: the random
+// EncryptedEmail holds everything DV-F-08 needs to persist: the random
 // per-record salt, the random GCM nonce, and the resulting ciphertext.
 // cipher.AEAD.Seal appends the GCM authentication tag to the ciphertext it
 // returns, so Ciphertext already includes it.
@@ -79,29 +78,6 @@ func EncryptEmail(masterKey []byte, email logging.Redacted) (EncryptedEmail, err
 	ciphertext := gcm.Seal(nil, nonce, []byte(email), nil)
 
 	return EncryptedEmail{Salt: salt, Nonce: nonce, Ciphertext: ciphertext}, nil
-}
-
-// DecryptEmail reverses EncryptEmail, returning the plaintext email.
-//
-// The SRS's DV-F-04 only requires encryption; DecryptEmail exists as this
-// package's necessary verification counterpart, since AES-256-GCM
-// ciphertext is randomized by the salt and nonce and admits no fixed
-// known-answer test — decrypting the result and comparing against the
-// original plaintext is the only way to confirm EncryptEmail is correct.
-// No SRS requirement yet describes a production flow that reads the
-// email back; see this task's report for that gap.
-func DecryptEmail(masterKey []byte, enc EncryptedEmail) (string, error) {
-	gcm, err := newGCM(masterKey, enc.Salt)
-	if err != nil {
-		return "", err
-	}
-
-	plaintext, err := gcm.Open(nil, enc.Nonce, enc.Ciphertext, nil)
-	if err != nil {
-		return "", fmt.Errorf("encryption: decrypt email: %w", err)
-	}
-
-	return string(plaintext), nil
 }
 
 // newGCM derives a per-record AES-256 key from masterKey and salt via

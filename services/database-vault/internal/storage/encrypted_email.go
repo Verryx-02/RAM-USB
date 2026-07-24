@@ -8,10 +8,8 @@ import (
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/encryption"
 )
 
-// ErrMalformedEncryptedEmail means a stored email_encrypted BYTEA value does
-// not match the format marshalEncryptedEmail produces, so
-// unmarshalEncryptedEmail cannot safely split it back into salt, nonce, and
-// ciphertext.
+// ErrMalformedEncryptedEmail means a value passed to marshalEncryptedEmail
+// does not fit the format it produces (docs/design/diagrams/06-data-er-database-vault.puml).
 var ErrMalformedEncryptedEmail = errors.New("storage: stored encrypted email is malformed")
 
 // marshalEncryptedEmail packs an encryption.EncryptedEmail's three separate
@@ -39,33 +37,4 @@ func marshalEncryptedEmail(enc encryption.EncryptedEmail) ([]byte, error) {
 	buf = append(buf, enc.Ciphertext...)
 
 	return buf, nil
-}
-
-// unmarshalEncryptedEmail reverses marshalEncryptedEmail. No production
-// DV-F-* requirement yet reads the email_encrypted column back (see
-// encryption.DecryptEmail's doc comment for the same gap); this exists so
-// SaveUser's on-disk format has a tested round trip, and so a future
-// requirement that does need to read it back has this ready.
-func unmarshalEncryptedEmail(data []byte) (encryption.EncryptedEmail, error) {
-	if len(data) < 2 {
-		return encryption.EncryptedEmail{}, fmt.Errorf("%w: too short for a length header", ErrMalformedEncryptedEmail)
-	}
-
-	saltLen := int(data[0])
-	nonceLen := int(data[1])
-	data = data[2:]
-
-	if len(data) < saltLen+nonceLen {
-		return encryption.EncryptedEmail{}, fmt.Errorf("%w: declared salt/nonce length exceeds available data", ErrMalformedEncryptedEmail)
-	}
-
-	salt := data[:saltLen]
-	nonce := data[saltLen : saltLen+nonceLen]
-	ciphertext := data[saltLen+nonceLen:]
-
-	return encryption.EncryptedEmail{
-		Salt:       salt,
-		Nonce:      nonce,
-		Ciphertext: ciphertext,
-	}, nil
 }
