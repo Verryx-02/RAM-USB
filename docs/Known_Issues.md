@@ -78,7 +78,18 @@ Each entry: **ID**, **Found** (date, context), **Area**, **Description**,
   RequestCount/ErrorCount/AverageResponseTimeMs, then republish via
   `pkg/metrics` like every other service — is fully designed (exact log
   field names confirmed live) but nothing has been built.
-- **Status:** OPEN.
+- **Status:** FIXED, 2026-07-24. `services/certificate-authority/cmd/metrics-sidecar/`
+  tails step-ca's JSON access log (`third-party/certificate-authority/enable-json-logger.sh`
+  patches `ca.json` before first boot, since there is no CLI/env lever for
+  `logger.format`) and republishes via `pkg/metrics` from the new
+  `certificate-authority-metrics` container. One real bug found and fixed
+  during live verification: the CA-F-04 bootstrap token was minted with
+  subject `CertificateAuthorityMetrics` (the container's own name) instead
+  of `CertificateAuthority` (the SRS service identity); Mosquitto's ACL
+  only authorizes the latter to publish `metrics/Certificate-Authority`,
+  so publishes were silently ACL-denied with no visible error. Verified
+  live twice, ~4 minutes apart, with growing counters confirming both the
+  accumulator and the once-a-minute publish loop.
 
 ## KI-04 — ST-F-12/13: Storage-Service never publishes its own metrics
 
