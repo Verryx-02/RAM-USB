@@ -127,7 +127,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -471,9 +470,9 @@ func buildHeadscaleAPIClient(serverTLSConfig *tls.Config) (*http.Client, error) 
 
 	caFile := os.Getenv(envHeadscaleAPICAFile)
 	if caFile != "" {
-		pool, err := trustHeadscaleAPICA(caFile)
+		pool, err := mtls.TrustPool(caFile)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", envHeadscaleAPICAFile, err)
 		}
 		tlsConfig.RootCAs = pool
 	}
@@ -482,23 +481,6 @@ func buildHeadscaleAPIClient(serverTLSConfig *tls.Config) (*http.Client, error) 
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
 		Timeout:   headscaleAPITimeout,
 	}, nil
-}
-
-// trustHeadscaleAPICA validates that path contains at least one
-// well-formed PEM certificate (failing closed, RD-04, rather than
-// silently letting an unreadable/malformed file surface only much later as
-// a cryptic TLS error) and returns an *x509.CertPool trusting it - same
-// mechanism, and same reasoning, as pkg/mesh's trustControlCA.
-func trustHeadscaleAPICA(path string) (*x509.CertPool, error) {
-	pemBytes, err := os.ReadFile(path) //nolint:gosec // operator-controlled deployment path (envHeadscaleAPICAFile), not request input
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", envHeadscaleAPICAFile, err)
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(pemBytes) {
-		return nil, fmt.Errorf("%s (%s) contains no valid PEM certificate", envHeadscaleAPICAFile, path)
-	}
-	return pool, nil
 }
 
 // buildHeadscaleService assembles internal/headscale.NewClient - the REST

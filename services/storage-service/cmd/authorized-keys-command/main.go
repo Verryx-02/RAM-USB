@@ -41,7 +41,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -243,14 +242,9 @@ func buildClient(cfg config) (*http.Client, error) {
 		return nil, fmt.Errorf("load client certificate/key: %w", err)
 	}
 
-	caData, err := os.ReadFile(cfg.clientCAPath) //nolint:gosec // path comes from this process's own operator-controlled config file, not from request input
+	rootCAs, err := mtls.TrustPool(cfg.clientCAPath)
 	if err != nil {
-		return nil, fmt.Errorf("read CA bundle %s: %w", cfg.clientCAPath, err)
-	}
-
-	rootCAs := x509.NewCertPool()
-	if !rootCAs.AppendCertsFromPEM(caData) {
-		return nil, fmt.Errorf("no certificates found in CA bundle %s", cfg.clientCAPath)
+		return nil, err
 	}
 
 	return &http.Client{
