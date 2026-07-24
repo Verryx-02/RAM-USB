@@ -39,6 +39,26 @@ func (c *Counters) EndRequest(duration time.Duration, isError bool) {
 	c.activeConnections.Add(-1)
 }
 
+// Track marks one request as started (BeginRequest) and returns a func to
+// defer immediately at the call site: it reads *isError at defer-time (after
+// the handler has had a chance to flip it) and calls EndRequest with the
+// elapsed duration. This is the shared boilerplate every DV-F-16/DV-F-17
+// metrics-tracking call site (Handler.Register, Handler.Login,
+// PublicKeyHandler.PublicKey) previously duplicated inline:
+//
+//	isError := false
+//	defer c.Track(&isError)()
+//
+// replaces the four-statement start-time/BeginRequest/isError/deferred-
+// EndRequest block each of those handlers used to repeat verbatim.
+func (c *Counters) Track(isError *bool) func() {
+	start := time.Now()
+	c.BeginRequest()
+	return func() {
+		c.EndRequest(time.Since(start), *isError)
+	}
+}
+
 // Snapshot converts the accumulated counts into metrics.Counters
 // (DV-F-16/DV-F-17's payload input) at the moment it's called. It does not
 // reset the accumulated totals — DV-F-16 publishes every minute

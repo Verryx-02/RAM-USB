@@ -45,7 +45,6 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
-	"time"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/storage"
@@ -131,12 +130,8 @@ func (h *PublicKeyHandler) logger() *slog.Logger {
 // doc comment for why a distinct HTTP 404 (posixUsername well-formed but no
 // matching user) is safe to return here, unlike DV-F-15's login lookup.
 func (h *PublicKeyHandler) PublicKey(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	h.Metrics.BeginRequest()
 	isError := false
-	defer func() {
-		h.Metrics.EndRequest(time.Since(start), isError)
-	}()
+	defer h.Metrics.Track(&isError)()
 
 	posixUsername := r.PathValue("posix_username")
 	if !posixUsernamePattern.MatchString(posixUsername) {
@@ -145,8 +140,7 @@ func (h *PublicKeyHandler) PublicKey(w http.ResponseWriter, r *http.Request) {
 		// is untrusted input, and this codebase's convention (DV-F-20) is
 		// to log a validation failure's cause, never the offending raw
 		// value.
-		h.logger().Warn("public-key: rejected malformed posix username")
-		writeAppError(w, apperrors.NewBadRequest(errMalformedPosixUsername))
+		failBadRequest(w, h.logger(), errMalformedPosixUsername, "public-key: rejected malformed posix username")
 		return
 	}
 
