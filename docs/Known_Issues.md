@@ -221,6 +221,50 @@ Each entry: **ID**, **Found** (date, context), **Area**, **Description**,
 - **Status:** OPEN. Needs a direct decision from the user, not something
   inferable from the code alone.
 
+## KI-10 — s6 longruns respawn instantly forever on a permanent (non-retryable) startup error, not just transient ones
+
+- **Found:** 2026-07-24, live: `network-manager` was stuck in a tight
+  sub-second crash loop (`docker inspect` showed `RestartCount=0`,
+  container never restarted at the Docker level — it was s6-overlay's own
+  longrun supervisor respawning the process internally, invisible without
+  inspecting container internals). Root cause: `main.go`'s `os.Exit(1)`
+  after a fatal startup error (here, `RAM_USB_CA_BOOTSTRAP_TOKEN` had
+  already been consumed — CA-F-04 tokens are single-use by design, see
+  `pkg/pki`) fires every ~1 second forever, since a plain s6-rc `longrun`
+  respawns immediately on any exit with no backoff, and the token can
+  never succeed on a later attempt once spent — every respawn after the
+  first was guaranteed to fail identically. A secondary, independently
+  confirmed bug compounded this: the main checkout's own copy of the
+  gitignored `third-party/headscale/dev-tls/cert.dev-only.pem` had been
+  silently replaced with an **empty directory** by Docker (the documented
+  "creates an empty dir at a missing bind-mount source instead of
+  erroring" footgun, `.claude/agent-memory/code-agent.md`) after an
+  earlier `docker compose up` ran before that file existed on disk —
+  `network-manager` could not load any Headscale trust material at all
+  and failed every mesh dial with `x509: certificate signed by unknown
+  authority` even after a fresh token fixed the first failure.
+- **Area:** `deployments/docker/network-manager/rootfs/etc/s6-overlay/s6-rc.d/network-manager/`
+  (fixed); the same latent pattern exists, unfixed, in every other
+  s6-supervised longrun that bootstraps via a single-use CA-F-04 token at
+  startup: Database-Vault, Storage-Service (`storage-service` and the new
+  `identity-provisioner`), Security-Switch.
+- **Status:** FIXED for Network-Manager only. Added a `finish` script
+  (`.../network-manager/finish`) that sleeps 30s before letting s6-rc
+  respawn the longrun on a genuine nonzero exit code (`os.Exit(1)`), while
+  not delaying a clean SIGTERM container stop (exit code 256) — turns an
+  unrecoverable, log-spamming, CA-hammering sub-second loop into a slow,
+  visible one an operator has time to notice and fix (mint a fresh token,
+  recreate the container). Does not fix the underlying single-use-token
+  fragility itself (that's CA-F-04's own documented design), only the
+  respawn-storm symptom. The main checkout's `cert.dev-only.pem` was
+  restored from Headscale's actually-served certificate (`openssl
+  s_client`) as a live fix, not a systemic one — the underlying
+  worktree/main-checkout desync risk for this gitignored file remains,
+  same as already documented in memory. **Remaining scope**: apply the
+  same `finish`-script backoff to Database-Vault/Storage-Service/
+  Security-Switch's own longruns — not done here, out of this task's
+  scope (only Network-Manager was actually crash-looping).
+
 ---
 
 **Not logged, considered and rejected**: `01-architecture-container.puml`
