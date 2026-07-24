@@ -6,8 +6,8 @@ Indexes: [[RAM-USB]]
 
 ---
 
-**Version:** 1.5  
-**Status:** Amended: §2.1 component status table corrected (Storage-Service, Network-Manager, Mosquitto, Metrics-Collector, Metrics-Visualizer all merged). Container base-image policy and Storage-Service container-architecture notes added; NM-F-10, NM-F-11, NM-F-17, NM-F-18, PKI-F-01, and PKI-F-02 linked to their merged commits; NM-F-12 reworded to document how Headscale's own CLI satisfies it; CA-F-01/CA-F-02 clarified as guarantees of the underlying step-ca product 
+**Version:** 1.7  
+**Status:** Amended: NM-F-14 reworded — Headscale's coordination endpoint is now deliberately public-facing (e.g. hosted on its own VPS) rather than mesh-only, since a new node has no other way to reach it before registration completes; EH-F-12 removed, since Entry-Hub no longer needs to reverse-proxy coordination traffic once Headscale is directly reachable; NET-F-01 updated to match. NM-F-12 reworded — Headscale is deployed separately from Network-Manager (its own coordination server cannot safely join the mesh it coordinates, per Headscale's own documented limitation), so pre-auth-key/ACL-tag administration is now restricted by mutual TLS rather than by network placement. §2.1's component table now lists Headscale as its own container (11 total, was 10).
 **Author:** Francesco Verrengia
 
 > [!NOTE] The level of detail in this document increases with each iteration, following the spiral model of requirements engineering.
@@ -63,7 +63,7 @@ Some choices below trade a theoretically stronger design for one that better ser
 
 ### 2.1 Product perspective
 
-RAM-USB is an n-tier client-server microservices architecture made up of 10 Docker containers.
+RAM-USB is an n-tier client-server microservices architecture made up of 11 Docker containers.
 
 |**Component**|**Current implementation status**|
 |---|---|
@@ -73,6 +73,7 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |Database-Vault|Done|
 |Storage-Service|Done|
 |Network-Manager|Done|
+|[Headscale](https://github.com/juanfont/headscale)|In progress|
 |Mosquitto (MQTT broker)|Done|
 |Metrics-Collector|Done|
 |Metrics-Visualizer (Grafana)|Done|
@@ -171,7 +172,6 @@ RAM-USB is an n-tier client-server microservices architecture made up of 10 Dock
 |EH-F-09|Must map internal errors to HTTP 400/401/500/502/503, returning sanitized messages to the client and detailed logs internally only|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
 |EH-F-10|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Entry-Hub`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
 |EH-F-11|Metrics must never contain users' personal data, only aggregated statistics|[Merged](https://github.com/Verryx-02/RAM-USB/commit/95110b1d2bf8831680212888e06ff52f342e688d)|
-|EH-F-12|Must act as a reverse proxy for Headscale coordination traffic directed at Network-Manager, routing it over the private mesh network|Users who have just completed registration need to contact Network-Manager to join the private network. But I don't want that exposed to the internet. Since Entry-Hub is already exposed, I route that traffic through it too.|
 
 ---
 
@@ -277,9 +277,9 @@ Storage-Service directory structure:
 |NM-F-09|After a successful login, on request from Security-Switch, must assign the user's node the ACL tag that enables reachability toward Storage-Service, and record an expiry 12 hours from that point|[[NM-F-09 empirical verification \| Verified]] [Merged](https://github.com/Verryx-02/RAM-USB/commit/b9cbff0d0f5afc7226da81c07377de98f4f207e1)|
 |NM-F-10|Must periodically check recorded expiries and remove the ACL tag from expired nodes, automatically and without manual intervention|[Merged](https://github.com/Verryx-02/RAM-USB/commit/2213099b9cbdefe453c67afc43baa09b1acb0c5c)|
 |NM-F-11|The expiry of every grant must be persisted, not kept only in memory, so as not to lose state if Network-Manager restarts|[Merged](https://github.com/Verryx-02/RAM-USB/commit/2213099b9cbdefe453c67afc43baa09b1acb0c5c)|
-|NM-F-12|Creating pre-auth keys and managing ACL tags must be possible only from the private network|Satisfied by Headscale's own administration CLI (`docker exec` against the container, communicating over a local Unix socket with no network listener at all) - no Network-Manager code required.|
+|NM-F-12|Creating pre-auth keys and managing ACL tags must be restricted to Network-Manager specifically, verified via mutual TLS (`organization=NetworkManager`)|Headscale's own documentation advises against making the coordination server itself a member of the mesh it coordinates, so - unlike every other inter-service call in this system - this admin traffic cannot be restricted by network placement; it is reachable over the same public network as NM-F-14's coordination endpoint, with mTLS (RNF-SEC-04) as the sole enforcement layer.|
 |NM-F-13|The pre-auth key serves solely to register the node as a mesh member; it does not, by itself, grant reachability toward Storage-Service||
-|NM-F-14|The Headscale coordination endpoint must be reachable only from the private network||
+|NM-F-14|Headscale's coordination endpoint is deliberately reachable from the public network (ideally hosted on its own publicly-addressable VPS)|A newly registered node has no other way to reach it before completing CL-F-04's mesh join; registration itself requires a valid pre-auth key (NM-F-08), and that key does not, by itself, grant reachability toward anything else in the private mesh (NM-F-13)|
 |NM-F-15|Must configure MagicDNS with a dedicated base domain, so that Storage-Service can be resolved by all mesh nodes via a stable name rather than an IP||
 |NM-F-16|Network-Manager's mesh node must not accept the DNS configuration distributed by Headscale, to avoid a circular reference in its own host's DNS resolution||
 |NM-F-17|Must publish metrics every minute, and only, to its dedicated MQTT topic (`metrics/Network-Manager`), via mTLS, verifying that:<br>- the certificate comes from an MQTT-Broker,<br>- the X.509 certificate is valid.|[Merged](https://github.com/Verryx-02/RAM-USB/commit/2213099b9cbdefe453c67afc43baa09b1acb0c5c)|
@@ -316,7 +316,7 @@ Storage-Service directory structure:
 |PKI-F-01|Every service must mutually authenticate with X.509 certificates issued by a [valid CA](https://github.com/smallstep/certificates)|[Merged](https://github.com/Verryx-02/RAM-USB/commit/c8239a8941c9b83728ff562cc4c0fae2be6a204c)|
 |PKI-F-02|Every service must verify the certificate's `organization` field, not merely its validity|[Merged](https://github.com/Verryx-02/RAM-USB/commit/c8239a8941c9b83728ff562cc4c0fae2be6a204c)|
 |PKI-F-03|A certificate rotation and revocation procedure **should** exist||
-|NET-F-01|Inter-service communication must occur over the private network; the only exposed public port is Entry-Hub's, which also acts as a reverse proxy for coordination traffic toward Network-Manager||
+|NET-F-01|Inter-service communication must occur over the private network; Entry-Hub's public endpoints and Network-Manager's Headscale coordination endpoint (NM-F-14) are the system's only deliberately public-facing surfaces||
 |NET-F-02|TLS must be v1.3||
 
 ---
