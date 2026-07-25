@@ -114,44 +114,46 @@ Each entry: **ID**, **Found** (date, context), **Area**, **Description**,
 
 - **Found:** 2026-07-24, live verification (Fase B, this session).
 - **Area:** `deployments/compose/certificate-authority.yml`,
-  `deployments/compose/mqtt-broker.yml`.
+  `deployments/compose/mqtt-broker.yml` (dev/test only, see below);
+  `deployments/proxmox/certificate-authority.md`,
+  `deployments/proxmox/mosquitto.md` (production, resolved).
 - **Description:** Both are reachable from their real Tailscale mesh
   identity as intended, but are *also* still reachable via plain
   `ramusb-net` and via a host-published port — confirmed live with a
   plain `ramusb-net`-only container and the bare Docker host, both
-  succeeded where they should fail. Deliberately deferred this session
-  ("Fase E": remove the host-published ports/`ramusb-net` membership once
-  every consumer is confirmed to route through the mesh instead) — never
-  actually done.
-- **Status:** OPEN. Attempted 2026-07-24: removing `ramusb-net` from the
-  main `certificate-authority` container breaks its own `-mesh` sidecar's
-  ability to reach Headscale to join the mesh in the first place (verified
-  live: `fetch control key: ... no DNS fallback candidates remain for
-  "headscale"`, sidecar retries then gives up) — Headscale can never be a
-  mesh member itself, so every sidecar needs *some* conventional network
-  path to it, and `ramusb-net` is currently the only one in this
-  single-host dev topology. Change reverted, repo left clean. Real fix
-  needs one of: **(A)** a narrow Docker network joining only the CA/MQTT
-  sidecars + Headscale, not full `ramusb-net`; **(B)** treat this as
-  blocked on the same broader "how do backend services bootstrap into the
-  mesh without ramusb-net" task Security-Switch/Database-Vault/
-  Storage-Service/Network-Manager's own compose files already defer to;
-  **(C)** point the sidecars at Headscale's published host port instead
-  of its Docker DNS name (diverges from the convention every other
-  service uses, needs gateway-IP handling that isn't uniform across
-  Docker hosts). Needs a user decision before this closes.
-  Two secondary, individually-fixable `ramusb-net` dependencies found
-  along the way (not yet applied, since fixing only these would still
-  leave the main blocker above open): `certificate-authority-init`
+  succeeded where they should fail.
+- **Status:** Production reachability question RESOLVED, 2026-07-25 —
+  confirmed directly with the user: in production, both components are
+  reachable **only** via the Tailscale mesh (no published port, no shared
+  Docker network), documented in the two new Proxmox docs above. The key
+  insight that resolves this cleanly (not one of options A/B/C originally
+  listed below, which were all solving the single-host dev topology's
+  problem specifically): RNF-ORG-04 gives every service its own dedicated
+  VM/LXC guest in production, and per NM-F-14/`deployments/vps/headscale.md`,
+  Headscale itself already runs on its own separate, publicly-addressable
+  VPS outside Proxmox entirely — so the CA/MQTT-broker's own mesh sidecars
+  reach Headscale over the guest's normal internet route, exactly like
+  Network-Manager's own mesh join already does, with no Docker network
+  shared with Headscale needed at all. The dev/test Compose stack's own
+  circular-dependency problem (Headscale co-located as a `ramusb-net`
+  container it cannot itself safely join) is now explicitly a **dev-only,
+  lower-priority, cosmetic** limitation — it does not block production
+  readiness, and per this project's own established convention, the dev
+  Compose files (`certificate-authority.yml`, `mqtt-broker.yml`) are left
+  unchanged (out of scope for the production-readiness fix). Original
+  attempt notes and the two secondary `ramusb-net` dependencies found
+  along the way, kept for reference since they still describe the dev
+  stack's real current behavior: removing `ramusb-net` from the main
+  `certificate-authority` container breaks its own `-mesh` sidecar's
+  ability to reach Headscale (verified live: `fetch control key: ... no
+  DNS fallback candidates remain for "headscale"`); `certificate-authority-init`
   reaches the CA via `ramusb-net` (`--ca-url
   https://certificate-authority:9000` in
-  `third-party/certificate-authority/init-organization-template.sh` —
-  fix: `network_mode: "service:certificate-authority"` +
-  `https://localhost:9000`, mirroring how `certificate-authority-mesh`
-  already reaches it); `third-party/mosquitto/generate-dev-certs.sh` runs
-  a disposable `step-cli` container on `--network ramusb-net` for its
-  certificate-exchange step (fix: `--network
-  container:certificate-authority` + `https://localhost:9000`).
+  `third-party/certificate-authority/init-organization-template.sh`);
+  `third-party/mosquitto/generate-dev-certs.sh` runs a disposable
+  `step-cli` container on `--network ramusb-net` for its
+  certificate-exchange step. None of these three dev-only items are fixed
+  or blocking anything now.
 
 ## KI-06 — SRS traceability: several implemented requirements have no `[Merged]` link
 
