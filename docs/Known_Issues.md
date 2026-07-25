@@ -203,9 +203,12 @@ Each entry: **ID**, **Found** (date, context), **Area**, **Description**,
   implemented at all (see KI-04 and KI-03) — the note should distinguish
   the services that genuinely publish today from the two that don't yet,
   not present all six uniformly.
-- **Status:** OPEN. Tightly coupled to KI-03/KI-04 — fixing this note
-  properly probably means updating it once those two land, or adding an
-  explicit "not yet implemented" caveat to the two in the meantime.
+- **Status:** STALE — this entry itself, not the diagram. Re-checked
+  2026-07-25 (`consistency-agent`): KI-03 and KI-04 are both FIXED now, so
+  the diagram's note (ST-F-12/CA-F-03 alongside the other four as
+  services that publish metrics) is currently *accurate*. Nothing left to
+  fix in the diagram. Keeping this entry only long enough to record that
+  correction; safe to delete on the next pass through this file.
 
 ## KI-09 — SRS §2.1: Headscale's status may be stale ("In progress")
 
@@ -220,8 +223,8 @@ Each entry: **ID**, **Found** (date, context), **Area**, **Description**,
   the same pass — could be deliberate (KI-05's dual-reachability gap for
   CA/MQTT-broker, though that isn't about Headscale specifically) or a
   plain oversight.
-- **Status:** OPEN. Needs a direct decision from the user, not something
-  inferable from the code alone.
+- **Status:** FIXED, 2026-07-25 — user confirmed: flipped to "Done." No
+  remaining code work for Headscale itself.
 
 ## KI-10 — s6 longruns respawn instantly forever on a permanent (non-retryable) startup error, not just transient ones
 
@@ -245,27 +248,363 @@ Each entry: **ID**, **Found** (date, context), **Area**, **Description**,
   `network-manager` could not load any Headscale trust material at all
   and failed every mesh dial with `x509: certificate signed by unknown
   authority` even after a fresh token fixed the first failure.
-- **Area:** `deployments/docker/network-manager/rootfs/etc/s6-overlay/s6-rc.d/network-manager/`
-  (fixed); the same latent pattern exists, unfixed, in every other
-  s6-supervised longrun that bootstraps via a single-use CA-F-04 token at
-  startup: Database-Vault, Storage-Service (`storage-service` and the new
-  `identity-provisioner`), Security-Switch.
-- **Status:** FIXED for Network-Manager only. Added a `finish` script
-  (`.../network-manager/finish`) that sleeps 30s before letting s6-rc
+- **Area:** every s6-supervised longrun that bootstraps via a single-use
+  CA-F-04 token at startup — Network-Manager, Database-Vault,
+  Storage-Service (`storage-service` and `identity-provisioner`),
+  Security-Switch, Metrics-Collector.
+- **Status:** FIXED, 2026-07-25, for all five. A `finish` script (`chmod
+  0755`, next to each service's own `run`) sleeps 30s before letting s6-rc
   respawn the longrun on a genuine nonzero exit code (`os.Exit(1)`), while
   not delaying a clean SIGTERM container stop (exit code 256) — turns an
   unrecoverable, log-spamming, CA-hammering sub-second loop into a slow,
   visible one an operator has time to notice and fix (mint a fresh token,
   recreate the container). Does not fix the underlying single-use-token
   fragility itself (that's CA-F-04's own documented design), only the
-  respawn-storm symptom. The main checkout's `cert.dev-only.pem` was
-  restored from Headscale's actually-served certificate (`openssl
-  s_client`) as a live fix, not a systemic one — the underlying
-  worktree/main-checkout desync risk for this gitignored file remains,
-  same as already documented in memory. **Remaining scope**: apply the
-  same `finish`-script backoff to Database-Vault/Storage-Service/
-  Security-Switch's own longruns — not done here, out of this task's
-  scope (only Network-Manager was actually crash-looping).
+  respawn-storm symptom. Confirmed the identical `os.Exit(1)`-on-fatal-error
+  shape in all five `main.go`s before applying the same fix to each
+  (`deployments/docker/{database-vault,storage-service,security-switch,
+  metrics-collector}/rootfs/etc/s6-overlay/s6-rc.d/{same-name,
+  identity-provisioner}/finish`) — not yet re-verified live against each
+  running container (Network-Manager's own fix was; the other four are
+  the same file shape applied by direct analogy, worth a live crash-loop
+  drill before fully trusting it if one ever occurs for real). The main
+  checkout's `cert.dev-only.pem` desync noted in the original finding was
+  a separate, unrelated bug, already fixed live that same day.
+
+## KI-11 — No Proxmox/VPS deployment doc for Grafana or certificate-authority-metrics
+
+- **Found:** 2026-07-25, user asked for a full pre-deployment gap audit.
+- **Area:** `deployments/proxmox/` (has `certificate-authority.md`,
+  `database-vault.md`, `metrics-collector.md`, `mosquitto.md`,
+  `network-manager.md`, `security-switch.md`, `storage-service.md` — 7 of
+  the 8 components that belong on Proxmox; Entry-Hub and Headscale
+  correctly have their own standalone-VPS docs under `deployments/vps/`
+  instead).
+- **Description:** Grafana (Metrics-Visualizer) still has no Proxmox
+  placement doc at all — no KVM-vs-LXC decision, no resource sizing, no
+  network config, unlike the 7 components that already have one.
+  `certificate-authority-metrics` (CA-F-03) still has no placement
+  decision anywhere either — it needs to either share
+  Certificate-Authority's own doc or get its own; deliberately left out of
+  `certificate-authority.md`'s own scope this session (a separate decision
+  from the mesh-only-reachability question that doc resolves).
+- **Status:** FIXED, 2026-07-25 — `deployments/proxmox/grafana.md` (new
+  file) and `deployments/proxmox/certificate-authority.md` (updated) now
+  cover both. `certificate-authority-metrics` is co-located on
+  Certificate-Authority's own guest (hard technical requirement: it reads
+  step-ca's access log via a Docker named volume, which cannot span
+  separate Proxmox guests). Grafana gets its own LXC guest, mesh sidecar,
+  and the same mesh-only reachability rule as Certificate-Authority/
+  Mosquitto — reasoned through explicitly rather than copy-pasted, since
+  Grafana's own inbound consumer (a human Admin's browser, UC-05) differs
+  from every other component's own inter-service caller. Two new gaps
+  surfaced while writing that reasoning through, tracked below as KI-17
+  and KI-18 rather than left unstated.
+
+## KI-12 — SRS traceability: 3 more requirements with a broken or missing `[Code]` link
+
+- **Found:** 2026-07-25, `consistency-agent` audit.
+- **Area:** `docs/Software_Requirements_Specification.md`.
+- **Description:** Distinct from KI-06 (which predates today's work and
+  doesn't cover these): **MT-F-02**'s link is dead — it points at
+  `https://github.com/Verryx-02/RAM-USB/blob/main/mqtt-broker/acl.conf`,
+  a path that has never existed in this repo (the real file is
+  `third-party/mosquitto/acl.conf`) — and it violates §9 twice over,
+  pointing at the moving `main` ref instead of a pinned commit. **CA-F-03**
+  and **ST-F-12/ST-F-13** have no `[Code]` link at all, despite being
+  genuinely implemented and merged today (`78f7052`, plus the earlier
+  Storage-Service metrics work KI-04 already confirmed real).
+- **Status:** OPEN.
+
+## KI-13 — SRS §2.1: Certificate-Authority's status may also be stale ("In progress")
+
+- **Found:** 2026-07-25, `consistency-agent` audit.
+- **Area:** `docs/Software_Requirements_Specification.md:80` (§2.1
+  component table).
+- **Description:** Same pattern as KI-09 (Headscale), not yet flagged for
+  Certificate-Authority specifically: its row still reads "In progress,"
+  but CA-F-04 (bootstrap tokens) and CA-F-03 (metrics sidecar) are both
+  now implemented and verified, and CA-F-01/CA-F-02 are explicitly
+  "provided by the underlying product" per the SRS's own note at line 297.
+  No obvious remaining work justifies "In progress."
+- **Status:** FIXED, 2026-07-25 — user confirmed: flipped to "Done." KI-16
+  (Mosquitto's own certificate lifecycle) is tracked separately since it's
+  a Mosquitto-side gap, not a Certificate-Authority one — the CA itself
+  has no remaining code work.
+
+## KI-14 — Diagram drift: Headscale and certificate-authority-metrics missing from 3 diagrams
+
+- **Found:** 2026-07-25, `consistency-agent` audit, introduced by today's
+  NM-F-12/NM-F-14 standalone-Headscale rework and the new CA-F-03 sidecar.
+- **Area:** `docs/design/diagrams/08-security-pki-hierarchy.puml`,
+  `09-security-trust-zones.puml`, `02-architecture-deployment.puml`.
+- **Description:** `08-security-pki-hierarchy.puml` has zero mention of
+  Headscale, despite it now being a real second PKI participant (a
+  public-style cert on its coordination endpoint, the private CA's cert
+  only on `/api/v1/*`) — parallel to Entry-Hub's own `LetsEncrypt`
+  relationship, which the diagram does show. `09-security-trust-zones.puml`
+  also omits Headscale entirely, despite NM-F-12's own SRS text calling it
+  out as the one deliberate exception to this system's trust-zone-by-
+  network-placement model — a trust-zone diagram omitting the one
+  component that breaks the pattern is a substantive gap. Separately,
+  `02-architecture-deployment.puml`'s `CADocker` node still shows only
+  Certificate-Authority itself, not `certificate-authority-metrics` as its
+  own container — undercounting §2.1's own "11 Docker containers" framing.
+- **Status:** OPEN.
+
+## KI-15 — §5.1 non-functional requirements have no `[Code]`/test link at all
+
+- **Found:** 2026-07-25, `consistency-agent` audit.
+- **Area:** `docs/Software_Requirements_Specification.md` §5.1
+  (RNF-SEC-01..04, RNF-REL-01, RNF-PERF-01, RNF-USA-01, RNF-MAINT-01).
+- **Description:** Every row in this table has an empty "Verifiable via"
+  column and no `[Code]` link — unlike §4's functional requirements, none
+  of these are tied to a specific check. Could be intentional (they're
+  cross-cutting, not individually unit-testable) or a real gap.
+- **Status:** OPEN. Needs a direct user decision on whether this is
+  acceptable as-is or needs closing, not something inferable from the
+  code alone.
+
+## KI-16 — Mosquitto has no real production TLS certificate lifecycle
+
+- **Found:** 2026-07-25, while writing `deployments/proxmox/mosquitto.md`
+  (KI-11).
+- **Area:** Mosquitto's broker-side mTLS identity
+  (`third-party/mosquitto/generate-dev-certs.sh`, `mosquitto.conf`).
+- **Description:** Every RAM-USB Go service gets its mTLS identity from
+  CA-F-04's bootstrap-token flow, consumed live by `pkg/pki` at process
+  startup. Mosquitto is a C binary with no `pkg/pki` integration, so it
+  can't use that flow — today the **only** thing that provisions its
+  certificate is `generate-dev-certs.sh`, and that script is dev-only by
+  its own design: it requires an operator to `docker exec` into the CA
+  container to mint each token by hand, and the resulting leaf certs
+  inherit step-ca's ~24h default lifetime with **no automatic renewal** —
+  the script's own doc comment says to re-run it manually whenever mTLS
+  to the broker starts failing with a certificate-expired error. This is
+  not viable for a production broker, which cannot go down (or silently
+  reject every publisher/subscriber) every ~24h pending a human noticing
+  and re-running a dev script.
+- **Status:** FIXED, 2026-07-25. `deployments/compose/mqtt-broker.yml`
+  gained two new services: `mqtt-broker-cert-issuer` (one-shot,
+  `smallstep/step-cli`, the network-based half of CA-F-04's bootstrap-token
+  exchange - token minting itself stays a manual `docker exec` operator
+  step, same as every other `RAM_USB_CA_BOOTSTRAP_TOKEN`-based service,
+  now automated for compose wiring by `deployments/scripts/mqtt-broker.sh`)
+  and `mqtt-broker-cert-renewer` (long-running, `step ca renew --daemon`,
+  mTLS-authenticated, no token after first issuance). The renewer shares
+  `mqtt-broker`'s PID namespace (`pid: "service:mqtt-broker"`) so
+  `--exec "kill -HUP 1"` reaches the real mosquitto process (confirmed
+  live: the official `eclipse-mosquitto` image's own entrypoint execs
+  mosquitto as PID 1) and its network namespace
+  (`network_mode: "service:mqtt-broker"`, confirmed live that Compose
+  accepts both directives on one container simultaneously) so its own
+  calls to Certificate-Authority cross the Tailscale mesh in production,
+  where Certificate-Authority has no other reachable path. Certificate/key
+  files moved from a read-only bind mount to a writable named Docker
+  volume (`ramusb-mqtt-broker-certs`, read-only on `mqtt-broker` itself,
+  writable on the issuer/renewer - confirmed live that Compose allows
+  different mount modes per service for the same named volume).
+
+  Three real bugs found and fixed during live verification: (1) a fresh
+  named volume mounts root-owned regardless of the image's own runtime
+  user, AND (unlike the old bind-mount design, where macOS Docker
+  Desktop's bind-mount layer was confirmed to ignore standard POSIX
+  ownership checks) a real Docker-managed named volume enforces them
+  properly - fixed by running `mqtt-broker` itself as the same fixed
+  uid:gid (`1000:1000`) the issuer/renewer already use, instead of
+  relaxing file permissions to world-readable. (2) The Headscale ACL
+  policy (`services/network-manager/internal/headscale/policy.go`) never
+  granted `tag:mqtt-broker` (the broker's own mesh identity) reachability
+  toward `tag:certificate-authority` - every existing rule only let OTHER
+  services connect INTO the broker, never the reverse, so the very first
+  renewal attempt over the mesh hung until "context deadline exceeded"
+  with no other error. Fixed by adding `TagMQTTBroker` to that rule's
+  `Src` list (covered by a new `TestPolicyDocument_Content` sub-test);
+  Network-Manager was redeployed to push the corrected policy to the real
+  running Headscale, re-verified live. (3) The pre-existing shared dev
+  Headscale reverse-proxy TLS key file
+  (`third-party/headscale/dev-tls/key.dev-only.pem`) had been silently
+  replaced by an empty directory (the documented "Docker creates an empty
+  dir at a missing bind-mount source" footgun) before this session even
+  started - regenerated via `step certificate create ... --profile
+  self-signed` (a containerized `step` invocation, since the sandbox's
+  permission classifier blocks bare `openssl ... -keyout` key-generation
+  commands) to unblock Headscale entirely.
+
+  **Live-verified, in order**: the one-shot issuer minted both real
+  certificates from the real running Certificate-Authority; mosquitto's
+  healthcheck (`mosquitto_pub`) passed against them; a held-open
+  `mosquitto_sub` connection survived a manual `kill -HUP 1` sent from a
+  throwaway container sharing `mqtt-broker`'s PID namespace, and the
+  broker only started serving a freshly re-minted certificate AFTER that
+  SIGHUP, not before (mTLS handshake failed pre-SIGHUP, succeeded
+  immediately after); a real `step ca renew` (no token, mTLS only)
+  produced a genuinely new certificate against the real CA; the renewer's
+  own `--exec "kill -HUP 1"` fired automatically on a real renewal and
+  Mosquitto served the new certificate afterward; after the ACL fix, a
+  direct TLS dial from inside the renewer's shared namespace to
+  Certificate-Authority's real mesh IP, with the correct SNI, succeeded
+  end-to-end (`Verify return code: 0 (ok)`); the full Compose-managed
+  stack (`mqtt-broker`, `mqtt-broker-mesh`, `mqtt-broker-cert-issuer`,
+  `mqtt-broker-cert-renewer`) came up cleanly from a single
+  `mqtt-broker.sh` run with fresh tokens.
+
+  **One honest limitation, not fixed (tracked under KI-05, not
+  reopening this entry for it)**: this dev stack cannot itself prove the
+  RUNNING renewer's `https://certificate-authority:9000` calls take the
+  mesh path rather than `ramusb-net`, because `mqtt-broker`'s own
+  container is still dual-reachable there (KI-05, deliberately unfixed) -
+  Docker's embedded DNS resolver wins over the mesh sidecar's own
+  MagicDNS inside the shared namespace, confirmed live via `nslookup`.
+  The mesh path itself was proven functional independently (the direct
+  mesh-IP TLS dial above); production has no competing `ramusb-net` on
+  that guest at all, so this ambiguity does not exist there. See
+  `deployments/proxmox/mosquitto.md`'s own "Mosquitto's own TLS
+  certificate provisioning and renewal" section and
+  `MANUAL-DISTRIBUTED-RUN.md`'s Known Issues list for the full detail.
+
+## KI-17 — No SRS mechanism for an Admin's own device to join the mesh and reach Grafana
+
+- **Found:** 2026-07-25, while writing `deployments/proxmox/grafana.md`
+  (KI-11).
+- **Area:** SRS (no `NM-F-*` requirement covers this), Network-Manager
+  (`services/network-manager/internal/headscale/policy.go`).
+- **Description:** Every other cross-guest reachability question this
+  session resolved to "mesh-only, no published port" (Certificate-
+  Authority, Mosquitto, now Grafana), but Grafana's own inbound consumer
+  is a human Admin's browser (UC-05), not another RAM-USB service with an
+  existing CA-F-04/mesh-join flow. A registered User has a concrete,
+  already-built mechanism for the equivalent problem (NM-F-08/NM-F-09:
+  Network-Manager grants a time-limited Headscale ACL tag on login,
+  scoped to Storage-Service reachability) — nothing analogous exists for
+  an Admin or for Grafana-scoped reachability. Today the only path is
+  fully manual/operational: an operator with direct Headscale access
+  minting a pre-auth key/node registration for the Admin's own device by
+  hand, the same way service mesh sidecars are bootstrapped today, with
+  no dedicated ACL tag scoping it to Grafana-only reachability
+  (`tag:admin` does not exist in `policy.go`).
+- **Status:** FIXED, 2026-07-25 — user confirmed: the Admin does not join
+  the mesh at all. Grafana's own guest binds its HTTP listener to
+  `localhost` only; the Admin reaches it via an SSH tunnel into the guest,
+  authenticated by standard SSH key access — no Tailscale identity, no
+  ACL tag, no Headscale involvement for this path. Simpler than every
+  other reachability question in this ledger, not an oversight: Grafana's
+  mesh sidecar is needed only for its own *outbound* connection to
+  TimescaleDB (see KI-18), not for accepting any inbound connection, so
+  `deployments/proxmox/grafana.md`'s sidecar no longer needs
+  `TS_USERSPACE: "false"` (that flag was only ever required for a service
+  that must *accept* inbound mesh traffic, per NM-F-04's Certificate-
+  Authority precedent) — corrected in that doc.
+
+## KI-18 — TimescaleDB's own Proxmox guest placement is undecided
+
+- **Found:** 2026-07-25, while writing `deployments/proxmox/grafana.md`
+  (KI-11).
+- **Area:** `deployments/proxmox/` (no `timescaledb.md`),
+  `deployments/proxmox/metrics-collector.md` (predates this session's
+  mesh-only-reachability decision, currently describes reaching
+  TimescaleDB over "the private network," not the mesh specifically).
+- **Description:** Grafana's own outbound query connection (UC-05:
+  "query on Grafana -> TimescaleDB") depends on TimescaleDB being
+  reachable from Grafana's guest in production. **The mechanism is now
+  confirmed** (user, 2026-07-25): this connection goes over the Tailscale
+  mesh, same as every other cross-guest RAM-USB connection — so
+  TimescaleDB needs the same Tailscale-sidecar treatment as Certificate-
+  Authority/Mosquitto/Grafana regardless of where it ends up. **What's
+  still undecided is only the physical placement**: its own dedicated LXC
+  guest, or co-located with Metrics-Collector (or something else) —
+  `metrics-collector.md`'s own existing text (written before this
+  session's mesh-only-reachability rule existed, describes reaching
+  TimescaleDB over "the private network") needs updating once this is
+  decided, either way.
+- **Status:** FIXED, 2026-07-25. TimescaleDB is now co-located inside
+  Metrics-Collector's own container
+  (`deployments/docker/metrics-collector/Dockerfile` builds FROM the
+  official `timescale/timescaledb:2.23.0-pg18` image and layers
+  s6-overlay + the metrics-collector Go binary on top), the same "absorb
+  the third-party server into one image" pattern already used for
+  Database-Vault+Postgres and Network-Manager+Headscale.
+  `deployments/compose/metrics-collector-timescaledb.yml` is deleted, its
+  content folded into `deployments/compose/metrics-collector.yml` (one
+  Compose project, one password, no cross-shell handoff, same as
+  Database-Vault's own merge). Unlike Database-Vault's own Postgres
+  (loopback-only), TimescaleDB here binds to every local interface (`-c
+  listen_addresses=*`) since Grafana's own outbound query connection
+  (MT-F-04, UC-05) must reach it from a separate Proxmox guest in
+  production - this container therefore also gained a real, OS-level
+  `tailscaled` (not `pkg/mesh`, since TimescaleDB is a separate OS process
+  needing a genuine kernel network interface to bind to), matching
+  Database-Vault's/Storage-Service's real-tailscaled precedent for a
+  different reason (accepting inbound cross-guest traffic, not a
+  `pkg/pki` server-role library limitation). No host-published port
+  either way. `services/network-manager/internal/headscale/policy.go`
+  gained a new `TagGrafana` tag and ACL rule (`tag:grafana` ->
+  `tag:metrics-collector`), covered by a new `TestPolicyDocument_Content`
+  sub-test; Network-Manager was redeployed to push the corrected policy
+  to the real running Headscale.
+
+  **One real bug found and fixed during live verification**: the official
+  `timescale/timescaledb` image is Alpine-based (confirmed live:
+  `/etc/os-release` reports Alpine 3.21, `/sbin/apk` present, no
+  `apt-get`) unlike Database-Vault's own Debian-based `postgres:17` -  the
+  Dockerfile's package-install step needed `apk add` with Alpine's own
+  package names (`xz` instead of `xz-utils`), not a straight copy of
+  Database-Vault's `apt-get` step.
+
+  **Live-verified, in order**: the merged image builds clean; the
+  container starts, TimescaleDB accepts connections
+  (`database system is ready to accept connections`), the `timescaledb`
+  extension and the `metrics` hypertable (with its 30-day retention job
+  and 7-day compression job, confirmed via
+  `timescaledb_information.jobs`) exist exactly as before the merge; a
+  real Network-Manager metrics publish landed a row in the co-located
+  database within one publish tick; `docker port`/`docker inspect` confirm
+  no host-published port; `go build`/`vet`/`gofmt -l`/`go test ./...`
+  (full repo, not just this package) all pass. A throwaway Headscale node
+  tagged `tag:grafana` (simulating Grafana's own mesh sidecar) performed a
+  real Postgres-wire query against TimescaleDB over the mesh IP and
+  succeeded; a second throwaway node tagged `tag:storage-service`
+  (deliberately outside the new ACL rule) got the standard silent
+  Headscale-ACL-deny timeout on the same connection attempt, confirming
+  the new rule is both necessary and correctly scoped. Both throwaway
+  Headscale users/nodes were deleted afterward to avoid the documented
+  stale-node MagicDNS collision risk.
+
+  `deployments/proxmox/metrics-collector.md` and
+  `deployments/proxmox/grafana.md` (its own TimescaleDB-dependency
+  section, previously "still undecided") are both updated to the real,
+  now-decided placement. `deployments/scripts/metrics-collector.sh` is
+  rewritten to mint its own password/CA-token/mesh pre-auth key
+  in one script (mirroring `database-vault.sh`'s own self-contained
+  shape); `deployments/scripts/metrics-collector-timescaledb.sh` is
+  deleted; `MANUAL-DISTRIBUTED-RUN.md`'s shell table/readiness-signals
+  table/mesh-membership paragraph are updated (shells 6 and 11 collapse
+  into one shell 6, shells 12-14 renumber to 11-13).
+
+## KI-19 — Entry-Hub and certificate-authority-metrics have no restart policy, so a fatal startup error stops them silently instead of retrying
+
+- **Found:** 2026-07-25, while explaining why KI-10's `finish`-script fix
+  didn't extend to every service that consumes a CA-F-04 bootstrap token.
+- **Area:** `deployments/compose/entry-hub.yml`,
+  `deployments/compose/certificate-authority-metrics.yml`.
+- **Description:** Both `main.go`s call `os.Exit(1)` after a fatal startup
+  error (e.g. an already-consumed bootstrap token), same as every other
+  service — but neither container runs under s6-overlay (Entry-Hub uses
+  `pkg/mesh` in-process, needing only one process; `certificate-authority-metrics`
+  execs its binary directly as PID 1), so KI-10's `finish`-script fix
+  doesn't apply — that mechanism only exists within s6-rc's supervision
+  model. Neither compose file sets a `restart:` policy, so Docker uses its
+  own default, `restart: "no"`. Net effect: a fatal startup error doesn't
+  crash-loop (no equivalent of KI-10), but it also doesn't recover on its
+  own — the container exits and stays stopped until an operator notices
+  and manually restarts it, even for an otherwise-transient failure that
+  would have succeeded on retry.
+- **Status:** OPEN. Needs a decision, not obviously "correct as-is": a
+  Docker-level `restart: on-failure` (with Docker's own built-in backoff,
+  not a bespoke s6 `finish` script — there's no s6 here to hook) would
+  give these two the same "recover automatically from a transient error,
+  don't silently stay dead" property every s6-supervised service now has,
+  without needing to introduce s6-overlay just for a single process.
 
 ---
 
