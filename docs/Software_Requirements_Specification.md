@@ -73,11 +73,11 @@ RAM-USB is an n-tier client-server microservices architecture made up of 11 Dock
 |Database-Vault|Done|
 |Storage-Service|Done|
 |Network-Manager|Done|
-|[Headscale](https://github.com/juanfont/headscale)|In progress|
+|[Headscale](https://github.com/juanfont/headscale)|Done|
 |Mosquitto (MQTT broker)|Done|
 |Metrics-Collector|Done|
 |Metrics-Visualizer (Grafana)|Done|
-|[Certificate-Authority](https://github.com/smallstep/certificates)|In progress|
+|[Certificate-Authority](https://github.com/smallstep/certificates)|Done|
 
 ### 2.2 Main product functions
 
