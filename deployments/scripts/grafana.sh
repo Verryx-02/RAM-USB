@@ -1,6 +1,6 @@
 #!/bin/bash
-# Shell 11 - Grafana. Requires shell 5 (metrics-collector-timescaledb.sh)
-# already running.
+# Shell 11 - Grafana. Requires shell 6 (metrics-collector.sh, which now
+# co-locates TimescaleDB - KI-18) already running.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 

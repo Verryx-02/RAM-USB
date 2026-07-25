@@ -1,0 +1,41 @@
+#!/command/with-contenv sh
+# with-contenv: POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB (set in
+# deployments/compose/metrics-collector.yml) have to be pushed back into
+# this longrun's own environment - S6_KEEP_ENV is left at its default (0),
+# same convention documented in ../metrics-collector/run and
+# Database-Vault's own postgres longrun.
+#
+# docker-entrypoint.sh is the upstream timescale/timescaledb image's own
+# entrypoint (Postgres-based, same contract as Database-Vault's own
+# postgres:17 base) - execing it, not reimplementing initdb, keeps
+# first-run bootstrap and the POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB-
+# driven behavior identical to upstream's own documented contract.
+#
+# Unlike Database-Vault's own Postgres ("-c listen_addresses=localhost",
+# reachable from nothing but that container's own Go binary), TimescaleDB
+# here is bound to every LOCAL interface ("-c listen_addresses=*") on
+# purpose: Grafana's own outbound query connection (MT-F-04, UC-05) is a
+# direct Postgres-wire connection from ANOTHER Proxmox guest, not a call
+# routed through Metrics-Collector's own Go process - the mesh interface
+# this node's tailscaled longrun creates (see ../tailscaled/run) is one of
+# the "local interfaces" this flag covers, so binding to "*" (rather than
+# a single, dynamically-assigned mesh IP this longrun has no ordering
+# dependency on) is what makes TimescaleDB reachable from Grafana's guest
+# at all. In production (no ramusb-net, no host-published port - see this
+# image's Dockerfile, "No EXPOSE") the ONLY interfaces that exist on this
+# guest are loopback and the mesh, so "*" is not a general network
+# exposure there. In THIS project's dev Compose stack, this container also
+# stays attached to ramusb-net (for CA-token minting/MQTT reachability,
+# same as every other real-tailscaled service here) - meaning TimescaleDB
+# is also reachable from any other ramusb-net container in dev, the same
+# deferred, dev-only, cosmetic dual-reachability limitation already
+# accepted for Certificate-Authority/MQTT-broker (docs/Known_Issues.md's
+# KI-05) - authentication still requires the real POSTGRES_PASSWORD either
+# way (the upstream image's own docker-entrypoint.sh generates a
+# password-required pg_hba.conf host rule regardless of listen_addresses).
+#
+# exec replaces this shell so docker-entrypoint.sh's own re-exec chain
+# (gosu to the "postgres" system user, then finally the real postgres
+# binary) becomes the directly supervised process tree and receives s6's
+# signals itself.
+exec /usr/local/bin/docker-entrypoint.sh postgres -c listen_addresses=*

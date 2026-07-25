@@ -1,0 +1,33 @@
+#!/command/with-contenv sh
+# with-contenv (not plain #!/bin/sh): S6_KEEP_ENV is left at its default (0)
+# so this longrun does NOT inherit the container's environment implicitly,
+# and this is the process that needs the full RAM_USB_* configuration group
+# (RAM_USB_MQTT_BROKER_URL, RAM_USB_CA_BOOTSTRAP_TOKEN,
+# RAM_USB_METRICS_COLLECTOR_DATABASE_URL, ...) pushed back into its own
+# environment - same convention already established in Database-Vault's own
+# database-vault longrun run script.
+#
+# Unlike Database-Vault's own longrun, this one does NOT depend on
+# tailscale-up (see ../../metrics-collector/tailscale-up.sh's own doc
+# comment for why): Metrics-Collector's Go binary has no inbound listener
+# to bind to a mesh-specific address, and its own database connection is
+# always "localhost" (TimescaleDB lives in this same container regardless
+# of mesh-join state) - it only needs TimescaleDB to be ready to accept
+# connections (dependencies.d/timescaledb-ready).
+#
+# metrics-collector's own main.go already performs automatic schema
+# migration at startup (internal/schema, applied before it starts
+# consuming MQTT messages) - no separate migration oneshot is needed here.
+
+# s6-overlay's /init-spawned longrun tree does NOT start this process at
+# the image's WORKDIR (/app, see the Dockerfile's own comment above the
+# migrations COPY) the way a plain `docker run --entrypoint sh <image> -c
+# pwd` would suggest - same confirmed trap already documented for
+# Database-Vault's own database-vault longrun run script. `cd` here,
+# before exec, restores the cwd the Dockerfile's layout (and main.go's
+# defaultMigrationsDir constant) already assumes.
+cd /app || exit 1
+
+# exec replaces this shell so the metrics-collector binary becomes the
+# directly supervised process and receives s6's signals itself.
+exec /app/metrics-collector

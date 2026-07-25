@@ -22,11 +22,14 @@ silently ignored by the database, and the dependent service then fails
 with `password authentication failed`/SASL error. This can no longer
 happen for Database-Vault's own Postgres (shell 7 generates and consumes
 the same value in one script, one Compose file — the cross-shell mismatch
-this used to cause is gone by construction) — it can still happen for
-Metrics-Collector/TimescaleDB (shells 6/11, still two separate
-scripts/Compose projects). Fix: `docker rm -f
-metrics-collector-timescaledb` + `docker volume rm ramusb-metrics-collector-timescaledb_ramusb-metrics-collector-timescaledb-data`
-first, so the next run is a genuinely fresh init that does respect the new
+this used to cause is gone by construction) — the same is now true for
+Metrics-Collector/TimescaleDB (shell 6, KI-18: co-located in one
+container/one Compose file/one script, the cross-shell mismatch this used
+to cause between shells 6 and 11 is gone by construction). Fix if this
+still happens (e.g. an old volume from before KI-18 landed): `docker rm -f
+metrics-collector` + `docker volume rm
+ramusb-metrics-collector_ramusb-metrics-collector-timescaledb-data` first,
+so the next run is a genuinely fresh init that does respect the new
 password.
 
 | Shell | Command                                                                            | Needs                                              |
@@ -36,15 +39,14 @@ password.
 | 3     | `./deployments/scripts/network-manager.sh`                                        | shells 1, 2                                         |
 | 4     | `./deployments/scripts/mqtt-broker.sh`                                            | shells 1, 2                                         |
 | 5     | `./deployments/scripts/certificate-authority-metrics.sh`                          | shells 1, 2, 4 — CA-F-03, mesh node (pkg/mesh)      |
-| 6     | `./deployments/scripts/metrics-collector-timescaledb.sh`                          | —                                                   |
+| 6     | `./deployments/scripts/metrics-collector.sh`                                      | shells 1, 2, 4 — MT-F-01..03, co-located TimescaleDB (real tailscaled), KI-18 |
 | 7     | `./deployments/scripts/database-vault.sh`                                         | shells 1, 2                                         |
 | 8     | `./deployments/scripts/storage-service.sh`                                        | shells 1, 2                                         |
 | 9     | `./deployments/scripts/security-switch.sh`                                        | shells 1, 2                                         |
 | 10    | `./deployments/scripts/entry-hub.sh`                                              | shells 1, 2, 4 — mesh node (pkg/mesh)               |
-| 11    | `./deployments/scripts/metrics-collector.sh`                                      | shells 4, 6 — **prompts for shell 6's password**    |
-| 12    | `./deployments/scripts/grafana.sh`                                                | shell 6                                             |
-| 13    | `./deployments/scripts/e2e-test.sh`                                               | shells 1-12 all up                                  |
-| 14    | `./deployments/scripts/cleanup.sh` (`--wipe` to also drop volumes/mesh identities)| —                                                   |
+| 11    | `./deployments/scripts/grafana.sh`                                                | shell 6                                             |
+| 12    | `./deployments/scripts/e2e-test.sh`                                               | shells 1-11 all up                                  |
+| 13    | `./deployments/scripts/cleanup.sh` (`--wipe` to also drop volumes/mesh identities)| —                                                   |
 
 Headscale is its own standalone deployment this session (deployments/compose/
 headscale.yml, deployments/docker/headscale/) — it can never safely be a
@@ -52,16 +54,23 @@ member of the mesh it coordinates (headscale.net's own documented
 limitation), so it is NOT a mesh node itself and, unlike every other
 service, is reached by Network-Manager over the PUBLIC network, not the
 mesh (see services/network-manager/cmd/network-manager/main.go's own
-package doc comment). Six services join the real Headscale mesh via a real
-OS-level `tailscaled` client (Security-Switch, Database-Vault,
-Network-Manager, and Storage-Service, Certificate-Authority, MQTT-broker —
-the latter two as a Tailscale sidecar container sharing the main
-container's network namespace): `pkg/mesh`'s earlier in-process `tsnet` was
-replaced for the first three because two libraries they depend on (CA
+package doc comment). Seven services join the real Headscale mesh via a
+real OS-level `tailscaled` client (Security-Switch, Database-Vault,
+Network-Manager, Storage-Service, Metrics-Collector, and
+Certificate-Authority, MQTT-broker — the latter two as a Tailscale sidecar
+container sharing the main container's network namespace): `pkg/mesh`'s
+earlier in-process `tsnet` was replaced for Security-Switch/Database-Vault/
+Network-Manager/Storage-Service because two libraries they depend on (CA
 bootstrap/renewal, MQTT publish) cannot route through an in-process-only
 netstack when the service also holds a server role — a confirmed library
 limitation (see `.claude/agent-memory/code-agent.md`'s "pkg/pki dialer
-routing"). Entry-Hub and Certificate-Authority's own metrics sidecar
+routing"). Metrics-Collector joined this group for a different reason
+(KI-18, docs/Known_Issues.md): it holds no server role of its own, but its
+newly co-located TimescaleDB (MT-F-03) must be reachable by Grafana from a
+separate Proxmox guest in production, which needs a genuine kernel network
+interface only a real `tailscaled` provides — see
+deployments/docker/metrics-collector/Dockerfile's own package doc comment.
+Entry-Hub and Certificate-Authority's own metrics sidecar
 (`certificate-authority-metrics`, CA-F-03) are two further mesh nodes that
 stay on `pkg/mesh`'s in-process `tsnet` instead of converting to a real
 `tailscaled`: neither holds a server role at all (each one's only
@@ -70,14 +79,19 @@ unlike a bootstrapped server's), so no library limitation forces the
 conversion — see `services/entry-hub/cmd/entry-hub/main.go`'s package doc
 comment, "Mesh membership", and `services/certificate-authority/cmd/
 metrics-sidecar/main.go`'s own package doc comment, for the full
-reasoning. Metrics-Collector is the only remaining non-mesh RAM-USB
-service (Headscale itself is also a non-mesh
-container, for the reason above). Database-Vault is a single container
+reasoning. Headscale itself is the only remaining non-mesh RAM-USB
+container, for the reason above. Database-Vault is a single container
 bundling its own Postgres — see that Dockerfile's own package doc comment
 for why (NET-F-01: Database-Vault's own Postgres should not be reachable by
-anything but its own owning service). Network-Manager, by contrast, is no
-longer co-located with anything — see deployments/docker/network-manager/
-Dockerfile's own package doc comment for why that changed this session.
+anything but its own owning service). Metrics-Collector is likewise a
+single container bundling its own TimescaleDB (KI-18) — but unlike
+Database-Vault's Postgres, TimescaleDB must stay reachable from another
+guest (Grafana), so it binds to every local interface rather than loopback
+only; see deployments/docker/metrics-collector/rootfs/etc/s6-overlay/
+s6-rc.d/timescaledb/run's own comment for the full reasoning. Network-Manager,
+by contrast, is no longer co-located with anything — see
+deployments/docker/network-manager/Dockerfile's own package doc comment
+for why that changed this session.
 
 ## Readiness signals
 
@@ -88,12 +102,12 @@ Dockerfile's own package doc comment for why that changed this session.
 | 3     | `network-manager: listening addr=<tailscale-ip>:8447`                                                             |
 | 4     | `mosquitto version 2.1.2 running` + `magicsock: derp-N connected`                                                 |
 | 5     | `magicsock: derp-N connected` (no listener of its own - it only tails a log file and dials out; see services/certificate-authority/cmd/metrics-sidecar/main.go) |
-| 6     | `database system is ready to accept connections`                                                                  |
+| 6     | `database system is ready to accept connections` (TimescaleDB) → `metrics-collector: subscribed` → `magicsock: derp-N connected` |
 | 7     | `database-vault: listening addr=<tailscale-ip>:8445`                                                              |
 | 8     | `Server listening on <mesh-ip> port 2222` → `storage-service: listening addr=<mesh-ip>:8448`                      |
 | 9     | `security-switch: listening addr=<tailscale-ip>:8444`                                                             |
 | 10    | `entry-hub: listening addr=0.0.0.0:8443` → `entry-hub: listening on the mesh for login addr=:8446`                |
-| 12    | `HTTP Server Listen address=[::]:3000` → http://localhost:3000                                                    |
+| 11    | `HTTP Server Listen address=[::]:3000` → http://localhost:3000                                                    |
 
 If a shell instead reports `Container ... Running` with no startup lines,
 it was already up from before — that's fine, skip waiting for the line.

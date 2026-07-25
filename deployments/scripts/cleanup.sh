@@ -13,12 +13,15 @@
 # database-vault-postgres is gone from this list, folded into
 # database-vault itself. Headscale, by contrast, is its OWN standalone
 # container again this session (see headscale.sh/network-manager.sh) -
-# added back to this list under its own name.
+# added back to this list under its own name. TimescaleDB is likewise no
+# longer a separate container (see metrics-collector.sh, KI-18) -
+# metrics-collector-timescaledb is gone from this list, folded into
+# metrics-collector itself.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 for c in grafana metrics-collector entry-hub security-switch network-manager \
-         storage-service database-vault metrics-collector-timescaledb \
+         storage-service database-vault \
          mqtt-broker-mesh mqtt-broker certificate-authority-mesh certificate-authority \
          headscale ramusb-tailscale-test; do
   docker rm -f "$c" >/dev/null 2>&1 || true
@@ -30,7 +33,8 @@ if [ "${1:-}" = "--wipe" ]; then
     ramusb-database-vault_ramusb-postgres-data \
     ramusb-headscale_ramusb-headscale-data \
     ramusb-certificate-authority_ramusb-ca-data \
-    ramusb-metrics-collector-timescaledb_ramusb-metrics-collector-timescaledb-data \
+    ramusb-metrics-collector_ramusb-metrics-collector-timescaledb-data \
+    ramusb-metrics-collector_ramusb-metrics-collector-mesh-state \
     ramusb-grafana_ramusb-grafana-data \
     ramusb-security-switch_ramusb-security-switch-mesh-state \
     ramusb-database-vault_ramusb-database-vault-mesh-state \

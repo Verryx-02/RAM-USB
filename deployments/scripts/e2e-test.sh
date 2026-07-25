@@ -44,5 +44,8 @@ docker exec headscale headscale nodes list
 
 echo "waiting 65s for metrics to publish (EH-F-10/SS-F-07/etc. publish every 60s)..."
 sleep 65
-docker exec metrics-collector-timescaledb psql -U metrics_collector -d metrics_collector \
+# TimescaleDB now lives inside the metrics-collector container itself
+# (KI-18) - psql runs there via docker exec, not against a separate
+# metrics-collector-timescaledb container anymore.
+docker exec metrics-collector psql -U metrics_collector -d metrics_collector \
   -c "SELECT service, time, request_count, error_count, average_response_time_ms, active_connections FROM metrics ORDER BY time DESC LIMIT 5;"

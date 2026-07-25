@@ -1,9 +1,15 @@
 # Grafana datasource provisioning (MT-F-04): points Grafana at the same
-# TimescaleDB/Postgres database Metrics-Collector writes to
-# (metrics-collector-timescaledb, deployments/compose/metrics-collector-timescaledb.yml),
-# entirely via this file - no manual UI datasource configuration, per
-# Grafana's own provisioning convention
-# (/etc/grafana/provisioning/{datasources,dashboards}).
+# TimescaleDB/Postgres database Metrics-Collector writes to - now
+# co-located inside Metrics-Collector's own container
+# (deployments/compose/metrics-collector.yml, docs/Known_Issues.md's
+# KI-18), not a separate metrics-collector-timescaledb container/Compose
+# project - entirely via this file - no manual UI datasource
+# configuration, per Grafana's own provisioning convention
+# (/etc/grafana/provisioning/{datasources,dashboards}). In this dev
+# Compose stack Grafana reaches it via the "metrics-collector" ramusb-net
+# hostname below; in production (deployments/proxmox/grafana.md) this
+# same connection crosses the Tailscale mesh instead, to
+# Metrics-Collector's own mesh identity.
 apiVersion: 1
 
 datasources:
@@ -11,7 +17,7 @@ datasources:
     uid: timescaledb
     type: postgres
     access: proxy
-    url: metrics-collector-timescaledb:5432
+    url: metrics-collector:5432
     database: metrics_collector
     user: metrics_collector
     isDefault: true

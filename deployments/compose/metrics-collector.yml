@@ -1,17 +1,33 @@
-# Metrics-Collector. See services/metrics-collector/cmd/metrics-collector/
-# main.go - it has no HTTP listener of its own and does not call
-# pki.NewServer (no PKI-F-01 server role), but still bootstraps its own
-# mTLS identity via pki.NewClient (CA-F-04) for the MQTT connection
-# (buildMQTTClient), reusing the same mechanism as every other service -
-# it therefore also requires its own CA token, in addition to the
-# Postgres/MQTT connection variables. No other shell/service sees them,
-# EXCEPT RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD, which must be
-# exported with the SAME value used to start
-# metrics-collector-timescaledb.yml (separate shell, separate Compose
-# project): this shell does not duplicate that value as a literal, it only
-# references it via Compose interpolation in the connection string below.
-# A different value causes Postgres authentication to fail with an error
-# Metrics-Collector cannot self-diagnose.
+# Metrics-Collector. This is now a single self-contained service -
+# TimescaleDB is merged into this same container
+# (deployments/docker/metrics-collector/Dockerfile builds FROM
+# timescale/timescaledb and layers s6-overlay + the metrics-collector Go
+# binary on top), the same "absorb the third-party server into one image"
+# pattern already used for Database-Vault+Postgres and Network-Manager+
+# Headscale (docs/Known_Issues.md's KI-18). This file is the SOLE place
+# RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD is generated and used - no
+# separate metrics-collector-timescaledb.yml Compose project, no
+# cross-shell/cross-project requirement to export the identical password
+# value twice.
+#
+# See services/metrics-collector/cmd/metrics-collector/main.go - it has no
+# HTTP listener of its own and does not call pki.NewServer (no PKI-F-01
+# server role), but still bootstraps its own mTLS identity via
+# pki.NewClient (CA-F-04) for the MQTT connection (buildMQTTClient),
+# reusing the same mechanism as every other service.
+#
+# This container also joins the mesh via a REAL, OS-level tailscaled
+# client (see the Dockerfile's own doc comment) instead of pkg/mesh's
+# in-process tsnet - required because Grafana's own outbound query
+# connection to TimescaleDB (MT-F-04, UC-05) needs TimescaleDB reachable
+# on a genuine kernel network interface from another Proxmox guest, which
+# an in-process netstack cannot provide. Still requires ramusb-net at
+# container-join time: this node reaches Network-Manager's co-located
+# Headscale, and this process still needs the CA-token minting/MQTT
+# reachability ramusb-net already provided - same dual-reachability
+# caveat already accepted for TimescaleDB's own listen_addresses (see the
+# timescaledb longrun's own run script), part of the same deferred,
+# dev-only limitation class as docs/Known_Issues.md's KI-05.
 name: ramusb-metrics-collector
 services:
   metrics-collector:
@@ -19,16 +35,70 @@ services:
       context: ../..
       dockerfile: deployments/docker/metrics-collector/Dockerfile
     container_name: metrics-collector
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
     environment:
-      RAM_USB_METRICS_COLLECTOR_DATABASE_URL: "postgres://metrics_collector:${RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD:?set the SAME password exported for metrics-collector-timescaledb.yml}@metrics-collector-timescaledb:5432/metrics_collector?sslmode=disable"
+      # TimescaleDB now lives inside this same container, bound to every
+      # local interface (see deployments/docker/metrics-collector/rootfs/
+      # etc/s6-overlay/s6-rc.d/timescaledb/run for why) - the connection
+      # host is "localhost", not a separate container name. POSTGRES_USER/
+      # POSTGRES_DB below must match this DSN's user/dbname.
+      RAM_USB_METRICS_COLLECTOR_DATABASE_URL: "postgres://metrics_collector:${RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD:?generate with: openssl rand -hex 16}@localhost:5432/metrics_collector?sslmode=disable"
+      # Consumed directly by the timescaledb longrun's own `run` script,
+      # which execs the upstream timescale/timescaledb image's own
+      # docker-entrypoint.sh - first-run initdb and the user/password/db
+      # bootstrap behave exactly as upstream intends. Same variable as the
+      # connection string above, referenced once here and once there via
+      # Compose interpolation - no duplicated literal, no second shell/
+      # Compose project to keep in sync.
+      POSTGRES_USER: metrics_collector
+      POSTGRES_PASSWORD: "${RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD:?generate with: openssl rand -hex 16}"
+      POSTGRES_DB: metrics_collector
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token MetricsCollector --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
       # MT-F-01/MT-F-02: MQTT subscription, reuses the same mTLS identity
       # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
       # static MQTT certificate/key.
       RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+      # Real tailscaled mesh membership (rootfs/etc/s6-overlay/s6-rc.d/
+      # {tailscaled,tailscale-up,trust-mesh-ca}): this node's MagicDNS short
+      # name, the shared Headscale coordination URL, and a single-use
+      # pre-auth key - see services/network-manager/internal/headscale/
+      # policy.go for the tag:metrics-collector ACL rule this key's --tags
+      # must match.
+      RAM_USB_METRICS_COLLECTOR_MESH_HOSTNAME: "metrics-collector"
+      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://headscale:8080}"
+      RAM_USB_METRICS_COLLECTOR_TAILSCALE_AUTHKEY: >-
+        ${RAM_USB_METRICS_COLLECTOR_TAILSCALE_AUTHKEY:?mint with:
+        docker exec headscale headscale users create metrics-collector
+        && docker exec headscale headscale users list --name metrics-collector -o json
+        && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:metrics-collector}
+    volumes:
+      - ramusb-metrics-collector-mesh-state:/var/lib/tailscale
+      - ramusb-metrics-collector-timescaledb-data:/var/lib/postgresql/data
+      - ../../third-party/timescaledb/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # Dev-only: Headscale's self-signed control-plane certificate,
+      # trusted via the real OS trust store (update-ca-certificates, see
+      # rootfs/etc/s6-overlay/s6-rc.d/tailscale-up/up and
+      # trust-mesh-ca/) - this base image has a real shell/package
+      # manager, so the standard mechanism applies directly, same as
+      # Database-Vault's own compose file. Leave this volume unmounted
+      # once RAM_USB_TAILSCALE_CONTROL_URL carries a publicly-trusted-root
+      # certificate.
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+    # No "ports:" - TimescaleDB is reachable via this node's Tailscale
+    # mesh interface (in production; also via ramusb-net in this dev
+    # stack, see the Dockerfile's own doc comment) but never a
+    # host-published port (NET-F-01).
     networks:
       - ramusb-net
 
 networks:
   ramusb-net:
     external: true
+
+volumes:
+  ramusb-metrics-collector-mesh-state:
+  ramusb-metrics-collector-timescaledb-data:
