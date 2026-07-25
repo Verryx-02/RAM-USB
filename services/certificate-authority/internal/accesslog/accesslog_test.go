@@ -1,6 +1,7 @@
 package accesslog
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -111,6 +112,20 @@ func TestParseLine_SignLineNeverExposesSensitiveFields(t *testing.T) {
 	for _, sensitive := range []string{"ott", "certificate", "subject", "sans", "issuer", "provisioner", "secret", "MIIB"} {
 		if strings.Contains(line, sensitive) == false {
 			t.Fatalf("test setup error: line does not contain %q", sensitive)
+		}
+	}
+
+	// Pin Entry's exact field set - a field added to hold a sensitive value
+	// (e.g. "Subject string") would otherwise be invisible to every
+	// assertion above, since none of them inspect Entry's shape itself.
+	entryType := reflect.TypeOf(entry)
+	wantFields := []string{"Status", "DurationNs"}
+	if entryType.NumField() != len(wantFields) {
+		t.Fatalf("Entry has %d fields, want exactly %d (%v) - a field was added or removed", entryType.NumField(), len(wantFields), wantFields)
+	}
+	for i, name := range wantFields {
+		if got := entryType.Field(i).Name; got != name {
+			t.Fatalf("Entry field %d = %q, want %q", i, got, name)
 		}
 	}
 }
