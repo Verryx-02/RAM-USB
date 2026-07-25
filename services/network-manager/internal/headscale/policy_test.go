@@ -87,8 +87,8 @@ func TestPolicyDocument_Content(t *testing.T) {
 		t.Fatalf("json.Unmarshal(PolicyDocument()) error = %v", err)
 	}
 
-	if len(doc.ACLs) != 8 {
-		t.Fatalf("len(doc.ACLs) = %d, want 8 (NM-F-01, 02, 03, 04x2, 05, 06/07, MQTT-broker)", len(doc.ACLs))
+	if len(doc.ACLs) != 9 {
+		t.Fatalf("len(doc.ACLs) = %d, want 9 (NM-F-01, 02, 03, 04x2, 05, 06/07, MQTT-broker, Grafana->Metrics-Collector)", len(doc.ACLs))
 	}
 
 	for i, acl := range doc.ACLs {
@@ -118,9 +118,9 @@ func TestPolicyDocument_Content(t *testing.T) {
 			wantSrc: []string{hs.TagSecuritySwitch, hs.TagCertificateAuthority},
 		},
 		{
-			name:    "NM-F-04 direction one: every internal component can contact Certificate-Authority",
+			name:    "NM-F-04 direction one: every internal component (plus the MQTT broker's own cert-renewal sidecar, KI-16) can contact Certificate-Authority",
 			dst:     []string{hs.TagCertificateAuthority + ":*"},
-			wantSrc: []string{hs.TagEntryHub, hs.TagSecuritySwitch, hs.TagDatabaseVault, hs.TagStorageService, hs.TagNetworkManager},
+			wantSrc: []string{hs.TagEntryHub, hs.TagSecuritySwitch, hs.TagDatabaseVault, hs.TagStorageService, hs.TagNetworkManager, hs.TagMQTTBroker},
 		},
 		{
 			name: "NM-F-04 direction two: Certificate-Authority can contact every internal component",
@@ -155,6 +155,11 @@ func TestPolicyDocument_Content(t *testing.T) {
 				hs.TagMetricsCollector,
 				hs.TagCertificateAuthority,
 			},
+		},
+		{
+			name:    "Grafana -> Metrics-Collector (KI-18): Grafana's own mesh sidecar can reach the co-located TimescaleDB over Metrics-Collector's mesh identity",
+			dst:     []string{hs.TagMetricsCollector + ":*"},
+			wantSrc: []string{hs.TagGrafana},
 		},
 	}
 

@@ -87,6 +87,15 @@ const (
 	// existing NM-F-03 scope-expansion note above.
 	TagMQTTBroker       = "tag:mqtt-broker"
 	TagMetricsCollector = "tag:metrics-collector"
+	// TagGrafana identifies Grafana's own mesh sidecar
+	// (deployments/proxmox/grafana.md), needed only for its own outbound
+	// query connection to TimescaleDB - now co-located inside
+	// Metrics-Collector's own container/mesh identity (KI-18,
+	// docs/Known_Issues.md), not a separate guest. No SRS ID names this
+	// rule the way NM-F-04 names it for Certificate-Authority, same
+	// judgment call already documented for TagMQTTBroker/TagMetricsCollector
+	// above.
+	TagGrafana = "tag:grafana"
 )
 
 // policyAdminGroup/policyAdminOwner exist solely to give every tag
@@ -111,6 +120,7 @@ var allTags = []string{
 	TagCertificateAuthority,
 	TagMQTTBroker,
 	TagMetricsCollector,
+	TagGrafana,
 	TagMeshMember,
 	TagStorageAccess,
 }
@@ -177,6 +187,14 @@ func dstAny(tag string) string {
 // (TagMQTTBroker) - see that constant's own doc comment for why no single
 // SRS ID names this rule the way NM-F-04 names Certificate-Authority's,
 // and why it is included here anyway.
+//
+// A ninth rule grants Grafana's own mesh sidecar reachability toward
+// Metrics-Collector's mesh identity (TagMetricsCollector) - TimescaleDB
+// (MT-F-03) is now co-located inside Metrics-Collector's own container
+// (KI-18), so Grafana's outbound query connection (UC-05, RU-10) reaches
+// TimescaleDB's Postgres-wire port under this same tag, not a separate
+// one. See TagGrafana's own doc comment for why no single SRS ID names
+// this rule.
 func buildACLs() []policyACL {
 	return []policyACL{
 		{ // NM-F-01: only Entry-Hub, Database-Vault, Network-Manager, and
@@ -205,9 +223,22 @@ func buildACLs() []policyACL {
 			Dst:    []string{dstAny(TagNetworkManager)},
 		},
 		{ // NM-F-04, direction one: every internal component can contact
-			// Certificate-Authority.
+			// Certificate-Authority. TagMQTTBroker is included alongside
+			// the original five (KI-16/PKI-F-03): the MQTT broker's own
+			// cert-renewal sidecar (mqtt-broker-cert-renewer, sharing
+			// mqtt-broker's mesh identity via network_mode:
+			// "service:mqtt-broker") needs to reach Certificate-Authority
+			// for `step ca renew`'s own mTLS-authenticated renewal calls,
+			// mesh-routed since Certificate-Authority is reachable only
+			// via the mesh in production (deployments/proxmox/
+			// certificate-authority.md) - confirmed live this session that
+			// omitting this tag here makes that renewal call hang until
+			// "context deadline exceeded" with no other error, the same
+			// silent-deny-at-the-receiving-node behavior this function's
+			// own NM-F-05 rule comment already documents for a missing
+			// rule.
 			Action: "accept",
-			Src:    []string{TagEntryHub, TagSecuritySwitch, TagDatabaseVault, TagStorageService, TagNetworkManager},
+			Src:    []string{TagEntryHub, TagSecuritySwitch, TagDatabaseVault, TagStorageService, TagNetworkManager, TagMQTTBroker},
 			Dst:    []string{dstAny(TagCertificateAuthority)},
 		},
 		{ // NM-F-04, direction two: Certificate-Authority can contact
@@ -265,6 +296,15 @@ func buildACLs() []policyACL {
 				TagCertificateAuthority,
 			},
 			Dst: []string{dstAny(TagMQTTBroker)},
+		},
+		{ // Grafana's own mesh sidecar can contact Metrics-Collector's mesh
+			// identity - TimescaleDB now lives inside this same container
+			// (KI-18), so this rule is what lets Grafana's outbound query
+			// connection (UC-05) reach it over the mesh. See TagGrafana's
+			// own doc comment for why this rule has no single SRS ID.
+			Action: "accept",
+			Src:    []string{TagGrafana},
+			Dst:    []string{dstAny(TagMetricsCollector)},
 		},
 	}
 }
