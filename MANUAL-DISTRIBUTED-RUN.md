@@ -113,9 +113,14 @@ it was already up from before — that's fine, skip waiting for the line.
    supervisor respawns it, the respawn reuses the same (now consumed)
    token and fails with "lacked necessary authorization." Not a CA/mesh
    bug — just re-run the script (it mints a fresh token every time).
-3. **MQTT-broker's own certs are dev-only** (~24h validity, minted via the
-   CA's admin password, not CA-F-04's bootstrap-token flow) — not a
-   production-ready mechanism. See RISK-04 in the SRS.
+3. ~~MQTT-broker's own certs are dev-only, no automatic renewal.~~
+   Resolved (KI-16, PKI-F-03): `deployments/compose/mqtt-broker.yml`'s
+   `mqtt-broker-cert-issuer` (initial CA-F-04 bootstrap-token exchange) and
+   `mqtt-broker-cert-renewer` (`step ca renew --daemon`, mTLS-authenticated,
+   SIGHUP-reloads Mosquitto via a shared PID namespace) now provision and
+   keep current both certificate identities Mosquitto's own container
+   needs. Leaf certificates still inherit step-ca's ~24h default lifetime,
+   but renewal is now automatic, not a "re-run this script" manual step.
 4. `third-party/mosquitto/acl.conf` has world-readable permissions;
    Mosquitto warns at startup — should be `chmod 0700`.
 5. The MQTT healthcheck (shell 4) reuses `metrics/Certificate-Authority`,
@@ -161,3 +166,23 @@ it was already up from before — that's fine, skip waiting for the line.
     session with `curl --cert`/`openssl s_client` against a real running
     container, with and without a certificate and with the correct/wrong
     organization.
+12. **Dev-only limitation, not a bug (KI-05, unchanged by KI-16's fix):**
+    `mqtt-broker-cert-renewer`'s own outbound `step ca renew` calls to
+    `https://certificate-authority:9000` are routed through
+    `network_mode: "service:mqtt-broker"` so they cross the Tailscale mesh
+    in production (Certificate-Authority has no other reachable path
+    there) - but in THIS dev stack, `mqtt-broker`'s own container is
+    *also* still attached to `ramusb-net` (KI-05's own dual-reachability,
+    deliberately left unfixed there), and Docker's embedded DNS resolver
+    (127.0.0.11) wins over the mesh sidecar's own MagicDNS inside that
+    shared network namespace - confirmed live this session (`nslookup
+    certificate-authority` inside the renewer resolves to the `ramusb-net`
+    IP, not the mesh IP). The mesh path itself was independently verified
+    live (a direct TLS dial to Certificate-Authority's mesh IP with the
+    correct SNI succeeds; the Headscale ACL policy needed a real fix,
+    `services/network-manager/internal/headscale/policy.go`, to allow
+    `tag:mqtt-broker` as a source reaching `tag:certificate-authority`) -
+    but this dev stack cannot itself prove the RUNNING renewer's own calls
+    take that path rather than `ramusb-net`, for the exact same reason
+    KI-05 already documents for every other Certificate-Authority
+    consumer. Not something to fix within KI-16's own scope.

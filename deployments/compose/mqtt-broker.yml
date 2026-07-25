@@ -4,9 +4,9 @@
 # RAM_USB_MQTT_BROKER_TAILSCALE_AUTHKEY below. Like postgres.yml/
 # headscale.yml, no Compose dependency toward other files - see
 # MANUAL-DISTRIBUTED-RUN.md for the manual startup order (it must start
-# after the Certificate-Authority, because the dev-only certificates are
-# minted from it via third-party/mosquitto/generate-dev-certs.sh, but
-# before the application services and metrics-collector).
+# after the Certificate-Authority, because its own certificate/key files
+# are minted from it - see mqtt-broker-cert-issuer below - but before the
+# application services and metrics-collector).
 #
 # mqtt-broker-mesh: Mosquitto is a C binary, not a Go process, so it
 # cannot embed pkg/mesh - same sidecar pattern as
@@ -24,15 +24,129 @@
 # ("tls://mqtt-broker:8883", see e.g. security-switch.yml) keeps working
 # unchanged either way, since that hostname is chosen to equal the
 # existing Docker DNS name.
+#
+# mqtt-broker-cert-issuer / mqtt-broker-cert-renewer (KI-16, PKI-F-03):
+# Mosquitto cannot call pkg/pki itself (C binary, no CA-F-04 bootstrap
+# client), so these two services are RAM-USB's own glue that gives it the
+# same "single-use bootstrap token once, mTLS-authenticated renewal
+# forever after" lifecycle every Go service already gets from pkg/pki -
+# see mqtt-broker-cert-issuer's own comment below for the full design and
+# the live verification this session did against a real running
+# certificate-authority. Both identities Mosquitto's own container needs
+# (its server certificate "MQTTBroker", and the "CertificateAuthority"
+# client identity this file's own healthcheck self-publishes with) are
+# minted and kept renewed the same way - see third-party/mosquitto/
+# generate-dev-certs.sh's own doc comment (now superseded by this) for why
+# these are the only two identities Mosquitto itself needs provisioned
+# externally, unlike every other RAM-USB MQTT client which reuses its own
+# already-bootstrapped pkg/pki identity.
 name: ramusb-mqtt-broker
 services:
+  # Named-volume ownership fix, same pattern as certificate-authority.yml's
+  # certificate-authority-logs-init: a brand-new named volume mounts
+  # root-owned regardless of the image's own runtime user - confirmed live
+  # this session that smallstep/step-cli (the image mqtt-broker-cert-issuer
+  # and mqtt-broker-cert-renewer both use) runs as a fixed non-root
+  # uid=1000/gid=1000 ("step"), identical to step-ca's own runtime user.
+  # Runs as root purely to chown; never runs step itself.
+  mqtt-broker-certs-init:
+    image: smallstep/step-cli:0.30.6
+    user: root
+    entrypoint: ["/bin/sh", "-c", "chown 1000:1000 /certs && chmod 0755 /certs"]
+    volumes:
+      - ramusb-mqtt-broker-certs:/certs
+    restart: "no"
+
+  # Initial issuance (CA-F-04's bootstrap-token flow, PKI-F-03), as a
+  # proper one-shot Compose service - the "operator runs a script by hand"
+  # step generate-dev-certs.sh used to be for this exact same exchange.
+  # TOKEN MINTING still stays a manual, out-of-band, docker-exec-based step
+  # (deployments/scripts/mqtt-broker.sh mints both
+  # RAM_USB_MQTT_BROKER_BOOTSTRAP_TOKEN and
+  # RAM_USB_MQTT_BROKER_HEALTHCHECK_BOOTSTRAP_TOKEN before calling `docker
+  # compose up`, the same pattern every RAM_USB_CA_BOOTSTRAP_TOKEN-based
+  # service already uses) - this container has no Docker socket to `docker
+  # exec` through, same reasoning as certificate-authority-init's own doc
+  # comment. What moves into this compose service is the CERTIFICATE
+  # EXCHANGE half (`step ca certificate ... --token ...`), a genuine
+  # network call, so it works the same way whether the CA and this broker
+  # share a Docker host (dev) or sit on different Proxmox guests
+  # (production, see deployments/proxmox/mosquitto.md).
+  #
+  # Trust root: read directly from certificate-authority.yml's own
+  # ramusb-ca-data named volume (external, read-only) - the exact file
+  # step-ca itself trusts, rather than an unauthenticated network fetch
+  # (see generate-dev-certs.sh's own doc comment for why a fingerprint-
+  # pinned `step ca root` fetch was deliberately avoided; mounting the
+  # already-trusted volume directly sidesteps that problem entirely,
+  # confirmed live this session - `docker run --rm -v
+  # ramusb-certificate-authority_ramusb-ca-data:/data:ro alpine ls -la
+  # /data/certs` shows root_ca.crt owned 1000:1000, mode 0600, readable by
+  # this same uid with no chown needed).
+  #
+  # Every written file (cafile copy + both minted cert/key pairs) stays
+  # mode 0600, owned 1000:1000 (this container's own fixed uid, same as
+  # step-ca's own runtime uid) - mqtt-broker below runs as that same
+  # uid:gid (`user: "1000:1000"`) specifically so it can read them without
+  # relaxing permissions to world-readable. Confirmed live this session:
+  # unlike the OLD bind-mount-based generate-dev-certs.sh design (where
+  # macOS Docker Desktop's bind-mount layer transparently ignored standard
+  # POSIX ownership checks), a real Docker-managed NAMED volume enforces
+  # them properly - mosquitto's own default container user ("mosquitto",
+  # a different uid than 1000) got "OpenSSL Error: system
+  # library::Permission denied" against 0600-owned-by-1000 files until
+  # this uid was aligned.
+  #
+  # SANs are baked into each token at MINT time (`step ca token`'s --san
+  # flags), not requested here - `step ca certificate`'s own --san flag is
+  # mutually exclusive with --token, see generate-dev-certs.sh's own doc
+  # comment on mint_and_copy for the full reasoning, unchanged here.
+  mqtt-broker-cert-issuer:
+    image: smallstep/step-cli:0.30.6
+    user: "1000:1000"
+    depends_on:
+      mqtt-broker-certs-init:
+        condition: service_completed_successfully
+    environment:
+      RAM_USB_MQTT_BROKER_BOOTSTRAP_TOKEN: "${RAM_USB_MQTT_BROKER_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token MQTTBroker --san MQTTBroker --san mqtt-broker --san localhost --san 127.0.0.1 --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      RAM_USB_MQTT_BROKER_HEALTHCHECK_BOOTSTRAP_TOKEN: "${RAM_USB_MQTT_BROKER_HEALTHCHECK_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token CertificateAuthority --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        cp /ca-data/certs/root_ca.crt /certs/mqtt-dev-ca.dev-only.crt
+        step ca certificate MQTTBroker /certs/broker.dev-only.crt /certs/broker.dev-only.key \
+          --token "$$RAM_USB_MQTT_BROKER_BOOTSTRAP_TOKEN" \
+          --ca-url https://certificate-authority:9000 --root /certs/mqtt-dev-ca.dev-only.crt --force
+        step ca certificate CertificateAuthority /certs/CertificateAuthority.dev-only.crt /certs/CertificateAuthority.dev-only.key \
+          --token "$$RAM_USB_MQTT_BROKER_HEALTHCHECK_BOOTSTRAP_TOKEN" \
+          --ca-url https://certificate-authority:9000 --root /certs/mqtt-dev-ca.dev-only.crt --force
+        chmod 0600 /certs/*.crt /certs/*.key
+    volumes:
+      - ramusb-mqtt-broker-certs:/certs
+      - ramusb-ca-data:/ca-data:ro
+    networks:
+      - ramusb-net
+    restart: "no"
+
   mqtt-broker:
     image: eclipse-mosquitto:2
     container_name: mqtt-broker
+    # Matches mqtt-broker-cert-issuer/mqtt-broker-cert-renewer's own fixed
+    # uid:gid (1000:1000, step-cli's default runtime user) - see this
+    # file's own top comment for why. mosquitto.conf sets no `user`
+    # directive of its own, so the process runs as exactly this uid the
+    # whole time (docker-entrypoint.sh's own root-only chown branch is
+    # simply skipped, harmlessly, since `persistence false` means
+    # /mosquitto/data is never used anyway).
+    user: "1000:1000"
+    depends_on:
+      mqtt-broker-cert-issuer:
+        condition: service_completed_successfully
     volumes:
       - ../../third-party/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ../../third-party/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro
-      - ../../third-party/mosquitto/certs:/mosquitto/certs:ro
+      - ramusb-mqtt-broker-certs:/mosquitto/certs:ro
     ports:
       - "8883:8883"
     healthcheck:
@@ -88,9 +202,93 @@ services:
     # itself - see this file's own top comment.
     network_mode: "service:mqtt-broker"
 
+  # Renewal sidecar (KI-16, PKI-F-03): `step ca renew --daemon` renews
+  # before ~2/3 of a certificate's validity elapses (step-ca leaf
+  # certificates in this stack are ~24h, confirmed live -
+  # generate-dev-certs.sh's own doc comment), authenticated by mTLS using
+  # the certificate being renewed itself - NOT the single-use bootstrap
+  # token, which mqtt-broker-cert-issuer above already consumed. Two
+  # `step ca renew --daemon` processes run in this one container, one per
+  # identity Mosquitto needs kept current (broker server cert +
+  # healthcheck client cert) - `step ca renew` only ever renews the one
+  # cert/key pair given on its own command line.
+  #
+  # PID NAMESPACE: `pid: "service:mqtt-broker"` (mutually exclusive with a
+  # container-local pid namespace, same mechanics as `network_mode:
+  # "service:mqtt-broker"` above) so `--exec "kill -HUP 1"` can signal the
+  # real mosquitto process directly - confirmed live this session: from a
+  # container joining mqtt-broker's pid namespace, mosquitto is PID 1 (the
+  # eclipse-mosquitto image's own /docker-entrypoint.sh ends `exec "$@"`,
+  # so mosquitto itself, not a wrapper shell, is the namespace's PID 1),
+  # and mosquitto.conf(5)'s documented SIGHUP behavior (reload certfile/
+  # keyfile in place, without dropping already-established connections)
+  # was also confirmed live: a `mosquitto_sub` connection held open across
+  # a manual `kill -HUP 1` from a throwaway `--pid container:mqtt-broker`
+  # container stayed connected, and a freshly re-minted broker.dev-only.crt
+  # only became the certificate actually served AFTER that SIGHUP (an
+  # mTLS handshake attempt against the new cert failed before the SIGHUP,
+  # succeeded immediately after).
+  #
+  # NETWORK NAMESPACE: `network_mode: "service:mqtt-broker"` (Compose
+  # confirmed live this session to accept BOTH `pid:` and `network_mode:`
+  # pointing at the same target service simultaneously - not documented
+  # anywhere as guaranteed, but works) for the same reason
+  # mqtt-broker-mesh itself uses it: Certificate-Authority is reachable
+  # ONLY via its Tailscale mesh identity in production (no published port,
+  # no shared Docker network - deployments/proxmox/certificate-authority.md),
+  # so this renewer's own outbound `step ca renew` calls to
+  # "https://certificate-authority:9000" must resolve and route over that
+  # same mesh interface, not a plain Docker network this container does
+  # not even have of its own once network_mode is set. Sharing
+  # mqtt-broker's namespace means this container automatically inherits
+  # whatever tailscale0 interface/MagicDNS resolution mqtt-broker-mesh has
+  # already established there - confirmed live this session (see this
+  # file's own git history / KI-16 close-out notes for the exact
+  # traceroute/access-log evidence that the renewal request actually
+  # crossed the mesh, not ramusb-net).
+  mqtt-broker-cert-renewer:
+    image: smallstep/step-cli:0.30.6
+    container_name: mqtt-broker-cert-renewer
+    depends_on:
+      mqtt-broker-cert-issuer:
+        condition: service_completed_successfully
+      mqtt-broker-mesh:
+        condition: service_started
+    volumes:
+      - ramusb-mqtt-broker-certs:/certs
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        step ca renew --daemon --force \
+          --ca-url https://certificate-authority:9000 --root /certs/mqtt-dev-ca.dev-only.crt \
+          --exec "kill -HUP 1" \
+          /certs/CertificateAuthority.dev-only.crt /certs/CertificateAuthority.dev-only.key &
+        exec step ca renew --daemon --force \
+          --ca-url https://certificate-authority:9000 --root /certs/mqtt-dev-ca.dev-only.crt \
+          --exec "kill -HUP 1" \
+          /certs/broker.dev-only.crt /certs/broker.dev-only.key
+    network_mode: "service:mqtt-broker"
+    pid: "service:mqtt-broker"
+
 networks:
   ramusb-net:
     external: true
 
 volumes:
   ramusb-mqtt-broker-mesh-state:
+  # Written by mqtt-broker-cert-issuer, kept current by
+  # mqtt-broker-cert-renewer, mounted read-only into mqtt-broker itself -
+  # Compose allows a different mount mode per service for the same named
+  # volume, confirmed live this session (`docker compose config` accepts
+  # `:ro` on mqtt-broker's own entry while mqtt-broker-cert-issuer/
+  # mqtt-broker-cert-renewer mount it read-write with no `:ro` suffix).
+  ramusb-mqtt-broker-certs:
+  # certificate-authority.yml's own project (ramusb-certificate-authority)
+  # owns this volume - referenced here by its fully-qualified
+  # Compose-generated name, same pattern as
+  # certificate-authority-metrics.yml's own ramusb-certificate-authority-logs
+  # reference.
+  ramusb-ca-data:
+    external: true
+    name: ramusb-certificate-authority_ramusb-ca-data
