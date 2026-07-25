@@ -37,6 +37,7 @@ at-a-glance worklist; the full entries below are the detail/history.
 | KI-21 | `TestStorageServiceSSHD_RealContainer_EnforcesHardening` fails/hangs in this dev sandbox | investigation |
 | KI-22 | Grafana -> TimescaleDB uses plaintext password auth, no mTLS (RNF-SEC-04 violation) | user decision |
 | KI-23 | Restarting a CA-F-04-bootstrapped service needs a manually-minted fresh token; only Certificate-Authority itself restarts with zero manual step | user decision |
+| KI-24 | `08-security-pki-hierarchy.puml` draws a `PrivateCA -> Metrics-Visualizer` signing edge that doesn't exist (Grafana has no mTLS identity) | — |
 
 Everything else in this file (KI-01, KI-03–KI-05, KI-09–KI-11, KI-13,
 KI-16–KI-18) is `FIXED` — kept below for history/traceability, not part
@@ -319,6 +320,16 @@ of the active worklist.
   and **ST-F-12/ST-F-13** have no `[Code]` link at all, despite being
   genuinely implemented and merged today (`78f7052`, plus the earlier
   Storage-Service metrics work KI-04 already confirmed real).
+  **Update, 2026-07-25/26 (later session)**: the same-day `cb661fd`
+  refactor (consolidating per-service `Counters`/`writeJSON`/`writeAppError`
+  into `pkg/metrics`/`pkg/errors`) deleted the files four more requirements'
+  `[Code]` links pointed at, without the SRS being re-pinned — **EH-F-11**,
+  **SS-F-07**, **SS-F-08**, **DV-F-17**, and **NM-F-18** all now have a
+  stale link (pointing at a deleted file or past end-of-file), found by a
+  requirement-to-test/consistency audit that same day. All five
+  underlying requirements remain functionally satisfied by the relocated
+  code (`pkg/metrics.RequestCounters`/`pkg/errors.WriteJSON`/`WriteAppError`)
+  — only the SRS's own permalinks are stale.
 - **Status:** OPEN.
 
 ## KI-13 — SRS §2.1: Certificate-Authority's status may also be stale ("In progress")
@@ -720,6 +731,27 @@ of the active worklist.
   restart), but a real operational gap worth a future automation decision
   (e.g. a token-minting sidecar/init container per service, mirroring
   `certificate-authority-init`'s own pattern).
+
+## KI-24 — `08-security-pki-hierarchy.puml` draws a certificate-issuance edge to Grafana that doesn't exist
+
+- **Found:** 2026-07-25/26, `consistency-agent` audit of Certificate-Authority
+  (SRS §4.7 vs. code and diagrams).
+- **Area:** `docs/design/diagrams/08-security-pki-hierarchy.puml:59`.
+- **Description:** The diagram draws `PrivateCA ..> MetricsVisualizer`
+  (Grafana), and this diagram's own legend states every dashed arrow is a
+  `<<signs>>` relationship — i.e. it claims the private Certificate-Authority
+  issues an mTLS certificate to Grafana. This is not what the real
+  deployment does: `deployments/compose/grafana.yml` has no
+  `RAM_USB_CA_BOOTSTRAP_TOKEN`, no `pkg/pki` integration, and no mTLS server
+  role at all. Grafana's own inbound path is an SSH tunnel (no Tailscale
+  identity, no Headscale), and its outbound connection to TimescaleDB is
+  plain Postgres-wire password authentication over the mesh — no
+  certificate from this CA is ever issued to it. Related to, but distinct
+  from, **KI-22** (that entry is about the missing mTLS on the
+  Grafana→TimescaleDB connection itself; this one is about the diagram
+  falsely depicting a certificate-issuance relationship that would only
+  make sense if that connection *were* mTLS).
+- **Status:** OPEN.
 
 ---
 
