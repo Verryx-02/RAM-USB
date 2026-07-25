@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/validation"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/httpapi"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/securityswitch"
@@ -52,7 +53,7 @@ func newTestHandler(securitySwitch httpapi.SecuritySwitchClient) (*httpapi.Handl
 
 	h := &httpapi.Handler{
 		SecuritySwitch: securitySwitch,
-		Metrics:        &httpapi.Counters{},
+		Metrics:        &metrics.RequestCounters{},
 		Logger:         logger,
 	}
 	return h, &logBuf

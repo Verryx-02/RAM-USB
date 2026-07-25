@@ -81,6 +81,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
@@ -159,7 +160,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	accessLogPath, err := requireEnv(envAccessLogPath)
+	accessLogPath, err := env.Require(envAccessLogPath)
 	if err != nil {
 		return err
 	}
@@ -224,35 +225,25 @@ func run() error {
 	return followErr
 }
 
-// requireEnv reads name from the environment, failing closed (RD-04) if it
-// is unset or empty.
-func requireEnv(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-	return value, nil
-}
-
 // buildMeshNode joins this process to the private Headscale mesh using
 // envMeshDir/envMeshHostname/envMeshControlURL/envMeshAuthKey, failing
 // closed (RD-04) if any is unset. ctx bounds only the join itself; the
 // returned node lives for this process's whole lifetime (closed via a
 // deferred call in run).
 func buildMeshNode(ctx context.Context) (*mesh.Server, error) {
-	dir, err := requireEnv(envMeshDir)
+	dir, err := env.Require(envMeshDir)
 	if err != nil {
 		return nil, err
 	}
-	hostname, err := requireEnv(envMeshHostname)
+	hostname, err := env.Require(envMeshHostname)
 	if err != nil {
 		return nil, err
 	}
-	controlURL, err := requireEnv(envMeshControlURL)
+	controlURL, err := env.Require(envMeshControlURL)
 	if err != nil {
 		return nil, err
 	}
-	authKey, err := requireEnv(envMeshAuthKey)
+	authKey, err := env.Require(envMeshAuthKey)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +269,7 @@ func buildMeshNode(ctx context.Context) (*mesh.Server, error) {
 // needs. dial routes the bootstrapped client's own background certificate
 // renewal through the mesh; the one-time bootstrap-token exchange itself
 // is not routable regardless (see this file's own package doc comment).
-func buildMQTTIdentity(ctx context.Context, dial pki.DialFunc) (*tls.Config, error) {
+func buildMQTTIdentity(ctx context.Context, dial mesh.DialFunc) (*tls.Config, error) {
 	token, err := pki.LoadBootstrapToken()
 	if err != nil {
 		return nil, fmt.Errorf("load ca bootstrap token: %w", err)
@@ -302,7 +293,7 @@ func buildMQTTIdentity(ctx context.Context, dial pki.DialFunc) (*tls.Config, err
 // certificate. dial routes the connection itself through the mesh. A nil,
 // nil return (no error) means metrics publishing is not configured
 // (envMQTTBrokerURL unset).
-func buildMetricsClient(mqttTLSBase *tls.Config, dial metrics.DialFunc) (mqtt.Client, error) {
+func buildMetricsClient(mqttTLSBase *tls.Config, dial mesh.DialFunc) (mqtt.Client, error) {
 	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
 	if !ok || brokerURL == "" {
 		slog.Warn("certificate-authority-metrics: metrics publishing disabled, " + envMQTTBrokerURL + " is not set")
@@ -311,7 +302,7 @@ func buildMetricsClient(mqttTLSBase *tls.Config, dial metrics.DialFunc) (mqtt.Cl
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(mqttTLSBase, metrics.OrganizationMQTTBroker))
 
-	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, metrics.WithDial(dial))
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, dial)
 	if err != nil {
 		return nil, err
 	}

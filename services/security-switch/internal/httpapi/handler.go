@@ -22,13 +22,13 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/validation"
 	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/dbvault"
 	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/networkmanager"
@@ -60,7 +60,7 @@ type Handler struct {
 
 	// Metrics accumulates request/error/response-time counts feeding
 	// SS-F-07/SS-F-08's periodic publish. Must not be nil.
-	Metrics *Counters
+	Metrics *metrics.RequestCounters
 
 	// Logger receives every structured log line this handler writes. If
 	// nil, slog.Default() is used. Tests inject a logger writing to a
@@ -140,22 +140,22 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 			// rollback is attempted for this specific failure.
 			isError = true
 			h.logger().Error("register: network-manager mesh user creation failed", "error", err)
-			writeAppError(w, mapNetworkManagerLikeError(err, networkmanager.ErrMeshUserCreationDenied))
+			apperrors.WriteAppError(w, mapNetworkManagerLikeError(err, networkmanager.ErrMeshUserCreationDenied))
 			return
 		}
 
 		h.logger().Info("register: network-manager mesh user creation succeeded")
-		writeJSON(w, http.StatusCreated, registerResponse{PosixUsername: result.PosixUsername, PreAuthKey: preAuthKey})
+		apperrors.WriteJSON(w, http.StatusCreated, registerResponse{PosixUsername: result.PosixUsername, PreAuthKey: preAuthKey})
 	case dbvault.OutcomeDuplicate:
 		isError = true
 		h.logger().Warn("register: database-vault rejected as duplicate")
 		// Relayed as-is (UC-01): the response body is Database-Vault's own
 		// already-sanitized message, not reconstructed here.
-		writeAppError(w, apperrors.NewConflict(errors.New("security-switch: registration rejected as duplicate")))
+		apperrors.WriteAppError(w, apperrors.NewConflict(errors.New("security-switch: registration rejected as duplicate")))
 	default:
 		isError = true
 		h.logger().Error("register: database-vault call failed", "error", result.Err)
-		writeAppError(w, mapDBVaultError(result.Err))
+		apperrors.WriteAppError(w, mapDBVaultError(result.Err))
 	}
 }
 
@@ -198,21 +198,21 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			// did not itself succeed.
 			isError = true
 			h.logger().Error("login: network-manager grant failed", "error", err)
-			writeAppError(w, mapNetworkManagerLikeError(err, networkmanager.ErrGrantDenied))
+			apperrors.WriteAppError(w, mapNetworkManagerLikeError(err, networkmanager.ErrGrantDenied))
 			return
 		}
 		h.logger().Info("login: succeeded, network-manager grant confirmed")
-		writeJSON(w, http.StatusOK, loginResponse{Status: "ok"})
+		apperrors.WriteJSON(w, http.StatusOK, loginResponse{Status: "ok"})
 	case dbvault.OutcomeUnauthorized:
 		isError = true
 		h.logger().Warn("login: database-vault reported authentication failure")
 		// Relayed as-is (UC-02, DV-F-15): the body is Database-Vault's own
 		// already-sanitized message, not reconstructed here.
-		writeAppError(w, apperrors.NewUnauthorized(errors.New("security-switch: authentication failed")))
+		apperrors.WriteAppError(w, apperrors.NewUnauthorized(errors.New("security-switch: authentication failed")))
 	default:
 		isError = true
 		h.logger().Error("login: database-vault call failed", "error", result.Err)
-		writeAppError(w, mapDBVaultError(result.Err))
+		apperrors.WriteAppError(w, mapDBVaultError(result.Err))
 	}
 }
 
@@ -272,7 +272,7 @@ func mapNetworkManagerLikeError(err error, denied error) *apperrors.AppError {
 // never risks writing a credential to the log.
 func (h *Handler) failValidation(w http.ResponseWriter, endpoint string, err error) {
 	h.logger().Warn("validation failed", "endpoint", endpoint, "error", err)
-	writeAppError(w, apperrors.NewBadRequest(err))
+	apperrors.WriteAppError(w, apperrors.NewBadRequest(err))
 }
 
 // registerResponse is the JSON body Register writes on success.
@@ -290,23 +290,4 @@ type registerResponse struct {
 // loginResponse is the JSON body Login writes on success.
 type loginResponse struct {
 	Status string `json:"status"`
-}
-
-// appErrorResponse is the JSON body written for every non-2xx response:
-// only the AppError's Public message, never its Internal detail.
-type appErrorResponse struct {
-	Error string `json:"error"`
-}
-
-// writeAppError writes appErr.Status and a body containing only
-// appErr.Public - appErr.Internal never reaches the response.
-func writeAppError(w http.ResponseWriter, appErr *apperrors.AppError) {
-	writeJSON(w, appErr.Status, appErrorResponse{Error: appErr.Public})
-}
-
-// writeJSON writes status and body, JSON-encoded, to w.
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
 }

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/validation"
 	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/dbvault"
 	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/networkmanager"
@@ -78,7 +80,7 @@ func newTestHandler(dbVault DatabaseVaultClient, networkManager NetworkManagerCl
 	h := &Handler{
 		DBVault:        dbVault,
 		NetworkManager: networkManager,
-		Metrics:        &Counters{},
+		Metrics:        &metrics.RequestCounters{},
 		Logger:         logger,
 	}
 	return h, &logBuf
@@ -265,7 +267,7 @@ func TestHandler_Register_ValidationFailure(t *testing.T) {
 				t.Fatal("SS-F-03: a validation failure must not forward the request to Database-Vault")
 			}
 
-			var resp appErrorResponse
+			var resp apperrors.ErrorResponse
 			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 				t.Fatalf("decode response: %v", err)
 			}
@@ -395,7 +397,7 @@ func TestHandler_Login_ValidationFailure(t *testing.T) {
 				t.Fatal("SS-F-03: a validation failure must not forward the request to Database-Vault")
 			}
 
-			var resp appErrorResponse
+			var resp apperrors.ErrorResponse
 			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 				t.Fatalf("decode response: %v", err)
 			}

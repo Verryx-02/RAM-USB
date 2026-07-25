@@ -9,16 +9,9 @@ import (
 	"net/http"
 
 	stepca "github.com/smallstep/certificates/ca"
-)
 
-// DialFunc dials a single network connection for this package's outbound
-// HTTP traffic. Its signature matches (*pkg/mesh.Server).Dial and
-// (*net.Dialer).DialContext exactly, so either can be passed directly as
-// the dial argument to NewClientWithDialer/NewServerWithDialer/
-// RouteThroughDialer - in particular a mesh-joined service's own
-// meshNode.Dial, to route this package's traffic through its mesh
-// identity instead of plain DNS/TCP (NET-F-01, NM-F-04).
-type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+	"github.com/Verryx-02/RAM-USB/pkg/mesh"
+)
 
 // ErrUnexpectedTransportType is returned when the *http.Client this
 // package is asked to route isn't backed by a *http.Transport - the same
@@ -30,29 +23,6 @@ type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 // without warning. Rather than silently leaving outbound traffic
 // unrouted, RouteThroughDialer fails closed (RD-04) when this happens.
 var ErrUnexpectedTransportType = errors.New("pki: client.Transport is not a *http.Transport; dialer routing cannot be installed")
-
-// ErrServerDialerUnsupported is returned by NewServerWithDialer when a
-// non-nil dial is supplied. Investigated directly against the pinned
-// github.com/smallstep/certificates@v0.30.2 source
-// (ca.Client.GetServerTLSConfig, called internally by ca.BootstrapServer,
-// in ca/tls.go): the *http.Transport its background certificate-renewal
-// goroutine dials through (built by ca's own unexported getDefaultTransport
-// + Client.buildDialTLSContext) is constructed entirely inside that call
-// and is never returned to the caller - GetServerTLSConfig hands back only
-// the resulting *tls.Config, and BootstrapServer only ever exposes that
-// *tls.Config (as base.TLSConfig), discarding the transport. Unlike
-// BootstrapClient (whose returned *http.Client.Transport IS that same
-// renewal transport - see RouteThroughDialer), there is no reference to it
-// anywhere reachable from BootstrapServer's return value.
-//
-// This means a bootstrapped server's own outbound renewal calls back to
-// the Certificate-Authority cannot be routed through a custom dialer using
-// only this library version's public API. Rather than accepting the
-// option and silently leaving that traffic unrouted, NewServerWithDialer
-// fails loud (RD-04) so a caller relying on mesh-only reachability finds
-// out immediately, not the first time a renewal silently fails after the
-// Certificate-Authority stops being reachable over plain DNS/TCP.
-var ErrServerDialerUnsupported = errors.New("pki: a bootstrapped server's own certificate-renewal traffic cannot be routed through a custom dialer with the pinned smallstep/certificates version")
 
 // NewClientWithDialer is NewClient, except every outbound connection the
 // returned *http.Client makes AFTER this function returns - every request
@@ -75,7 +45,7 @@ var ErrServerDialerUnsupported = errors.New("pki: a bootstrapped server's own ce
 //
 // See RouteThroughDialer's doc comment for the mechanism and the specific
 // undocumented library behavior it relies on.
-func NewClientWithDialer(ctx context.Context, token string, dial DialFunc) (*http.Client, error) {
+func NewClientWithDialer(ctx context.Context, token string, dial mesh.DialFunc) (*http.Client, error) {
 	client, err := stepca.BootstrapClient(ctx, token)
 	if err != nil {
 		return nil, err
@@ -87,19 +57,6 @@ func NewClientWithDialer(ctx context.Context, token string, dial DialFunc) (*htt
 		return nil, err
 	}
 	return client, nil
-}
-
-// NewServerWithDialer is NewServer, except a non-nil dial is rejected with
-// ErrServerDialerUnsupported: see that error's doc comment for why no
-// interception point exists, in the pinned library version, for a
-// bootstrapped server's own certificate-renewal traffic. A nil dial makes
-// this call behave identically to NewServer (and NewServer is defined in
-// terms of this function, with a nil dial).
-func NewServerWithDialer(ctx context.Context, token string, base *http.Server, dial DialFunc) (*http.Server, error) {
-	if dial != nil {
-		return nil, ErrServerDialerUnsupported
-	}
-	return stepca.BootstrapServer(ctx, token, base)
 }
 
 // RouteThroughDialer reconfigures client - as returned by NewClient/
@@ -130,7 +87,7 @@ func NewServerWithDialer(ctx context.Context, token string, base *http.Server, d
 //
 // This mechanism is not a documented contract of the vendored library and
 // could break on a future version - see ErrUnexpectedTransportType.
-func RouteThroughDialer(client *http.Client, dial DialFunc) error {
+func RouteThroughDialer(client *http.Client, dial mesh.DialFunc) error {
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok {
 		return fmt.Errorf("%w: got %T", ErrUnexpectedTransportType, client.Transport)

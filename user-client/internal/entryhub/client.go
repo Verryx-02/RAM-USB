@@ -57,8 +57,8 @@ var ErrUnreachable = errors.New("entryhub: could not reach entry-hub")
 
 // Client sends registration and login requests to Entry-Hub.
 type Client struct {
-	// HTTPClient performs the actual HTTP call. If nil, New's default
-	// (a plain *http.Client with defaultTimeout) is used.
+	// HTTPClient performs the actual HTTP call. New's default is a plain
+	// *http.Client with defaultTimeout.
 	HTTPClient *http.Client
 
 	// BaseURL is Entry-Hub's base URL (e.g. "https://entry-hub.mesh"),
@@ -73,14 +73,6 @@ func New(baseURL string) *Client {
 		HTTPClient: &http.Client{Timeout: defaultTimeout},
 		BaseURL:    baseURL,
 	}
-}
-
-// httpClient returns c.HTTPClient, or a default-timeout client if unset.
-func (c *Client) httpClient() *http.Client {
-	if c.HTTPClient != nil {
-		return c.HTTPClient
-	}
-	return &http.Client{Timeout: defaultTimeout}
 }
 
 // RegisterResult holds Entry-Hub's response to a successful registration
@@ -178,7 +170,7 @@ func (c *Client) post(ctx context.Context, path string, body any) ([]byte, int, 
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient().Do(httpReq)
+	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}

@@ -68,6 +68,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
@@ -126,7 +127,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	listenAddr, err := requireEnv(envListenAddr)
+	listenAddr, err := env.Require(envListenAddr)
 	if err != nil {
 		return err
 	}
@@ -141,7 +142,7 @@ func run() error {
 		DirMaker: posixuser.RealDirMaker{},
 	}
 
-	counters := &httpapi.Counters{}
+	counters := &metrics.RequestCounters{}
 
 	handler := &httpapi.Handler{
 		Creator: creator,
@@ -198,16 +199,6 @@ func run() error {
 	}
 }
 
-// requireEnv reads name from the environment, failing closed (RD-04) if
-// it is unset or empty.
-func requireEnv(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-	return value, nil
-}
-
 // buildServerTLSConfig bootstraps this server's one TLS identity from the
 // Certificate-Authority (CA-F-04, PKI-F-01), using pki.LoadBootstrapToken's
 // single-use token exactly once. The returned *tls.Config carries no
@@ -257,7 +248,7 @@ func buildMetricsClient(tlsConfig *tls.Config) (mqtt.Client, error) {
 
 	mqttTLSConfig := metrics.TLSConfig(pki.ClientTLSConfig(tlsConfig, metrics.OrganizationMQTTBroker))
 
-	client, err := metrics.NewClient(brokerURL, mqttTLSConfig, metricsClientID, connectTimeout)
+	client, err := metrics.NewClient(brokerURL, mqttTLSConfig, metricsClientID, connectTimeout, nil)
 	if err != nil {
 		return nil, err
 	}

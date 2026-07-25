@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/password"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/registration"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/storage"
@@ -75,7 +77,7 @@ func newTestHandler(store registration.Storage, posixProvisioner registration.PO
 		LoginStore:       loginStore,
 		MasterKey:        testMasterKey,
 		Pepper:           testPepper,
-		Metrics:          &Counters{},
+		Metrics:          &metrics.RequestCounters{},
 		Logger:           logger,
 	}
 	return h, &logBuf
@@ -188,7 +190,7 @@ func TestHandler_Register_ValidationFailure(t *testing.T) {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 			}
 
-			var resp appErrorResponse
+			var resp apperrors.ErrorResponse
 			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 				t.Fatalf("decode response: %v", err)
 			}
@@ -274,7 +276,7 @@ func TestHandler_Login_UnauthorizedDoesNotLeakDetail(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 
-	var resp appErrorResponse
+	var resp apperrors.ErrorResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -309,7 +311,7 @@ func TestHandler_Login_ValidationFailure(t *testing.T) {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 			}
 
-			var resp appErrorResponse
+			var resp apperrors.ErrorResponse
 			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 				t.Fatalf("decode response: %v", err)
 			}

@@ -340,6 +340,16 @@ func (s *Server) Listen(network, addr string) (net.Listener, error) {
 // that peer is up yet (see "Data-plane readiness is NOT a resolution
 // gate"), so a dial issued right after resolution can still fail or hang
 // once or twice before the lazy handshake it itself triggers completes.
+// DialFunc dials a network connection to addr, exactly the shape
+// (*Server).Dial and (*net.Dialer).DialContext both already implement.
+// pkg/metrics.NewClient and pkg/pki.NewClientWithDialer/RouteThroughDialer
+// each accept one, so a mesh-joined service's own meshNode.Dial can be
+// passed directly to route that package's outbound traffic through this
+// server's mesh identity instead of plain DNS/TCP (NET-F-01, NM-F-04).
+// Defined here, this type's one real implementation, rather than
+// independently in each consuming package.
+type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+
 func (s *Server) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	var lastErr error
 	for {

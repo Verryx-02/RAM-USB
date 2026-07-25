@@ -8,7 +8,8 @@ import (
 	"net/http"
 	"sync/atomic"
 	"testing"
-	"time"
+
+	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 )
 
 // Requirement: NET-F-01, NM-F-04
@@ -32,7 +33,7 @@ func TestRouteThroughDialer_InstallsDialer(t *testing.T) {
 
 	var dialCalled int32
 	wantErr := errors.New("fake dialer invoked")
-	fakeDial := DialFunc(func(context.Context, string, string) (net.Conn, error) {
+	fakeDial := mesh.DialFunc(func(context.Context, string, string) (net.Conn, error) {
 		atomic.AddInt32(&dialCalled, 1)
 		return nil, wantErr
 	})
@@ -71,7 +72,7 @@ func TestRouteThroughDialer_NoExistingDialTLSContext(t *testing.T) {
 	client := &http.Client{Transport: transport}
 
 	var dialCalled int32
-	fakeDial := DialFunc(func(context.Context, string, string) (net.Conn, error) {
+	fakeDial := mesh.DialFunc(func(context.Context, string, string) (net.Conn, error) {
 		atomic.AddInt32(&dialCalled, 1)
 		return nil, errors.New("fake dialer invoked")
 	})
@@ -121,35 +122,5 @@ func TestNewClientWithDialer_NilDialerMatchesNewClient(t *testing.T) {
 	_, err := NewClientWithDialer(context.Background(), "not-a-real-token", nil)
 	if err == nil {
 		t.Fatal("NewClientWithDialer() with a malformed token and a nil dialer error = nil, want non-nil")
-	}
-}
-
-// Requirement: NET-F-01, NM-F-04
-//
-// NewServerWithDialer rejects any non-nil dialer before ever attempting a
-// real network call (RD-04, fail-secure) - the malformed token here would
-// also fail on its own, but this test's point is that the dialer
-// rejection happens first and unconditionally, not only when a real CA
-// bootstrap would otherwise have succeeded.
-func TestNewServerWithDialer_RejectsDialer(t *testing.T) {
-	fakeDial := DialFunc(func(context.Context, string, string) (net.Conn, error) {
-		t.Fatal("dial must never be invoked; NewServerWithDialer must reject before attempting any network call")
-		return nil, nil
-	})
-
-	_, err := NewServerWithDialer(context.Background(), "not-a-real-token", &http.Server{ReadHeaderTimeout: 5 * time.Second}, fakeDial)
-	if !errors.Is(err, ErrServerDialerUnsupported) {
-		t.Fatalf("NewServerWithDialer() error = %v, want %v", err, ErrServerDialerUnsupported)
-	}
-}
-
-// Requirement: CA-F-04
-//
-// NewServerWithDialer with a nil dial is a pure regression check, mirroring
-// TestNewClientWithDialer_NilDialerMatchesNewClient.
-func TestNewServerWithDialer_NilDialerMatchesNewServer(t *testing.T) {
-	_, err := NewServerWithDialer(context.Background(), "not-a-real-token", &http.Server{ReadHeaderTimeout: 5 * time.Second}, nil)
-	if err == nil {
-		t.Fatal("NewServerWithDialer() with a malformed token and a nil dialer error = nil, want non-nil")
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 )
 
 // caURLEnvVar names the environment variable that points this test at a
@@ -214,7 +216,7 @@ func TestNewClientWithDialer_DialerIsInvoked(t *testing.T) {
 
 	errFakeDialerInvoked := errors.New("fake dialer invoked: real network never reached")
 	var dialCount int32
-	fakeDial := DialFunc(func(context.Context, string, string) (net.Conn, error) {
+	fakeDial := mesh.DialFunc(func(context.Context, string, string) (net.Conn, error) {
 		atomic.AddInt32(&dialCount, 1)
 		return nil, errFakeDialerInvoked
 	})

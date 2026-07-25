@@ -9,20 +9,12 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+
+	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 )
 
-// DialFunc dials a network connection to addr, exactly the shape
-// pkg/mesh.Server.Dial and net.Dialer.DialContext both already implement
-// (also matching the inline dial parameter type every mesh-aware HTTP
-// client builder in this codebase already uses, e.g.
-// services/security-switch/cmd/security-switch/main.go's
-// buildDatabaseVaultClient). WithDial accepts one so NewClient's MQTT
-// connection can be routed through the private mesh instead of the
-// default plain TCP dial - see WithDial.
-type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
-
 // meshOpenConnectionFn adapts dial into a paho mqtt.OpenConnectionFunc for
-// NewClient/WithDial.
+// NewClient's dial parameter.
 //
 // Confirmed by reading the pinned github.com/eclipse/paho.mqtt.golang@v1.5.1
 // source directly: once options.CustomOpenConnectionFn is set,
@@ -44,7 +36,7 @@ type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 // context.Background(), timeout) - timeout is connectTimeout, the same
 // value NewClient's default path already uses for SetConnectTimeout,
 // keeping the two paths' connection-establishment budget identical.
-func meshOpenConnectionFn(dial DialFunc, tlsConfig *tls.Config, timeout time.Duration) mqtt.OpenConnectionFunc {
+func meshOpenConnectionFn(dial mesh.DialFunc, tlsConfig *tls.Config, timeout time.Duration) mqtt.OpenConnectionFunc {
 	return func(uri *url.URL, _ mqtt.ClientOptions) (net.Conn, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()

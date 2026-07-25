@@ -102,6 +102,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
@@ -198,7 +199,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	listenAddr, err := requireEnv(envListenAddr)
+	listenAddr, err := env.Require(envListenAddr)
 	if err != nil {
 		return err
 	}
@@ -228,7 +229,7 @@ func run() error {
 		return fmt.Errorf("build network-manager client: %w", err)
 	}
 
-	counters := &httpapi.Counters{}
+	counters := &metrics.RequestCounters{}
 
 	handler := &httpapi.Handler{
 		DBVault:        httpapi.DBVaultAdapter{Client: dbVaultClient, BaseURL: dbVaultURL},
@@ -282,16 +283,6 @@ func run() error {
 		}
 		return fmt.Errorf("serve: %w", err)
 	}
-}
-
-// requireEnv reads name from the environment, failing closed (RD-04) if
-// it is unset or empty.
-func requireEnv(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-	return value, nil
 }
 
 // buildServerTLSConfig bootstraps this server's one TLS identity from the
@@ -353,7 +344,7 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 // plain *http.Transport already routes every TCP dial through the mesh -
 // this call physically cannot reach Database-Vault any other way.
 func buildDatabaseVaultClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
-	baseURL, err := requireEnv(envDatabaseVaultURL)
+	baseURL, err := env.Require(envDatabaseVaultURL)
 	if err != nil {
 		return nil, "", err
 	}
@@ -381,7 +372,7 @@ func buildDatabaseVaultClient(serverTLSConfig *tls.Config) (*http.Client, string
 // restriction on the calling side), same reasoning as
 // buildDatabaseVaultClient above.
 func buildNetworkManagerClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
-	baseURL, err := requireEnv(envNetworkManagerURL)
+	baseURL, err := env.Require(envNetworkManagerURL)
 	if err != nil {
 		return nil, "", err
 	}
@@ -414,7 +405,7 @@ func buildMetricsClient(serverTLSConfig *tls.Config) (mqtt.Client, error) {
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(serverTLSConfig, metrics.OrganizationMQTTBroker))
 
-	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout)
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, nil)
 	if err != nil {
 		return nil, err
 	}

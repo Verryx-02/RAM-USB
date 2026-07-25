@@ -227,7 +227,7 @@ func testMQTTClient(t *testing.T, caURL, container, identity, brokerURL, clientI
 	}
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(base, metrics.OrganizationMQTTBroker))
 
-	mqttClient, err := metrics.NewClient(brokerURL, tlsConfig, clientID, connectTimeoutTest)
+	mqttClient, err := metrics.NewClient(brokerURL, tlsConfig, clientID, connectTimeoutTest, nil)
 	if err != nil {
 		t.Fatalf("metrics.NewClient(%s) error = %v", identity, err)
 	}

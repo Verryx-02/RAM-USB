@@ -101,8 +101,9 @@
 // counterpart of WrapRoundTripper's HTTP-level check above) - instead of a
 // second, independent bootstrap-token exchange or the static cert/key
 // files this process used before. The MQTT connection itself is routed
-// through meshNode.Dial too (metrics.WithDial), now that the MQTT broker's
-// mesh identity is reachable that way (see policy.go's TagMQTTBroker rule).
+// through meshNode.Dial too (metrics.NewClient's dial parameter), now that
+// the MQTT broker's mesh identity is reachable that way (see policy.go's
+// TagMQTTBroker rule).
 //
 // See also deployments/compose/certificate-authority.yml's certificate-authority-init
 // service: the dev Certificate-Authority container needs a one-time,
@@ -128,6 +129,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
@@ -265,11 +267,11 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	listenAddr, err := requireEnv(envListenAddr)
+	listenAddr, err := env.Require(envListenAddr)
 	if err != nil {
 		return err
 	}
-	loginListenAddr, err := requireEnv(envLoginListenAddr)
+	loginListenAddr, err := env.Require(envLoginListenAddr)
 	if err != nil {
 		return err
 	}
@@ -298,7 +300,7 @@ func run() error {
 		return fmt.Errorf("build security-switch client: %w", err)
 	}
 
-	counters := &httpapi.Counters{}
+	counters := &metrics.RequestCounters{}
 
 	handler := &httpapi.Handler{
 		SecuritySwitch: httpapi.SecuritySwitchAdapter{Client: securitySwitchClient, BaseURL: securitySwitchURL},
@@ -378,16 +380,6 @@ func run() error {
 	}
 }
 
-// requireEnv reads name from the environment, failing closed (RD-04) if
-// it is unset or empty.
-func requireEnv(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-	return value, nil
-}
-
 // buildMeshNode joins this process to the private Headscale mesh (see this
 // file's package doc comment, "Mesh membership") using envMeshDir/
 // envMeshHostname/envMeshControlURL/envMeshAuthKey, failing closed (RD-04)
@@ -395,19 +387,19 @@ func requireEnv(name string) (string, error) {
 // lives for this process's whole lifetime (closed via a deferred call in
 // run).
 func buildMeshNode(ctx context.Context) (*mesh.Server, error) {
-	dir, err := requireEnv(envMeshDir)
+	dir, err := env.Require(envMeshDir)
 	if err != nil {
 		return nil, err
 	}
-	hostname, err := requireEnv(envMeshHostname)
+	hostname, err := env.Require(envMeshHostname)
 	if err != nil {
 		return nil, err
 	}
-	controlURL, err := requireEnv(envMeshControlURL)
+	controlURL, err := env.Require(envMeshControlURL)
 	if err != nil {
 		return nil, err
 	}
-	authKey, err := requireEnv(envMeshAuthKey)
+	authKey, err := env.Require(envMeshAuthKey)
 	if err != nil {
 		return nil, err
 	}
@@ -431,11 +423,11 @@ func buildMeshNode(ctx context.Context) (*mesh.Server, error) {
 // server.NewTLSConfig accepts any client, by requirement (see
 // internal/server's doc comment).
 func buildServerTLSConfig() (*tls.Config, error) {
-	certPath, err := requireEnv(envServerCert)
+	certPath, err := env.Require(envServerCert)
 	if err != nil {
 		return nil, err
 	}
-	keyPath, err := requireEnv(envServerKey)
+	keyPath, err := env.Require(envServerKey)
 	if err != nil {
 		return nil, err
 	}
@@ -475,8 +467,8 @@ func buildServerTLSConfig() (*tls.Config, error) {
 // call this client makes, including its own background certificate
 // renewal, is routed through the mesh (see this file's package doc
 // comment, "Mesh membership").
-func buildSecuritySwitchClient(ctx context.Context, dial pki.DialFunc) (client *http.Client, baseURL string, mqttTLSBase *tls.Config, err error) {
-	baseURL, err = requireEnv(envSecuritySwitchURL)
+func buildSecuritySwitchClient(ctx context.Context, dial mesh.DialFunc) (client *http.Client, baseURL string, mqttTLSBase *tls.Config, err error) {
+	baseURL, err = env.Require(envSecuritySwitchURL)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -526,7 +518,7 @@ func buildSecuritySwitchClient(ctx context.Context, dial pki.DialFunc) (client *
 // error) means metrics publishing is not configured (envMQTTBrokerURL
 // unset) - this process still relays registration/login traffic without
 // it.
-func buildMetricsClient(mqttTLSBase *tls.Config, dial metrics.DialFunc) (mqtt.Client, error) {
+func buildMetricsClient(mqttTLSBase *tls.Config, dial mesh.DialFunc) (mqtt.Client, error) {
 	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
 	if !ok || brokerURL == "" {
 		slog.Warn("entry-hub: metrics publishing disabled, " + envMQTTBrokerURL + " is not set")
@@ -535,7 +527,7 @@ func buildMetricsClient(mqttTLSBase *tls.Config, dial metrics.DialFunc) (mqtt.Cl
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(mqttTLSBase, metrics.OrganizationMQTTBroker))
 
-	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, metrics.WithDial(dial))
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, dial)
 	if err != nil {
 		return nil, err
 	}

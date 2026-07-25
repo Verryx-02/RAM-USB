@@ -33,8 +33,8 @@ type bootstrapTokenClaims struct {
 //
 // Unlike NewClient/NewServer, RootCA does NOT consume token's single use:
 // it never calls the CA's Sign endpoint (CA-F-04's one-time exchange,
-// performed only by NewClient/NewServer/NewClientWithDialer/
-// NewServerWithDialer), only the CA's own public, root-fingerprint-pinned
+// performed only by NewClient/NewServer/NewClientWithDialer), only the
+// CA's own public, root-fingerprint-pinned
 // /root/:sha endpoint (github.com/smallstep/certificates@v0.30.2/ca/
 // client.go's Client.RootWithContext), which requires no bootstrap-token
 // credential at all - only already knowing the pinned fingerprint, exactly

@@ -1,14 +1,14 @@
-package httpapi
+package metrics
 
 import (
 	"testing"
 	"time"
 )
 
-// Requirement: DV-F-16
-// Requirement: DV-F-17
-func TestCounters_SnapshotReflectsRecordedRequests(t *testing.T) {
-	c := &Counters{}
+// Requirement: EH-F-10
+// Requirement: EH-F-11
+func TestRequestCounters_SnapshotReflectsRecordedRequests(t *testing.T) {
+	c := &RequestCounters{}
 
 	c.BeginRequest()
 	c.EndRequest(10*time.Millisecond, false)
@@ -32,20 +32,20 @@ func TestCounters_SnapshotReflectsRecordedRequests(t *testing.T) {
 	}
 }
 
-// Requirement: DV-F-17
-func TestCounters_SnapshotWithNoRequestsHasZeroAverage(t *testing.T) {
-	c := &Counters{}
+// Requirement: EH-F-11
+func TestRequestCounters_SnapshotWithNoRequestsHasZeroAverage(t *testing.T) {
+	c := &RequestCounters{}
 
 	got := c.Snapshot()
 
 	if got.RequestCount != 0 || got.AverageResponseTimeMs != 0 {
-		t.Fatalf("Snapshot on an empty Counters = %+v, want all zero", got)
+		t.Fatalf("Snapshot on an empty RequestCounters = %+v, want all zero", got)
 	}
 }
 
-// Requirement: DV-F-16
-func TestCounters_ActiveConnectionsTracksInFlightRequests(t *testing.T) {
-	c := &Counters{}
+// Requirement: EH-F-10
+func TestRequestCounters_ActiveConnectionsTracksInFlightRequests(t *testing.T) {
+	c := &RequestCounters{}
 
 	c.BeginRequest()
 	c.BeginRequest()
@@ -63,8 +63,8 @@ func TestCounters_ActiveConnectionsTracksInFlightRequests(t *testing.T) {
 
 // Requirement: DV-F-16
 // Requirement: DV-F-17
-func TestCounters_TrackRecordsSuccessfulRequest(t *testing.T) {
-	c := &Counters{}
+func TestRequestCounters_TrackRecordsSuccessfulRequest(t *testing.T) {
+	c := &RequestCounters{}
 
 	isError := false
 	end := c.Track(&isError)
@@ -87,8 +87,8 @@ func TestCounters_TrackRecordsSuccessfulRequest(t *testing.T) {
 
 // Requirement: DV-F-16
 // Requirement: DV-F-17
-func TestCounters_TrackReadsIsErrorAtDeferTime(t *testing.T) {
-	c := &Counters{}
+func TestRequestCounters_TrackReadsIsErrorAtDeferTime(t *testing.T) {
+	c := &RequestCounters{}
 
 	// isError is flipped to true AFTER Track is called but BEFORE the
 	// returned func runs — mirroring how a handler sets isError partway

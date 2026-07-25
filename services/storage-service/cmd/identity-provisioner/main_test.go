@@ -16,54 +16,6 @@ import (
 	"time"
 )
 
-// Requirement: ST-F-11
-func TestRequireEnv(t *testing.T) {
-	tests := []struct {
-		name     string
-		setEnv   bool
-		envValue string
-		wantErr  bool
-	}{
-		{name: "present and non-empty", setEnv: true, envValue: "a-value", wantErr: false},
-		{name: "set to empty string", setEnv: true, envValue: "", wantErr: true},
-		{name: "unset", setEnv: false, wantErr: true},
-	}
-
-	const varName = "IDENTITY_PROVISIONER_TEST_VAR"
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.setEnv {
-				t.Setenv(varName, tt.envValue)
-			} else {
-				prevValue, hadValue := os.LookupEnv(varName)
-				if err := os.Unsetenv(varName); err != nil {
-					t.Fatalf("os.Unsetenv() error = %v, want nil", err)
-				}
-				t.Cleanup(func() {
-					if hadValue {
-						_ = os.Setenv(varName, prevValue)
-					}
-				})
-			}
-
-			value, err := requireEnv(varName)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("requireEnv() error = nil, want non-nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("requireEnv() error = %v, want nil", err)
-			}
-			if value != tt.envValue {
-				t.Fatalf("requireEnv() = %q, want %q", value, tt.envValue)
-			}
-		})
-	}
-}
-
 // fakeLeaf generates a throwaway self-signed ECDSA certificate/key pair,
 // standing in for pkg/pki's own real CA-issued identity - this test only
 // needs SOMETHING refreshCertificate can encode and write to disk, not a

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
 )
 
@@ -126,7 +127,7 @@ func newTestHandlerFull(mesh MeshProvisioner, grants GrantRecorder, meshUsers Me
 		Mesh:      mesh,
 		Grants:    grants,
 		MeshUsers: meshUsers,
-		Metrics:   &Counters{},
+		Metrics:   &metrics.RequestCounters{},
 		Logger:    logger,
 	}
 	return h, &logBuf

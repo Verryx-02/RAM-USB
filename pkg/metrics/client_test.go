@@ -24,17 +24,16 @@ const testClientConnectTimeout = 5 * time.Second
 // Requirement: NM-F-17
 // Requirement: CA-F-03
 //
-// Regression coverage: NewClient's pre-existing default behavior (no
-// Option passed) must be unaffected by WithDial's addition - the exact
-// same plain TCP-then-TLS connection every existing call site
-// (services/*/cmd/*/main.go, services/metrics-collector/cmd/
+// Regression coverage: NewClient's pre-existing default behavior (a nil
+// dial) is the exact same plain TCP-then-TLS connection every existing
+// call site (services/*/cmd/*/main.go, services/metrics-collector/cmd/
 // metrics-collector/main.go) still gets today.
 func TestNewClient_DefaultDial_ConnectsWithoutAnyOption(t *testing.T) {
 	tlsConfig, brokerCert := newMQTTClientTLSConfig(t, metrics.OrganizationMQTTBroker)
 	addr, stop := startFakeMQTTBroker(t, brokerCert)
 	defer stop()
 
-	client, err := metrics.NewClient("tls://"+addr, tlsConfig, "default-dial-client", testClientConnectTimeout)
+	client, err := metrics.NewClient("tls://"+addr, tlsConfig, "default-dial-client", testClientConnectTimeout, nil)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v, want nil", err)
 	}
@@ -48,7 +47,7 @@ func TestNewClient_DefaultDial_ConnectsWithoutAnyOption(t *testing.T) {
 // Requirement: NET-F-02
 // Requirement: RD-04
 //
-// A dialer supplied via WithDial (standing in for pkg/mesh.Server.Dial)
+// A dialer supplied to NewClient (standing in for pkg/mesh.Server.Dial)
 // must actually be invoked, and the connection must still complete -
 // proving the mesh-dial path is real, not merely accepted and ignored.
 func TestNewClient_WithDial_InvokesCustomDialerAndConnects(t *testing.T) {
@@ -62,7 +61,7 @@ func TestNewClient_WithDial_InvokesCustomDialerAndConnects(t *testing.T) {
 		return (&net.Dialer{}).DialContext(ctx, network, dialAddr)
 	}
 
-	client, err := metrics.NewClient("tls://"+addr, tlsConfig, "mesh-dial-client", testClientConnectTimeout, metrics.WithDial(fakeDial))
+	client, err := metrics.NewClient("tls://"+addr, tlsConfig, "mesh-dial-client", testClientConnectTimeout, fakeDial)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v, want nil", err)
 	}
@@ -90,7 +89,7 @@ func TestNewClient_WithDial_DialerErrorSurfaces(t *testing.T) {
 		return nil, wantErr
 	}
 
-	_, err := metrics.NewClient("tls://"+addr, tlsConfig, "failing-dial-client", testClientConnectTimeout, metrics.WithDial(failingDial))
+	_, err := metrics.NewClient("tls://"+addr, tlsConfig, "failing-dial-client", testClientConnectTimeout, failingDial)
 	if err == nil {
 		t.Fatal("NewClient() error = nil, want an error when the custom dialer always fails")
 	}
@@ -98,7 +97,7 @@ func TestNewClient_WithDial_DialerErrorSurfaces(t *testing.T) {
 
 // Requirement: PKI-F-02
 //
-// The mesh-dial path (WithDial) must enforce exactly the same
+// The mesh-dial path must enforce exactly the same
 // organization check the default dial path already enforces
 // (TestTLSConfig_AcceptsOnlyMQTTBrokerOrganization in tlsconfig_test.go) -
 // the dial mechanism changing must never silently degrade the TLS
@@ -131,7 +130,7 @@ func TestNewClient_WithDial_EnforcesMQTTBrokerOrganization(t *testing.T) {
 				return (&net.Dialer{}).DialContext(ctx, network, dialAddr)
 			}
 
-			client, err := metrics.NewClient("tls://"+addr, tlsConfig, "org-check-client", testClientConnectTimeout, metrics.WithDial(dial))
+			client, err := metrics.NewClient("tls://"+addr, tlsConfig, "org-check-client", testClientConnectTimeout, dial)
 			if tt.wantConnectErr {
 				if err == nil {
 					client.Disconnect(250)

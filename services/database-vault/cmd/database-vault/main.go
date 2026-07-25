@@ -117,6 +117,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
@@ -244,12 +245,12 @@ func run() error {
 		return fmt.Errorf("load pepper: %w", err)
 	}
 
-	listenAddr, err := requireEnv(envListenAddr)
+	listenAddr, err := env.Require(envListenAddr)
 	if err != nil {
 		return err
 	}
 
-	publicKeyListenAddr, err := requireEnv(envPublicKeyListenAddr)
+	publicKeyListenAddr, err := env.Require(envPublicKeyListenAddr)
 	if err != nil {
 		return err
 	}
@@ -265,7 +266,7 @@ func run() error {
 		return fmt.Errorf("build server tls config: %w", err)
 	}
 
-	databaseURL, err := requireEnv(envDatabaseURL)
+	databaseURL, err := env.Require(envDatabaseURL)
 	if err != nil {
 		return err
 	}
@@ -295,7 +296,7 @@ func run() error {
 		return fmt.Errorf("build storage-service client: %w", err)
 	}
 
-	counters := &httpapi.Counters{}
+	counters := &metrics.RequestCounters{}
 
 	handler := &httpapi.Handler{
 		Store:            registration.StorageAdapter{DB: storage.PoolBeginner{Pool: pool}},
@@ -403,22 +404,12 @@ func run() error {
 	}
 }
 
-// requireEnv reads name from the environment, failing closed (RD-04) if
-// it is unset or empty.
-func requireEnv(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-	return value, nil
-}
-
 // getEnvOrDefault reads name from the environment, returning fallback if it
-// is unset or empty. Unlike requireEnv, an unset value here is not a
+// is unset or empty. Unlike env.Require, an unset value here is not a
 // startup failure - only envMigrationsDir uses this, since it has a
 // sensible checked-in-path default (see defaultMigrationsDir), unlike
 // every other value in this file, which has no safe default and so must
-// come from requireEnv.
+// come from env.Require.
 func getEnvOrDefault(name, fallback string) string {
 	value, ok := os.LookupEnv(name)
 	if !ok || value == "" {
@@ -490,7 +481,7 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 // with no application-level dial injection needed (see this file's
 // package doc comment).
 func buildStorageServiceClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
-	baseURL, err := requireEnv(envStorageServiceURL)
+	baseURL, err := env.Require(envStorageServiceURL)
 	if err != nil {
 		return nil, "", err
 	}
@@ -525,7 +516,7 @@ func buildMetricsClient(serverTLSConfig *tls.Config) (mqtt.Client, error) {
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(serverTLSConfig, metrics.OrganizationMQTTBroker))
 
-	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout)
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, nil)
 	if err != nil {
 		return nil, err
 	}

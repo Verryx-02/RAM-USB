@@ -52,6 +52,8 @@ import (
 	"errors"
 	"net/http"
 	"os"
+
+	stepca "github.com/smallstep/certificates/ca"
 )
 
 // BootstrapTokenEnvVar names the environment variable holding this
@@ -88,15 +90,24 @@ func LoadBootstrapToken() (string, error) {
 // lifetime of ctx — callers should pass a context that lives at least as
 // long as the server itself, not a short-lived per-request context.
 //
-// This is NewServerWithDialer with a nil dial — every outbound call this
-// package makes (the initial bootstrap exchange, and the server's own
-// background renewal calls back to the Certificate-Authority) goes out
-// over the process's default network stack, exactly as before dialer.go
-// was added. A caller that needs those calls routed through a mesh
-// identity instead should use NewServerWithDialer directly — see that
-// function's own doc comment for what it can and cannot route.
+// Every outbound call this package makes on base's behalf (the initial
+// bootstrap exchange, and the server's own background renewal calls back
+// to the Certificate-Authority) goes out over the process's default
+// network stack. Unlike NewClient/NewClientWithDialer, no dialer-injecting
+// variant exists here: github.com/smallstep/certificates@v0.30.2's
+// ca.Client.GetServerTLSConfig (called internally by ca.BootstrapServer,
+// in ca/tls.go) builds the *http.Transport its background
+// certificate-renewal goroutine dials through entirely inside that call
+// and never returns it to the caller - GetServerTLSConfig hands back only
+// the resulting *tls.Config, and BootstrapServer only ever exposes that
+// *tls.Config (as base.TLSConfig), discarding the transport. Unlike
+// BootstrapClient (whose returned *http.Client.Transport IS that same
+// renewal transport - see RouteThroughDialer), there is no reference to
+// it anywhere reachable from BootstrapServer's return value, so a
+// bootstrapped server's own outbound renewal traffic cannot be routed
+// through a custom dialer using only this library version's public API.
 func NewServer(ctx context.Context, token string, base *http.Server) (*http.Server, error) {
-	return NewServerWithDialer(ctx, token, base, nil)
+	return stepca.BootstrapServer(ctx, token, base)
 }
 
 // NewClient exchanges token for an initial certificate from the

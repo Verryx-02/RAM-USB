@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/services/storage-service/internal/httpapi"
 )
 
@@ -109,7 +110,7 @@ func TestHandler_CreateUser(t *testing.T) {
 			var logBuf bytes.Buffer
 			h := &httpapi.Handler{
 				Creator: creator,
-				Metrics: &httpapi.Counters{},
+				Metrics: &metrics.RequestCounters{},
 				Logger:  slog.New(slog.NewTextHandler(&logBuf, nil)),
 			}
 
@@ -171,7 +172,7 @@ func TestHandler_CreateUser_RejectedRequestNeverForgesALogLine(t *testing.T) {
 	var logBuf bytes.Buffer
 	h := &httpapi.Handler{
 		Creator: creator,
-		Metrics: &httpapi.Counters{},
+		Metrics: &metrics.RequestCounters{},
 		Logger:  slog.New(slog.NewTextHandler(&logBuf, nil)),
 	}
 
@@ -203,7 +204,7 @@ func TestHandler_CreateUser_ResponseShapeMatchesDatabaseVaultContract(t *testing
 	// that) so a contract drift between the two sides shows up as a
 	// failing test on this side too.
 	creator := &fakeCreator{}
-	h := &httpapi.Handler{Creator: creator, Metrics: &httpapi.Counters{}}
+	h := &httpapi.Handler{Creator: creator, Metrics: &metrics.RequestCounters{}}
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
 	rec := httptest.NewRecorder()
@@ -231,7 +232,7 @@ func TestHandler_CreateUser_ResponseShapeMatchesDatabaseVaultContract(t *testing
 // Requirement: ST-F-13
 func TestHandler_CreateUser_MetricsCounted(t *testing.T) {
 	creator := &fakeCreator{}
-	h := &httpapi.Handler{Creator: creator, Metrics: &httpapi.Counters{}}
+	h := &httpapi.Handler{Creator: creator, Metrics: &metrics.RequestCounters{}}
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
 	rec := httptest.NewRecorder()
@@ -251,7 +252,7 @@ func TestHandler_CreateUser_MetricsCounted(t *testing.T) {
 // Requirement: ST-F-13
 func TestHandler_CreateUser_MetricsCountsErrors(t *testing.T) {
 	creator := &fakeCreator{err: errors.New("useradd: some sensitive system detail")}
-	h := &httpapi.Handler{Creator: creator, Metrics: &httpapi.Counters{}}
+	h := &httpapi.Handler{Creator: creator, Metrics: &metrics.RequestCounters{}}
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
 	rec := httptest.NewRecorder()

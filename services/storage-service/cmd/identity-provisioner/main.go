@@ -45,6 +45,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/storage-service/internal/akcidentity"
@@ -112,11 +113,11 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	token, err := requireEnv(envBootstrapToken)
+	token, err := env.Require(envBootstrapToken)
 	if err != nil {
 		return err
 	}
-	databaseVaultURL, err := requireEnv(envDatabaseVaultURL)
+	databaseVaultURL, err := env.Require(envDatabaseVaultURL)
 	if err != nil {
 		return err
 	}
@@ -229,15 +230,4 @@ func refreshCertificate(getClientCertificate func(*tls.CertificateRequestInfo) (
 	}
 
 	return nil
-}
-
-// requireEnv reads name from the environment, failing closed (RD-04) if it
-// is unset or empty - same pattern as cmd/storage-service/main.go's own
-// requireEnv.
-func requireEnv(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-	return value, nil
 }

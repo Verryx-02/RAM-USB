@@ -47,6 +47,7 @@ import (
 	"regexp"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/storage"
 )
 
@@ -110,7 +111,7 @@ type PublicKeyHandler struct {
 	// Register/Login traffic — both count toward the same one
 	// service-wide metrics snapshot, there is no separate "public-key"
 	// metric.
-	Metrics *Counters
+	Metrics *metrics.RequestCounters
 
 	// Logger receives every structured log line this handler writes. If
 	// nil, slog.Default() is used, same fallback as Handler.Logger.
@@ -149,16 +150,16 @@ func (h *PublicKeyHandler) PublicKey(w http.ResponseWriter, r *http.Request) {
 		isError = true
 		if errors.Is(err, storage.ErrPosixUsernameNotFound) {
 			h.logger().Info("public-key: not found")
-			writeAppError(w, apperrors.NewNotFound(err))
+			apperrors.WriteAppError(w, apperrors.NewNotFound(err))
 			return
 		}
 		h.logger().Error("public-key: lookup failed", "error", err)
-		writeAppError(w, apperrors.NewInternal(err))
+		apperrors.WriteAppError(w, apperrors.NewInternal(err))
 		return
 	}
 
 	h.logger().Info("public-key: succeeded")
-	writeJSON(w, http.StatusOK, publicKeyResponse{SSHPublicKey: sshPublicKey})
+	apperrors.WriteJSON(w, http.StatusOK, publicKeyResponse{SSHPublicKey: sshPublicKey})
 }
 
 // publicKeyResponse is the JSON body PublicKey writes on success. No SRS or
