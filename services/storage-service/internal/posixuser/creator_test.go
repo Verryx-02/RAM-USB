@@ -101,10 +101,14 @@ func TestCreator_CreateUser_Success(t *testing.T) {
 		}
 	}
 
+	// Hardcoded literals, not fmt.Sprintf-ed from the chrootRootMode/
+	// dataDirMode constants themselves (ST-F-08): the constants and this
+	// expectation must move independently, or a wrong literal in the
+	// constant is invisible to this test.
 	wantDirCalls := []string{
-		fmt.Sprintf("mkdir:/storage/%s:%04o", username, chrootRootMode),
+		"mkdir:/storage/" + username + ":0711",
 		"chown:/storage/" + username + ":root",
-		fmt.Sprintf("mkdir:/storage/%s/data:%04o", username, dataDirMode),
+		"mkdir:/storage/" + username + "/data:0700",
 		"chown:/storage/" + username + "/data:" + username,
 	}
 	if len(dm.calls) != len(wantDirCalls) {
