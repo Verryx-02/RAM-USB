@@ -33,6 +33,10 @@ at-a-glance worklist; the full entries below are the detail/history.
 | KI-14 | Headscale missing from 2 security diagrams; certificate-authority-metrics missing from the deployment diagram | — |
 | KI-15 | §5.1 non-functional requirements have no `[Code]`/test link at all | user decision |
 | KI-19 | Entry-Hub/certificate-authority-metrics have no restart policy | user decision |
+| KI-20 | NM-F-12..16 (Headscale coordination/DNS cluster) have zero test coverage | user decision |
+| KI-21 | `TestStorageServiceSSHD_RealContainer_EnforcesHardening` fails/hangs in this dev sandbox | investigation |
+| KI-22 | Grafana -> TimescaleDB uses plaintext password auth, no mTLS (RNF-SEC-04 violation) | user decision |
+| KI-23 | Restarting a CA-F-04-bootstrapped service needs a manually-minted fresh token; only Certificate-Authority itself restarts with zero manual step | user decision |
 
 Everything else in this file (KI-01, KI-03–KI-05, KI-09–KI-11, KI-13,
 KI-16–KI-18) is `FIXED` — kept below for history/traceability, not part
@@ -606,6 +610,116 @@ of the active worklist.
   give these two the same "recover automatically from a transient error,
   don't silently stay dead" property every s6-supervised service now has,
   without needing to introduce s6-overlay just for a single process.
+
+## KI-20 — NM-F-12 through NM-F-16 (Headscale coordination/DNS cluster) have zero test coverage
+
+- **Found:** 2026-07-25/26, a comprehensive requirement-to-test inventory
+  audit (`consistency-agent`) cross-referencing every SRS requirement ID
+  against `// Requirement: <ID>` doc-comment tags in the real test suite
+  (CONTRIBUTING.md's own traceability convention).
+- **Area:** Network-Manager (Headscale coordination),
+  `docs/Software_Requirements_Specification.md` §4.6.
+- **Description:** NM-F-12 (pre-auth-key/ACL-tag administration restricted
+  to Network-Manager, verified via mTLS `organization=NetworkManager`),
+  NM-F-13 (a pre-auth key alone doesn't grant Storage-Service reachability),
+  NM-F-14 (Headscale's coordination endpoint deliberately public-facing),
+  NM-F-15 (MagicDNS configured with a dedicated base domain), and NM-F-16
+  (Network-Manager's own mesh node must not accept Headscale's distributed
+  DNS config) all have **zero** `// Requirement: <ID>`-tagged tests
+  anywhere in the suite. This compounds with KI-06, already open, which
+  flags these same five IDs for missing an SRS `[Code]` link — so today,
+  neither the SRS document nor the test suite shows where or whether these
+  five actually hold in the real system.
+- **Status:** OPEN. User explicitly decided (2026-07-25) not to act on this
+  now — no fix or test work scheduled; logged here for future
+  prioritization, not forgotten.
+
+---
+
+## KI-21: `TestStorageServiceSSHD_RealContainer_EnforcesHardening` fails/hangs in this dev sandbox
+
+- **Found:** 2026-07-25, running `go test ./...` for the whole repo as
+  post-implementation verification for a CL-F-05 test-coverage task
+  (unrelated area - Storage-Service's own real-container SSHD hardening
+  test, not user-client/mesh).
+- **Area:** Storage-Service, `services/storage-service/cmd/storage-service/
+  sshd_integration_test.go`'s `TestStorageServiceSSHD_RealContainer_
+  EnforcesHardening` (`ST-F-*`).
+- **Description:** first run failed with `sh: 1: cannot create
+  /storage/<user>/data/secret.txt: Permission denied` while a leftover
+  `ss-itest-manual` container (already running before this session started)
+  was also up. A second run, after removing that leftover container,
+  instead hung until the test's own 120s harness timeout, with the
+  goroutine dump pointing at `os/exec.Cmd.Start`/`io.Copy` still blocked on
+  a subprocess's stdout/stderr pipe. Not yet root-caused - could be
+  environment/resource contention specific to this sandbox (a previous,
+  unrelated `ss-sshd-itest-*` container was also observed mid-test) rather
+  than a real regression in Storage-Service itself; not investigated
+  further since it's outside this task's scope.
+- **Status:** OPEN, needs investigation.
+
+---
+
+## KI-22: Grafana -> TimescaleDB uses plaintext password auth, no mTLS (RNF-SEC-04 violation)
+
+- **Found:** 2026-07-25, writing a real system test for RNF-SEC-04 ("all
+  inter-service communication must use mTLS, with no exceptions") -
+  confirmed live, not just from reading config.
+- **Area:** `third-party/grafana/provisioning/datasources` (`sslmode:
+  disable`, `secureJsonData.password` in plaintext), Metrics-Collector's
+  embedded TimescaleDB (`deployments/compose/metrics-collector.yml`).
+- **Description:** Grafana's own datasource connection to TimescaleDB
+  (MT-F-04, UC-05) is plain Postgres-wire-protocol password
+  authentication over the mesh - no mTLS, no CA-F-04 bootstrap token, no
+  `pkg/pki` integration at all. Confirmed live: `docker exec
+  metrics-collector psql
+  "postgres://metrics_collector:metrics_collector_dev_only@localhost:5432/metrics_collector?sslmode=disable"
+  -c "SELECT 1;"` succeeds. This is genuinely inter-service traffic
+  (Grafana querying Metrics-Collector), so RNF-SEC-04's "no exceptions"
+  clause applies here, unlike Certificate-Authority's own bootstrap
+  surface or Entry-Hub's user-facing login listener (both legitimate,
+  documented exceptions - see
+  `.claude/agent-memory/code-agent/rnf-real-stack-testing.md`).
+  `test/nonfunctional/rnf_sec_04_test.go`'s
+  `TestGrafanaTimescaleDB_RealStack_RNF_SEC_04_PlaintextConnectionShouldBeRejected`
+  encodes this as a test DELIBERATELY LEFT FAILING until this is fixed -
+  do not weaken that assertion to make the suite green; fix the
+  connection instead.
+- **Status:** OPEN. Re-architecting this connection to require mTLS is a
+  real design change (its own CA-F-04 identity for TimescaleDB/Grafana, or
+  another mechanism) - out of scope for the test-writing task that found
+  it; logged here for a future task/user decision.
+
+---
+
+## KI-23: Restarting a CA-F-04-bootstrapped service needs a manually-minted fresh token; only Certificate-Authority itself restarts with zero manual step
+
+- **Found:** 2026-07-25, writing a real system test for RNF-MAINT-01
+  ("every service must be able to be isolated, re-certified, and
+  restarted individually without impacting the others").
+- **Area:** every `deployments/compose/*.yml` service that bootstraps its
+  identity via `pki.NewServer`/`RAM_USB_CA_BOOTSTRAP_TOKEN`
+  (Database-Vault, Storage-Service, Security-Switch, Network-Manager) -
+  confirmed live against the real running `network-manager` container.
+- **Description:** `RAM_USB_CA_BOOTSTRAP_TOKEN` is single-use, consumed
+  once at process start. A plain `docker compose restart <service>`
+  reuses the container's OLD environment (compose doesn't re-interpolate
+  env vars for a plain restart, only for `up --force-recreate`), so
+  restarting one of these services would attempt to re-bootstrap with an
+  already-consumed token and fail closed. Achieving RNF-MAINT-01's
+  "re-certified... individually" with zero manual step today requires
+  either a persisted `.env` refreshed before every restart, or an
+  operator/automation step to mint a new token and recreate (not merely
+  restart) the container. Certificate-Authority itself is the one
+  exception: its state persists on the `ramusb-ca-data` named volume, so
+  it restarts cleanly with no token of its own to refresh - confirmed live
+  and used as `test/nonfunctional/rnf_maint_01_restart_test.go`'s own
+  restart target for exactly this reason.
+- **Status:** OPEN. Not a violation of RNF-MAINT-01's own wording (which
+  requires isolation from OTHER services, not zero-configuration self-
+  restart), but a real operational gap worth a future automation decision
+  (e.g. a token-minting sidecar/init container per service, mirroring
+  `certificate-authority-init`'s own pattern).
 
 ---
 
