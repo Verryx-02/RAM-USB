@@ -46,7 +46,7 @@ var ErrUnexpectedTransportType = errors.New("pki: client.Transport is not a *htt
 // See RouteThroughDialer's doc comment for the mechanism and the specific
 // undocumented library behavior it relies on.
 func NewClientWithDialer(ctx context.Context, token string, dial mesh.DialFunc) (*http.Client, error) {
-	client, err := stepca.BootstrapClient(ctx, token)
+	client, err := stepca.BootstrapClient(ctx, token, forceTLS13)
 	if err != nil {
 		return nil, err
 	}

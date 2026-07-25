@@ -49,12 +49,27 @@ package pki
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"os"
 
 	stepca "github.com/smallstep/certificates/ca"
 )
+
+// forceTLS13 is a stepca.TLSOption applied unconditionally by every
+// bootstrap call in this package. NET-F-02 requires TLS 1.3 with no
+// exceptions, but ca.BootstrapServer/BootstrapClient's own default
+// *tls.Config (getDefaultTLSConfig, ca/tls.go) sets MinVersion to TLS 1.2
+// when the CA's TLSOptions are unset — and RAM-USB's Certificate-Authority
+// config doesn't set them either. TLSOptionCtx.Config is the same
+// *tls.Config pointer the SDK goes on to use for the listener/transport
+// (confirmed by reading ca/tls.go's GetServerTLSConfig/getClientTLSConfig),
+// so mutating it here survives certificate renewal.
+func forceTLS13(ctx *stepca.TLSOptionCtx) error {
+	ctx.Config.MinVersion = tls.VersionTLS13
+	return nil
+}
 
 // BootstrapTokenEnvVar names the environment variable holding this
 // service's single-use CA bootstrap token (CA-F-04), distributed
@@ -107,7 +122,7 @@ func LoadBootstrapToken() (string, error) {
 // bootstrapped server's own outbound renewal traffic cannot be routed
 // through a custom dialer using only this library version's public API.
 func NewServer(ctx context.Context, token string, base *http.Server) (*http.Server, error) {
-	return stepca.BootstrapServer(ctx, token, base)
+	return stepca.BootstrapServer(ctx, token, base, forceTLS13)
 }
 
 // NewClient exchanges token for an initial certificate from the
