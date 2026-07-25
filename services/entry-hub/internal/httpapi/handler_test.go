@@ -150,6 +150,30 @@ func TestHandler_Register_DuplicateRelayedUnchanged(t *testing.T) {
 	}
 }
 
+// Requirement: EH-F-09
+func TestHandler_Register_ExactlyBadRequestCountsAsError(t *testing.T) {
+	securitySwitch := &fakeSecuritySwitch{
+		registerResult: securityswitch.Result{
+			StatusCode:  http.StatusBadRequest,
+			ContentType: "application/json",
+			Body:        []byte(`{"error":"the request could not be completed"}`),
+		},
+	}
+	h, _ := newTestHandler(securitySwitch)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	rec := httptest.NewRecorder()
+
+	h.Register(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (Security-Switch's own 400 must be relayed, not reconstructed)", rec.Code, http.StatusBadRequest)
+	}
+	if got := h.Metrics.Snapshot(); got.ErrorCount != 1 {
+		t.Fatalf("counters after exactly-400 relay = %+v, want ErrorCount=1 (>= boundary at http.StatusBadRequest)", got)
+	}
+}
+
 // Requirement: EH-F-08
 func TestHandler_Register_MissingContentTypeDefaultsToJSON(t *testing.T) {
 	securitySwitch := &fakeSecuritySwitch{
