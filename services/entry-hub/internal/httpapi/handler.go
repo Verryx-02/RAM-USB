@@ -22,12 +22,12 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/validation"
 )
 
@@ -60,7 +60,7 @@ type Handler struct {
 	// Metrics accumulates request/error/response-time counts feeding
 	// EH-F-10/EH-F-11's periodic publish. Must not be nil for
 	// Register/Login.
-	Metrics *Counters
+	Metrics *metrics.RequestCounters
 
 	// Logger receives every structured log line this handler writes. If
 	// nil, slog.Default() is used. Tests inject a logger writing to a
@@ -87,7 +87,7 @@ type healthResponse struct {
 // only that the endpoint be reachable over Entry-Hub's public HTTPS
 // listener, with no further condition.
 func (h *Handler) Health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
+	apperrors.WriteJSON(w, http.StatusOK, healthResponse{Status: "ok"})
 }
 
 // Register handles a registration request from a client (CL-F-02):
@@ -160,28 +160,5 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 // never risks writing a credential to the log.
 func (h *Handler) failValidation(w http.ResponseWriter, endpoint string, err error) {
 	h.logger().Warn("validation failed", "endpoint", endpoint, "error", err)
-	writeAppError(w, apperrors.NewBadRequest(err))
-}
-
-// appErrorResponse is the JSON body written when Entry-Hub constructs its
-// own error response (EH-F-06's validation-failure body, and EH-F-09's
-// mapped downstream-call-failure body) - only the AppError's Public
-// message, never its Internal detail. A response Security-Switch itself
-// produced is instead relayed byte-for-byte via forward.go's
-// writeForwardedResponse, not re-encoded through this type.
-type appErrorResponse struct {
-	Error string `json:"error"`
-}
-
-// writeAppError writes appErr.Status and a body containing only
-// appErr.Public - appErr.Internal never reaches the response.
-func writeAppError(w http.ResponseWriter, appErr *apperrors.AppError) {
-	writeJSON(w, appErr.Status, appErrorResponse{Error: appErr.Public})
-}
-
-// writeJSON writes status and body, JSON-encoded, to w.
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	apperrors.WriteAppError(w, apperrors.NewBadRequest(err))
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/storage"
 )
 
@@ -34,7 +35,7 @@ func newTestPublicKeyHandler(store PublicKeyStore) (*PublicKeyHandler, *bytes.Bu
 
 	h := &PublicKeyHandler{
 		Store:   store,
-		Metrics: &Counters{},
+		Metrics: &metrics.RequestCounters{},
 		Logger:  logger,
 	}
 	return h, &logBuf

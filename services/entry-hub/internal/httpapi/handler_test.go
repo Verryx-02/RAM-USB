@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/validation"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/httpapi"
 	"github.com/Verryx-02/RAM-USB/services/entry-hub/internal/securityswitch"
@@ -52,7 +53,7 @@ func newTestHandler(securitySwitch httpapi.SecuritySwitchClient) (*httpapi.Handl
 
 	h := &httpapi.Handler{
 		SecuritySwitch: securitySwitch,
-		Metrics:        &httpapi.Counters{},
+		Metrics:        &metrics.RequestCounters{},
 		Logger:         logger,
 	}
 	return h, &logBuf
@@ -146,6 +147,30 @@ func TestHandler_Register_DuplicateRelayedUnchanged(t *testing.T) {
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d (Security-Switch's own 409 must be relayed, not reconstructed)", rec.Code, http.StatusConflict)
+	}
+}
+
+// Requirement: EH-F-09
+func TestHandler_Register_ExactlyBadRequestCountsAsError(t *testing.T) {
+	securitySwitch := &fakeSecuritySwitch{
+		registerResult: securityswitch.Result{
+			StatusCode:  http.StatusBadRequest,
+			ContentType: "application/json",
+			Body:        []byte(`{"error":"the request could not be completed"}`),
+		},
+	}
+	h, _ := newTestHandler(securitySwitch)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.RegisterPath, strings.NewReader(registerRequestBody(testEmail, testPassword, testSSHPublicKey)))
+	rec := httptest.NewRecorder()
+
+	h.Register(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (Security-Switch's own 400 must be relayed, not reconstructed)", rec.Code, http.StatusBadRequest)
+	}
+	if got := h.Metrics.Snapshot(); got.ErrorCount != 1 {
+		t.Fatalf("counters after exactly-400 relay = %+v, want ErrorCount=1 (>= boundary at http.StatusBadRequest)", got)
 	}
 }
 

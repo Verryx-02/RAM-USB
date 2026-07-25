@@ -7,9 +7,6 @@ import (
 	"sort"
 	"testing"
 
-	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
-	"google.golang.org/grpc"
-
 	hs "github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
 )
 
@@ -69,14 +66,16 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// Requirement: NM-F-01, NM-F-02, NM-F-03, NM-F-04, NM-F-05, NM-F-06, NM-F-07
+// Requirement: NM-F-01, NM-F-02, NM-F-03, NM-F-04, NM-F-05, NM-F-06, NM-F-07, DV-F-09, ST-F-01
 //
 // Asserts PolicyDocument's generated JSON contains exactly the right
 // src/dst pairs for every rule this task's six requirements (plus the
 // NM-F-03 rule buildACLs' own doc comment explains including) translate
 // to - no more, no less - cross-checked against
 // docs/design/diagrams/09-security-trust-zones.puml's arrows, not
-// re-derived from the SRS prose alone.
+// re-derived from the SRS prose alone. Also covers the MQTT-broker rule
+// (TagMQTTBroker's own doc comment explains why it carries no single SRS
+// ID).
 func TestPolicyDocument_Content(t *testing.T) {
 	data, err := hs.PolicyDocument()
 	if err != nil {
@@ -88,8 +87,8 @@ func TestPolicyDocument_Content(t *testing.T) {
 		t.Fatalf("json.Unmarshal(PolicyDocument()) error = %v", err)
 	}
 
-	if len(doc.ACLs) != 7 {
-		t.Fatalf("len(doc.ACLs) = %d, want 7 (NM-F-01, 02, 03, 04x2, 05, 06/07)", len(doc.ACLs))
+	if len(doc.ACLs) != 9 {
+		t.Fatalf("len(doc.ACLs) = %d, want 9 (NM-F-01, 02, 03, 04x2, 05, 06/07, MQTT-broker, Grafana->Metrics-Collector)", len(doc.ACLs))
 	}
 
 	for i, acl := range doc.ACLs {
@@ -119,9 +118,9 @@ func TestPolicyDocument_Content(t *testing.T) {
 			wantSrc: []string{hs.TagSecuritySwitch, hs.TagCertificateAuthority},
 		},
 		{
-			name:    "NM-F-04 direction one: every internal component can contact Certificate-Authority",
+			name:    "NM-F-04 direction one: every internal component (plus the MQTT broker's own cert-renewal sidecar, KI-16) can contact Certificate-Authority",
 			dst:     []string{hs.TagCertificateAuthority + ":*"},
-			wantSrc: []string{hs.TagEntryHub, hs.TagSecuritySwitch, hs.TagDatabaseVault, hs.TagStorageService, hs.TagNetworkManager},
+			wantSrc: []string{hs.TagEntryHub, hs.TagSecuritySwitch, hs.TagDatabaseVault, hs.TagStorageService, hs.TagNetworkManager, hs.TagMQTTBroker},
 		},
 		{
 			name: "NM-F-04 direction two: Certificate-Authority can contact every internal component",
@@ -135,14 +134,32 @@ func TestPolicyDocument_Content(t *testing.T) {
 			wantSrc: []string{hs.TagCertificateAuthority},
 		},
 		{
-			name:    "NM-F-05/NM-F-07 (authenticated half): only TagStorageAccess nodes can contact Storage-Service",
+			name:    "NM-F-05/NM-F-07 (authenticated half) + DV-F-09/ST-F-01: TagStorageAccess nodes and Database-Vault can contact Storage-Service",
 			dst:     []string{hs.TagStorageService + ":*"},
-			wantSrc: []string{hs.TagStorageAccess},
+			wantSrc: []string{hs.TagStorageAccess, hs.TagDatabaseVault},
 		},
 		{
 			name:    "NM-F-06/NM-F-07 (registered half): every TagMeshMember node can contact Entry-Hub",
 			dst:     []string{hs.TagEntryHub + ":*"},
 			wantSrc: []string{hs.TagMeshMember},
+		},
+		{
+			name: "MQTT-broker mesh reachability: every metrics publisher plus Metrics-Collector can contact the broker",
+			dst:  []string{hs.TagMQTTBroker + ":*"},
+			wantSrc: []string{
+				hs.TagEntryHub,
+				hs.TagSecuritySwitch,
+				hs.TagDatabaseVault,
+				hs.TagStorageService,
+				hs.TagNetworkManager,
+				hs.TagMetricsCollector,
+				hs.TagCertificateAuthority,
+			},
+		},
+		{
+			name:    "Grafana -> Metrics-Collector (KI-18): Grafana's own mesh sidecar can reach the co-located TimescaleDB over Metrics-Collector's mesh identity",
+			dst:     []string{hs.TagMetricsCollector + ":*"},
+			wantSrc: []string{hs.TagGrafana},
 		},
 	}
 
@@ -209,17 +226,17 @@ type fakePolicyPusher struct {
 	setPolicyCall int
 }
 
-func (f *fakePolicyPusher) SetPolicy(_ context.Context, in *v1.SetPolicyRequest, _ ...grpc.CallOption) (*v1.SetPolicyResponse, error) {
+func (f *fakePolicyPusher) SetPolicy(_ context.Context, policy string) error {
 	f.setPolicyCall++
-	f.gotPolicy = in.GetPolicy()
+	f.gotPolicy = policy
 	if f.setPolicyErr != nil {
-		return nil, f.setPolicyErr
+		return f.setPolicyErr
 	}
-	return &v1.SetPolicyResponse{Policy: in.GetPolicy()}, nil
+	return nil
 }
 
-func (f *fakePolicyPusher) GetPolicy(_ context.Context, _ *v1.GetPolicyRequest, _ ...grpc.CallOption) (*v1.GetPolicyResponse, error) {
-	return &v1.GetPolicyResponse{Policy: f.gotPolicy}, nil
+func (f *fakePolicyPusher) GetPolicy(_ context.Context) (string, error) {
+	return f.gotPolicy, nil
 }
 
 // Requirement: NM-F-01, NM-F-02, NM-F-04, NM-F-05, NM-F-06, NM-F-07

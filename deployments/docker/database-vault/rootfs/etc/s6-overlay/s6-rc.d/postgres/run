@@ -1,0 +1,26 @@
+#!/command/with-contenv sh
+# with-contenv: POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB (set in
+# deployments/compose/database-vault.yml) have to be pushed back into this
+# longrun's own environment - S6_KEEP_ENV is left at its default (0), so a
+# plain #!/bin/sh shebang here would start docker-entrypoint.sh with none of
+# them set, same convention documented in
+# ../database-vault/run and Storage-Service's own storage-service longrun.
+#
+# docker-entrypoint.sh is the upstream postgres:17 image's own entrypoint
+# (confirmed at /usr/local/bin/docker-entrypoint.sh this session) - execing
+# it, not reimplementing initdb, keeps first-run bootstrap and the
+# POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB-driven behavior identical to
+# upstream's own documented contract. "-c listen_addresses=localhost" is an
+# extra argument after the "postgres" subcommand: confirmed accepted by
+# reading docker-entrypoint.sh's own _main(), whose final `exec "$@"` passes
+# every trailing argument straight through to the real `postgres` server
+# binary, which itself accepts "-c NAME=VALUE" per its own --help output.
+# Binding to loopback only means Postgres is reachable from nothing but this
+# container's own database-vault process below - no ramusb-net/host port is
+# ever published for it (see this image's Dockerfile, "No EXPOSE").
+#
+# exec replaces this shell so docker-entrypoint.sh's own re-exec chain
+# (gosu to the "postgres" system user, then finally the real postgres
+# binary) becomes the directly supervised process tree and receives s6's
+# signals itself.
+exec /usr/local/bin/docker-entrypoint.sh postgres -c listen_addresses=localhost

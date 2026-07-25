@@ -231,6 +231,9 @@ func TestSaveUser_RollbackErrorIsSurfaced(t *testing.T) {
 	if !errors.Is(err, insertErr) {
 		t.Fatalf("SaveUser() error = %v, want wrapping the original insert error %v", err, insertErr)
 	}
+	if !tx.rollbackCalled {
+		t.Fatal("Rollback was not called after an insert error")
+	}
 }
 
 // Requirement: DV-F-08

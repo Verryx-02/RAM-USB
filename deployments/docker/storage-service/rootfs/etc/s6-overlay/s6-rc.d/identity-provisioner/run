@@ -1,0 +1,19 @@
+#!/command/with-contenv sh
+# with-contenv (not plain #!/bin/sh): S6_KEEP_ENV is left at its default (0)
+# so this longrun does NOT inherit the container's environment implicitly,
+# and this is the one process that specifically needs
+# RAM_USB_STORAGE_SERVICE_AKC_BOOTSTRAP_TOKEN/RAM_USB_DATABASE_VAULT_PUBLIC_KEY_URL
+# (see services/storage-service/cmd/identity-provisioner/main.go) pushed
+# back into its own environment - same convention already documented in
+# ../storage-service/run for that longrun.
+#
+# s6-setuidgid sshd-authkeys: this process runs as the same dedicated
+# unprivileged system account authorized-keys-command itself runs as (see
+# this container's Dockerfile's own comment on both) - it only needs
+# outbound mTLS calls to the Certificate-Authority and write access to
+# /etc/storage-service (already chowned to this account in the Dockerfile),
+# never root.
+#
+# exec replaces this shell so the identity-provisioner binary becomes the
+# directly supervised process and receives s6's signals itself.
+exec s6-setuidgid sshd-authkeys /usr/local/bin/identity-provisioner

@@ -6,18 +6,81 @@ services:
       context: ../..
       dockerfile: deployments/docker/security-switch/Dockerfile
     container_name: security-switch
+    cap_add:
+      # NET_ADMIN/NET_RAW: the real tailscaled client's own minimum
+      # requirement to create/manage the mesh TUN interface (see the
+      # Dockerfile's package doc comment) - not needed by the
+      # security-switch binary itself.
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
     environment:
-      RAM_USB_SECURITY_SWITCH_LISTEN_ADDR: "0.0.0.0:8444"
+      # SS-F-01: the port half only - the IP half is this node's Tailscale
+      # mesh address, known only at runtime once tailscale-up joins (see
+      # rootfs/etc/s6-overlay/s6-rc.d/security-switch/run), never
+      # 0.0.0.0/ramusb-net (NET-F-01).
+      RAM_USB_SECURITY_SWITCH_LISTEN_PORT: "8444"
+      # SS-F-04: "database-vault" here is Database-Vault's MagicDNS short
+      # name within the Headscale mesh
+      # (RAM_USB_DATABASE_VAULT_MESH_HOSTNAME in
+      # deployments/compose/database-vault.yml), not its ramusb-net
+      # Docker DNS name - this call is now routed through this
+      # container's real tailscaled interface (see
+      # services/security-switch/cmd/security-switch/main.go's package doc
+      # comment), never via ramusb-net, regardless of what this hostname
+      # string also happens to resolve to there.
       RAM_USB_DATABASE_VAULT_URL: "https://database-vault:8445"
+      # SS-F-05/SS-F-09: "network-manager" here is Network-Manager's
+      # MagicDNS short name within the Headscale mesh
+      # (RAM_USB_NETWORK_MANAGER_MESH_HOSTNAME in
+      # deployments/compose/network-manager.yml), not its ramusb-net Docker
+      # DNS name - same reasoning as RAM_USB_DATABASE_VAULT_URL above.
       RAM_USB_NETWORK_MANAGER_URL: "https://network-manager:8447"
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token SecuritySwitch --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
       # SS-F-07/SS-F-08: metrics publish, reuses the same mTLS identity
       # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
       # static MQTT certificate/key.
       RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
+      # Real tailscaled mesh membership (rootfs/etc/s6-overlay/s6-rc.d/
+      # tailscaled, tailscale-up): this node's MagicDNS short name, the
+      # shared Headscale coordination URL, and a single-use pre-auth key -
+      # see services/network-manager/internal/headscale/policy.go for the
+      # tag:security-switch ACL rule this key's --tags must match. Unlike
+      # the previous pkg/mesh identity (a persistent tsnet state
+      # directory), this is a real OS-level tailscaled, so its equivalent
+      # persistent state lives in the ramusb-security-switch-mesh-state
+      # volume below, not a Go-managed directory.
+      RAM_USB_SECURITY_SWITCH_MESH_HOSTNAME: "security-switch"
+      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://headscale:8080}"
+      RAM_USB_SECURITY_SWITCH_TAILSCALE_AUTHKEY: >-
+        ${RAM_USB_SECURITY_SWITCH_TAILSCALE_AUTHKEY:?mint with:
+        docker exec headscale headscale users create security-switch
+        && docker exec headscale headscale users list --name security-switch -o json
+        && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:security-switch}
+    volumes:
+      - ramusb-security-switch-mesh-state:/var/lib/tailscale
+      # Dev-only: Headscale's self-signed control-plane certificate,
+      # trusted via the real OS trust store (update-ca-certificates, see
+      # rootfs/etc/s6-overlay/s6-rc.d/tailscale-up/) - unlike the previous
+      # pkg/mesh distroless SSL_CERT_FILE workaround, this base image has a
+      # real shell/package manager, so the standard mechanism applies
+      # directly. Leave this volume unmounted once
+      # RAM_USB_TAILSCALE_CONTROL_URL carries a publicly-trusted-root
+      # certificate.
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+    # No "ports:" - security-switch no longer binds 0.0.0.0/ramusb-net at
+    # all, it binds exclusively to this node's Tailscale interface address
+    # (NET-F-01). networks: ramusb-net is kept for now (a later task
+    # verifies/removes it network-wide once Entry-Hub's own mesh conversion
+    # lands) but this service's listener does not use it for inbound
+    # traffic anymore.
     networks:
       - ramusb-net
 
 networks:
   ramusb-net:
     external: true
+
+volumes:
+  ramusb-security-switch-mesh-state:

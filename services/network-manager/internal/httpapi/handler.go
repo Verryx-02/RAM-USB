@@ -28,6 +28,7 @@ import (
 	"time"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
 )
 
@@ -77,7 +78,7 @@ type Handler struct {
 	// cmd/network-manager/main.go). Must not be nil - same
 	// "always required, wired by every constructor" convention as
 	// Database-Vault's own Handler.Metrics.
-	Metrics *Counters
+	Metrics *metrics.RequestCounters
 
 	// Logger receives every structured log line this handler writes. If
 	// nil, slog.Default() is used - same injectable-logger pattern as
@@ -140,14 +141,14 @@ func (h *Handler) CreateMeshUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		isError = true
 		h.logger().Warn("mesh-user creation: decode failed", "endpoint", "mesh-users", "error", err)
-		writeAppError(w, apperrors.NewBadRequest(err))
+		apperrors.WriteAppError(w, apperrors.NewBadRequest(err))
 		return
 	}
 
 	if err := validateEmail(req.Email); err != nil {
 		isError = true
 		h.logger().Warn("mesh-user creation: validation failed", "endpoint", "mesh-users", "error", err)
-		writeAppError(w, apperrors.NewBadRequest(err))
+		apperrors.WriteAppError(w, apperrors.NewBadRequest(err))
 		return
 	}
 
@@ -155,19 +156,19 @@ func (h *Handler) CreateMeshUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		isError = true
 		h.logger().Error("mesh-user creation: headscale call failed", "error", err)
-		writeAppError(w, mapHeadscaleError(err))
+		apperrors.WriteAppError(w, mapHeadscaleError(err))
 		return
 	}
 
 	if err := h.MeshUsers.RecordPreAuthKeyID(r.Context(), req.Email, preAuthKeyID); err != nil {
 		isError = true
 		h.logger().Error("mesh-user creation: failed to persist pre-auth key id mapping, every future login for this account will fail", "error", err)
-		writeAppError(w, apperrors.NewInternal(err))
+		apperrors.WriteAppError(w, apperrors.NewInternal(err))
 		return
 	}
 
 	h.logger().Info("mesh-user creation: succeeded")
-	writeJSON(w, http.StatusCreated, meshUserResponse{Success: true, PreAuthKey: key})
+	apperrors.WriteJSON(w, http.StatusCreated, meshUserResponse{Success: true, PreAuthKey: key})
 }
 
 // grantRequest is the JSON body Security-Switch sends
@@ -228,14 +229,14 @@ func (h *Handler) Grant(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		isError = true
 		h.logger().Warn("grant: decode failed", "endpoint", "grants", "error", err)
-		writeAppError(w, apperrors.NewBadRequest(err))
+		apperrors.WriteAppError(w, apperrors.NewBadRequest(err))
 		return
 	}
 
 	if err := validateEmail(req.Email); err != nil {
 		isError = true
 		h.logger().Warn("grant: validation failed", "endpoint", "grants", "error", err)
-		writeAppError(w, apperrors.NewBadRequest(err))
+		apperrors.WriteAppError(w, apperrors.NewBadRequest(err))
 		return
 	}
 
@@ -243,13 +244,13 @@ func (h *Handler) Grant(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		isError = true
 		h.logger().Error("grant: failed to look up pre-auth key id", "error", err)
-		writeAppError(w, apperrors.NewInternal(err))
+		apperrors.WriteAppError(w, apperrors.NewInternal(err))
 		return
 	}
 	if !found {
 		isError = true
 		h.logger().Warn("grant: no pre-auth key id recorded for this email, denying")
-		writeAppError(w, mapHeadscaleError(headscale.ErrMeshUserNotFound))
+		apperrors.WriteAppError(w, mapHeadscaleError(headscale.ErrMeshUserNotFound))
 		return
 	}
 
@@ -257,7 +258,7 @@ func (h *Handler) Grant(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		isError = true
 		h.logger().Error("grant: headscale call failed", "error", err)
-		writeAppError(w, mapHeadscaleError(err))
+		apperrors.WriteAppError(w, mapHeadscaleError(err))
 		return
 	}
 
@@ -277,7 +278,7 @@ func (h *Handler) Grant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger().Info("grant: succeeded")
-	writeJSON(w, http.StatusOK, grantResponse{Success: true})
+	apperrors.WriteJSON(w, http.StatusOK, grantResponse{Success: true})
 }
 
 // mapHeadscaleError maps internal/headscale's sentinel errors to an
@@ -359,19 +360,3 @@ func decodeJSON(r io.Reader, dst any) error {
 }
 
 var errMalformedRequest = errors.New("network-manager: malformed request body")
-
-// appErrorResponse is the JSON body written for a decode/validation
-// failure: only the AppError's Public message, never its Internal detail.
-type appErrorResponse struct {
-	Error string `json:"error"`
-}
-
-func writeAppError(w http.ResponseWriter, appErr *apperrors.AppError) {
-	writeJSON(w, appErr.Status, appErrorResponse{Error: appErr.Public})
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}

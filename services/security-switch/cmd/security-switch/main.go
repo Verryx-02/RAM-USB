@@ -60,6 +60,32 @@
 // non-empty Subject.Organization at all - without it, PKI-F-02's
 // organization check would reject every connection. `docker compose up`
 // applies it automatically now; no manual step is required.
+//
+// Mesh membership (real, OS-level tailscaled - not pkg/mesh): this process
+// no longer embeds pkg/mesh's in-process tsnet client. The container this
+// binary runs in (deployments/docker/security-switch/) instead runs a real
+// tailscaled daemon, supervised by s6-overlay alongside this Go binary
+// (see that directory's Dockerfile and rootfs/etc/s6-overlay/s6-rc.d/ tree)
+// - the same mechanism already proven for Storage-Service. Once the
+// container's only network egress is a real tailscale0 kernel interface,
+// every outbound connection this process makes - both outbound mTLS
+// clients below (SS-F-04's call to Database-Vault, SS-F-05/SS-F-09's call
+// to Network-Manager) AND every internal library call neither of them
+// exposes a dial hook for (pkg/pki's Certificate-Authority bootstrap and
+// renewal traffic, pkg/metrics' MQTT publish connection) - is forced
+// through the mesh automatically by the OS, with zero application-level
+// dial injection needed. This is why buildDatabaseVaultClient and
+// buildNetworkManagerClient below take no dial parameter at all anymore:
+// a plain *http.Transport with no DialContext override already routes
+// correctly. This server's own inbound listener (httpServer below,
+// receiving Entry-Hub's calls) binds to this node's real Tailscale IPv4
+// address too - RAM_USB_SECURITY_SWITCH_LISTEN_ADDR is assembled at
+// container start by the security-switch longrun's own run script (see
+// rootfs/etc/s6-overlay/s6-rc.d/security-switch/run) from
+// RAM_USB_SECURITY_SWITCH_TAILSCALE_IP (written by the tailscale-up
+// oneshot once this node joins) and a plain port number, never from
+// 0.0.0.0/ramusb-net, per NET-F-01; this main.go itself only ever reads
+// the resulting host:port string, with no tsnet/mesh awareness of its own.
 package main
 
 import (
@@ -76,6 +102,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
@@ -93,15 +120,31 @@ import (
 // (see buildServerTLSConfig).
 const (
 	// envListenAddr is the address this server listens on for incoming
-	// mTLS connections from Entry-Hub (SS-F-01).
+	// mTLS connections from Entry-Hub (SS-F-01). Assembled at container
+	// start by the security-switch longrun's own run script from this
+	// node's real Tailscale IPv4 address and a plain port number (see
+	// this file's package doc comment, "Mesh membership") - this process
+	// only ever reads the resulting host:port string.
 	envListenAddr = "RAM_USB_SECURITY_SWITCH_LISTEN_ADDR"
 
 	// envDatabaseVaultURL is Database-Vault's base URL (SS-F-04), e.g.
-	// "https://database-vault.internal:8443".
+	// "https://database-vault:8445" - "database-vault" here is
+	// Database-Vault's MagicDNS short name within the Headscale mesh
+	// (RAM_USB_DATABASE_VAULT_MESH_HOSTNAME in
+	// deployments/compose/database-vault.yml), resolved and dialed
+	// entirely through the container's real Tailscale network interface
+	// (see this file's package doc comment, "Mesh membership") - not
+	// through any application-level dial injection.
 	envDatabaseVaultURL = "RAM_USB_DATABASE_VAULT_URL"
 
 	// envNetworkManagerURL is Network-Manager's base URL (SS-F-05,
-	// SS-F-09), e.g. "https://network-manager.internal:8443".
+	// SS-F-09), e.g. "https://network-manager:8447" - "network-manager"
+	// here is Network-Manager's MagicDNS short name within the Headscale
+	// mesh (RAM_USB_NETWORK_MANAGER_MESH_HOSTNAME in
+	// deployments/compose/network-manager.yml) - same reasoning as
+	// envDatabaseVaultURL above: resolved and dialed through the
+	// container's real Tailscale network interface, not through any
+	// application-level dial injection.
 	envNetworkManagerURL = "RAM_USB_NETWORK_MANAGER_URL"
 
 	// envMQTTBrokerURL is the MQTT broker's address (SS-F-07), e.g.
@@ -156,7 +199,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	listenAddr, err := requireEnv(envListenAddr)
+	listenAddr, err := env.Require(envListenAddr)
 	if err != nil {
 		return err
 	}
@@ -171,6 +214,11 @@ func run() error {
 		return fmt.Errorf("build server tls config: %w", err)
 	}
 
+	// No dial injection for either outbound client below (see this file's
+	// package doc comment, "Mesh membership"): the container this process
+	// runs in has a real, OS-level tailscaled interface as its only
+	// network egress, so a plain *http.Transport with no DialContext
+	// override already routes both calls through the mesh.
 	dbVaultClient, dbVaultURL, err := buildDatabaseVaultClient(serverTLSConfig)
 	if err != nil {
 		return fmt.Errorf("build database-vault client: %w", err)
@@ -181,7 +229,7 @@ func run() error {
 		return fmt.Errorf("build network-manager client: %w", err)
 	}
 
-	counters := &httpapi.Counters{}
+	counters := &metrics.RequestCounters{}
 
 	handler := &httpapi.Handler{
 		DBVault:        httpapi.DBVaultAdapter{Client: dbVaultClient, BaseURL: dbVaultURL},
@@ -237,16 +285,6 @@ func run() error {
 	}
 }
 
-// requireEnv reads name from the environment, failing closed (RD-04) if
-// it is unset or empty.
-func requireEnv(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-	return value, nil
-}
-
 // buildServerTLSConfig bootstraps this server's one TLS identity from the
 // Certificate-Authority (CA-F-04, PKI-F-01), using pki.LoadBootstrapToken's
 // single-use token exactly once. The returned *tls.Config is shared by the
@@ -298,13 +336,22 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 // the dialed network address (envDatabaseVaultURL's host, which differs
 // between dev/compose and production) - see pkg/pki's package doc comment
 // for why this is required, not merely defensive.
+//
+// No DialContext override (completing DV-F-01's "access to the private
+// mesh network" clause on the calling side): the container this process
+// runs in has a real, OS-level tailscaled interface as its only network
+// egress (see this file's package doc comment, "Mesh membership"), so a
+// plain *http.Transport already routes every TCP dial through the mesh -
+// this call physically cannot reach Database-Vault any other way.
 func buildDatabaseVaultClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
-	baseURL, err := requireEnv(envDatabaseVaultURL)
+	baseURL, err := env.Require(envDatabaseVaultURL)
 	if err != nil {
 		return nil, "", err
 	}
 
-	transport := &http.Transport{TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, dbvault.OrganizationDatabaseVault)}
+	transport := &http.Transport{
+		TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, dbvault.OrganizationDatabaseVault),
+	}
 	client := &http.Client{Transport: mtls.WrapRoundTripper(transport, dbvault.OrganizationDatabaseVault)}
 	return client, baseURL, nil
 }
@@ -320,13 +367,19 @@ func buildDatabaseVaultClient(serverTLSConfig *tls.Config) (*http.Client, string
 // pki.ClientTLSConfig clones serverTLSConfig and forces this handshake's
 // ServerName to networkmanager.OrganizationNetworkManager, same reasoning
 // as buildDatabaseVaultClient above.
+//
+// No DialContext override (completing NM-F-03's mesh-reachability
+// restriction on the calling side), same reasoning as
+// buildDatabaseVaultClient above.
 func buildNetworkManagerClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
-	baseURL, err := requireEnv(envNetworkManagerURL)
+	baseURL, err := env.Require(envNetworkManagerURL)
 	if err != nil {
 		return nil, "", err
 	}
 
-	transport := &http.Transport{TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, networkmanager.OrganizationNetworkManager)}
+	transport := &http.Transport{
+		TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, networkmanager.OrganizationNetworkManager),
+	}
 	client := &http.Client{Transport: mtls.WrapRoundTripper(transport, networkmanager.OrganizationNetworkManager)}
 	return client, baseURL, nil
 }
@@ -352,7 +405,7 @@ func buildMetricsClient(serverTLSConfig *tls.Config) (mqtt.Client, error) {
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(serverTLSConfig, metrics.OrganizationMQTTBroker))
 
-	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout)
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,18 @@ skinparam nodesep 30
 skinparam ranksep 55
 skinparam ArrowFontSize 11
 
+' meshCoordinator: Headscale's own dedicated identity, modeled on how
+' Certificate-Authority gets its own <<certAuthority>> stereotype rather
+' than being lumped into <<infra>>. Headscale is third-party software, but
+' it is still a component RAM-USB deploys and is responsible for (like CA)
+' - unlike User-Client, which genuinely runs outside RAM-USB's control.
+' Never mark Headscale <<external>>; it belongs inside the system boundary.
+skinparam component<<meshCoordinator>> {
+  BackgroundColor #4A7E9E/#345A73
+  BorderColor #1F3E4E
+  FontColor #F0F0F0
+}
+
 actor "User\n[Person]" as User
 actor "Admin\n[Person]" as Admin
 
@@ -23,6 +35,7 @@ rectangle "RAM-USB System" {
 
   component "**Certificate-Authority**\n[smallstep/certificates]\nmTLS issuance & rotation" as CA <<certAuthority>>
   component "**Observability**\n[Mosquitto, Metrics-Collector,\nGrafana, TimescaleDB]\nMetrics pipeline & dashboards" as Observability <<infra>>
+  component "**Headscale**\nMesh coordination server\n(own public VPS, NM-F-14)" as Headscale <<meshCoordinator>>
 }
 
 User -down-> EntryHub : **HTTPS**\nregister / login / health
@@ -31,9 +44,10 @@ SecuritySwitch -down-> DatabaseVault : **mTLS**
 DatabaseVault -right-> Postgres : **SQL**
 DatabaseVault <-down-> StorageService : **mTLS**\ncreate POSIX user / fetch public key
 SecuritySwitch -right-> NetworkManager : **mTLS**\nACL grant / pre-auth key
-EntryHub -right-> NetworkManager : **Headscale coordination**\n(reverse-proxied)
+NetworkManager -down-> Headscale : **REST API** (mTLS + token)\npre-auth key / ACL policy
 
 User --> StorageService : **SFTP**\nbackup / restore
+User -right-> Headscale : **Tailscale coordination**\n(public, CL-F-04)
 
 Admin -down-> Observability : **HTTPS**\ndashboards
 

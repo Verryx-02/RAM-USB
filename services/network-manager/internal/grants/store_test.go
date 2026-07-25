@@ -56,6 +56,26 @@ func TestStore_RecordAndQueryGrant(t *testing.T) {
 	if !got.ExpiresAt.Equal(wantExpiry) {
 		t.Fatalf("ExpiresAt = %v, want %v", got.ExpiresAt, wantExpiry)
 	}
+
+	// A grant expiring at EXACTLY the query time must be included
+	// ("expires_at <= ?", not "<") - the boundary itself, not just
+	// well-before/well-after cases.
+	if err := store.RecordGrant(ctx, "boundary@example.com", 99, "tag:storage-access", now.Add(12*time.Hour)); err != nil {
+		t.Fatalf("RecordGrant() error = %v", err)
+	}
+	expired, err = store.ExpiredGrants(ctx, now.Add(12*time.Hour))
+	if err != nil {
+		t.Fatalf("ExpiredGrants() error = %v", err)
+	}
+	found := false
+	for _, g := range expired {
+		if g.Email == "boundary@example.com" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("ExpiredGrants() = %v, want boundary@example.com included (expires_at exactly equal to query time)", expired)
+	}
 }
 
 // Requirement: NM-F-11

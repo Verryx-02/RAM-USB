@@ -1,4 +1,14 @@
 #!/bin/sh
+# SUPERSEDED (KI-16, PKI-F-03) for deployments/scripts/mqtt-broker.sh's own
+# normal startup path: deployments/compose/mqtt-broker.yml now mints and
+# automatically renews both certificate identities this script produces
+# (mqtt-broker-cert-issuer for initial issuance, mqtt-broker-cert-renewer
+# for ongoing mTLS-authenticated renewal - see that file's own doc
+# comments for the full design and its live verification). This script
+# still works standalone (e.g. to inspect/regenerate
+# third-party/mosquitto/certs/ by hand outside the Compose-managed flow)
+# but mqtt-broker.sh no longer calls it.
+#
 # Mints a dev-only mTLS certificate set for the mqtt-broker Docker Compose
 # service's own two identities that have no pkg/pki-bootstrapped identity
 # to reuse - MQTTBroker (the broker's own server certificate; Mosquitto is

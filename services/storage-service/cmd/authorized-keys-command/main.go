@@ -41,7 +41,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -237,25 +236,38 @@ func parseConfig(r io.Reader) (config, error) {
 // used by database-vault/cmd/database-vault/main.go's own
 // buildStorageServiceClient, the established precedent for building an
 // outbound mTLS *http.Client in this codebase.
+//
+// ServerName is forced to organizationDatabaseVault, not left to default to
+// the dialed network address ("database-vault") - confirmed live this
+// session (a real deployment against the real Certificate-Authority):
+// without this, crypto/tls's own independent hostname check runs BEFORE
+// PKI-F-02's mtls.ClientConfig VerifyConnection organization check ever
+// gets a chance to run, and rejects every real certificate this CA issues
+// with "x509: certificate is valid for DatabaseVault, not database-vault" -
+// every certificate's SAN is always the organization string
+// (third-party/certificate-authority/config/organization.x509.tpl), never
+// the dialed hostname. Same reasoning, and the same fix, as
+// pkg/pki.ClientTLSConfig's own doc comment already documents for every
+// other outbound mTLS caller in this codebase - this one differs only in
+// starting from mtls.ClientConfig (a manually loaded disk identity, not a
+// pkg/pki-bootstrapped *tls.Config) instead of cloning an existing base.
 func buildClient(cfg config) (*http.Client, error) {
 	cert, err := tls.LoadX509KeyPair(cfg.clientCertPath, cfg.clientKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("load client certificate/key: %w", err)
 	}
 
-	caData, err := os.ReadFile(cfg.clientCAPath) //nolint:gosec // path comes from this process's own operator-controlled config file, not from request input
+	rootCAs, err := mtls.TrustPool(cfg.clientCAPath)
 	if err != nil {
-		return nil, fmt.Errorf("read CA bundle %s: %w", cfg.clientCAPath, err)
+		return nil, err
 	}
 
-	rootCAs := x509.NewCertPool()
-	if !rootCAs.AppendCertsFromPEM(caData) {
-		return nil, fmt.Errorf("no certificates found in CA bundle %s", cfg.clientCAPath)
-	}
+	tlsConfig := mtls.ClientConfig(cert, rootCAs, organizationDatabaseVault)
+	tlsConfig.ServerName = organizationDatabaseVault
 
 	return &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: mtls.ClientConfig(cert, rootCAs, organizationDatabaseVault),
+			TLSClientConfig: tlsConfig,
 		},
 	}, nil
 }

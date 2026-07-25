@@ -1,8 +1,10 @@
 package errors
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -71,5 +73,35 @@ func TestAppError_UnwrapExposesInternalError(t *testing.T) {
 
 	if !errors.Is(appErr, sentinel) {
 		t.Fatal("errors.Is should see through AppError to Internal via Unwrap")
+	}
+}
+
+// Requirement: DV-F-20
+// Requirement: ST-F-11
+// Requirement: SS-F-06
+// Requirement: EH-F-09
+func TestWriteAppError_WritesStatusAndPublicMessageNeverInternal(t *testing.T) {
+	internal := errors.New("internal detail: column email_hash violates unique constraint")
+	appErr := NewConflict(internal)
+
+	rec := httptest.NewRecorder()
+	WriteAppError(rec, appErr)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusConflict)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+
+	var body ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response body did not decode as ErrorResponse: %v (body=%q)", err, rec.Body.String())
+	}
+	if body.Error != appErr.Public {
+		t.Fatalf("body.Error = %q, want %q", body.Error, appErr.Public)
+	}
+	if got := rec.Body.String(); got == internal.Error() {
+		t.Fatalf("response body leaked Internal's exact text: %q", got)
 	}
 }

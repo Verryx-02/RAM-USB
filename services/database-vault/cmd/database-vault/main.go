@@ -67,6 +67,38 @@
 // non-empty Subject.Organization at all - without it, PKI-F-02's
 // organization check would reject every connection. `docker compose up`
 // applies it automatically now; no manual step is required.
+//
+// Mesh membership (DV-F-01's "access to the private mesh network" clause):
+// this container joins the Headscale mesh via a REAL, OS-level tailscaled
+// client (deployments/docker/database-vault/rootfs/etc/s6-overlay/s6-rc.d/
+// {tailscaled,tailscale-up,trust-mesh-ca}), the same mechanism already
+// proven for Storage-Service, instead of pkg/mesh's in-process tsnet.
+// pkg/mesh's own inbound listener and outbound Storage-Service Dial could
+// be made mesh-aware, but it exposes no way to route the Certificate-
+// Authority bootstrap/renewal calls (pkg/pki, wraps
+// github.com/smallstep/certificates/ca) or the MQTT metrics-publish
+// connection (pkg/metrics) through an in-process-only netstack - a
+// confirmed library limitation, not a code gap (see
+// .claude/agent-memory/code-agent.md's "pkg/pki dialer routing" notes). A
+// real tailscaled makes this container's only network egress a genuine
+// kernel tailscale0 interface, so every outbound connection this process
+// makes - CA bootstrap/renewal, MQTT publish, and the Storage-Service call
+// alike - is forced through the mesh automatically, with zero
+// application-level dial injection needed anywhere in this file.
+//
+// envListenAddr is now a real host:port: the database-vault longrun's own
+// `run` script (deployments/docker/database-vault/rootfs/etc/s6-overlay/
+// s6-rc.d/database-vault/run) assembles it from this node's
+// Tailscale-assigned IPv4 address (written by the tailscale-up oneshot)
+// plus a port env var, before exec'ing this binary - so this process binds
+// it directly via ListenAndServeTLS, the same shape as
+// publicKeyHTTPServer's own listener and as Storage-Service's own
+// cmd/storage-service/main.go. ST-F-11's separate public-key listener
+// (publicKeyHTTPServer) is unaffected either way - it stays on ramusb-net,
+// exactly as before (see internal/server/pubkey_server.go and
+// deployments/compose/database-vault.yml). The Postgres connection
+// (envDatabaseURL) is likewise unaffected - it is loopback-only inside
+// this same container, unrelated to the mesh entirely.
 package main
 
 import (
@@ -85,6 +117,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
@@ -108,8 +141,12 @@ import (
 // bootstrap token, used for both inbound listeners (see
 // buildServerTLSConfig).
 const (
-	// envListenAddr is the address this server listens on for incoming
-	// mTLS connections from Security-Switch (DV-F-01).
+	// envListenAddr is the real host:port this server listens on for
+	// incoming mTLS connections from Security-Switch (DV-F-01, "access to
+	// the private mesh network") - assembled at container start by the
+	// database-vault longrun's own `run` script from this node's
+	// Tailscale-assigned IPv4 address plus a port env var, never
+	// 0.0.0.0/ramusb-net (NET-F-01).
 	envListenAddr = "RAM_USB_DATABASE_VAULT_LISTEN_ADDR"
 
 	// envPublicKeyListenAddr is the address Database-Vault listens on for
@@ -120,7 +157,8 @@ const (
 	// TLS identity with the register/login listener (see
 	// buildServerTLSConfig) - only the allowed caller organization,
 	// enforced by RequireOrganization at the HTTP-request level, differs
-	// per listener.
+	// per listener. Deliberately still ramusb-net-only, not moved to the
+	// mesh interface by this task (see this file's package doc comment).
 	envPublicKeyListenAddr = "RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR"
 
 	// envDatabaseURL is the Postgres connection string pgxpool.New
@@ -207,12 +245,12 @@ func run() error {
 		return fmt.Errorf("load pepper: %w", err)
 	}
 
-	listenAddr, err := requireEnv(envListenAddr)
+	listenAddr, err := env.Require(envListenAddr)
 	if err != nil {
 		return err
 	}
 
-	publicKeyListenAddr, err := requireEnv(envPublicKeyListenAddr)
+	publicKeyListenAddr, err := env.Require(envPublicKeyListenAddr)
 	if err != nil {
 		return err
 	}
@@ -228,7 +266,7 @@ func run() error {
 		return fmt.Errorf("build server tls config: %w", err)
 	}
 
-	databaseURL, err := requireEnv(envDatabaseURL)
+	databaseURL, err := env.Require(envDatabaseURL)
 	if err != nil {
 		return err
 	}
@@ -258,7 +296,7 @@ func run() error {
 		return fmt.Errorf("build storage-service client: %w", err)
 	}
 
-	counters := &httpapi.Counters{}
+	counters := &metrics.RequestCounters{}
 
 	handler := &httpapi.Handler{
 		Store:            registration.StorageAdapter{DB: storage.PoolBeginner{Pool: pool}},
@@ -366,22 +404,12 @@ func run() error {
 	}
 }
 
-// requireEnv reads name from the environment, failing closed (RD-04) if
-// it is unset or empty.
-func requireEnv(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-	return value, nil
-}
-
 // getEnvOrDefault reads name from the environment, returning fallback if it
-// is unset or empty. Unlike requireEnv, an unset value here is not a
+// is unset or empty. Unlike env.Require, an unset value here is not a
 // startup failure - only envMigrationsDir uses this, since it has a
 // sensible checked-in-path default (see defaultMigrationsDir), unlike
 // every other value in this file, which has no safe default and so must
-// come from requireEnv.
+// come from env.Require.
 func getEnvOrDefault(name, fallback string) string {
 	value, ok := os.LookupEnv(name)
 	if !ok || value == "" {
@@ -400,7 +428,10 @@ func getEnvOrDefault(name, fallback string) string {
 // level, via mtls.RequireOrganization/mtls.WrapRoundTripper in run);
 // ca.BootstrapServer's default (tls.RequireAndVerifyClientCert) still
 // ensures only a certificate this CA itself issued can complete an
-// inbound handshake at all.
+// inbound handshake at all. This call, and every renewal it triggers in
+// the background, is carried over the real tailscaled interface this
+// container joins at start (see this file's package doc comment) - no
+// dial injection needed, the OS routes it.
 //
 // base is a throwaway *http.Server: pki.NewServer only ever reads/writes
 // its TLSConfig field (confirmed by reading
@@ -441,13 +472,23 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 // (envStorageServiceURL's host, which differs between dev/compose and
 // production) - see pkg/pki's package doc comment for why this is
 // required, not merely defensive.
+//
+// No custom Transport.DialContext (unlike before this task's real-
+// tailscaled conversion): this container's only network egress is now
+// its real tailscale0 kernel interface, so the OS routes this call to
+// Storage-Service - itself reachable only via its own real tailscaled
+// (deployments/docker/storage-service) - through the mesh automatically,
+// with no application-level dial injection needed (see this file's
+// package doc comment).
 func buildStorageServiceClient(serverTLSConfig *tls.Config) (*http.Client, string, error) {
-	baseURL, err := requireEnv(envStorageServiceURL)
+	baseURL, err := env.Require(envStorageServiceURL)
 	if err != nil {
 		return nil, "", err
 	}
 
-	transport := &http.Transport{TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, organizationStorageService)}
+	transport := &http.Transport{
+		TLSClientConfig: pki.ClientTLSConfig(serverTLSConfig, organizationStorageService),
+	}
 	client := &http.Client{Transport: mtls.WrapRoundTripper(transport, organizationStorageService)}
 	return client, baseURL, nil
 }
@@ -463,7 +504,9 @@ func buildStorageServiceClient(serverTLSConfig *tls.Config) (*http.Client, strin
 // this process still serves registration/login traffic without it,
 // since DV-F-16/DV-F-17 are about what gets published when metrics are
 // published, not a hard dependency of the registration/login control
-// flow itself.
+// flow itself. This connection, like every other outbound call this
+// process makes, is carried over the real tailscaled interface (see this
+// file's package doc comment) with no dial injection.
 func buildMetricsClient(serverTLSConfig *tls.Config) (mqtt.Client, error) {
 	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
 	if !ok || brokerURL == "" {
@@ -473,7 +516,7 @@ func buildMetricsClient(serverTLSConfig *tls.Config) (mqtt.Client, error) {
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(serverTLSConfig, metrics.OrganizationMQTTBroker))
 
-	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout)
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, nil)
 	if err != nil {
 		return nil, err
 	}

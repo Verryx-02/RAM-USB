@@ -1,7 +1,7 @@
 // Command network-manager wires Network-Manager's already-implemented
 // packages into a running mTLS HTTP server (NM-F-03's connection-
 // acceptance TLS config, NM-F-08's mesh-user creation, NM-F-09's
-// storage-access grant), plus the outbound gRPC connection to Headscale
+// storage-access grant), plus the outbound REST connection to Headscale
 // those handlers call through internal/headscale, the SQLite-backed grant
 // store (NM-F-11) - which also backs the permanent email -> Headscale
 // pre-auth-key-ID mapping a later bug fix session added (see
@@ -9,17 +9,63 @@
 // "Bug fix" section) - its periodic expiry sweep (NM-F-10), and the
 // periodic MQTT metrics publish (NM-F-17, NM-F-18).
 //
-// NM-F-12 ("expose an administration interface for creating pre-auth keys
-// and managing ACL tags, reachable only from the private network") needs
-// no RAM-USB code: Headscale's own CLI, already running inside the
-// network-manager-headscale container, provides this exact capability
-// (`docker exec <container> headscale preauthkeys create --user <ID>`,
-// `docker exec <container> headscale nodes tag -i <NODE_ID> -t <TAG>`)
-// over a local Unix socket with no network listener at all - satisfying
-// "reachable only from the private network" more strictly than a second
-// mTLS listener would, with zero new attack surface. A prior session built
-// a separate admin mTLS listener for this; it was removed after
-// confirming with the user that Headscale's CLI already covers it.
+// # Headscale is a separate deployment, reached over the public network
+// (NM-F-12, NM-F-14 - this session's architectural change)
+//
+// An earlier version of this file dialed a Headscale instance CO-LOCATED
+// inside this same container, over gRPC, loopback-only. That design was
+// withdrawn after finding Headscale's own documented limitation
+// (headscale.net's FAQ): "running headscale on a machine that is also in
+// the tailnet it coordinates... is not supported" - Headscale's own
+// coordination server can never safely be a member of the mesh it
+// coordinates, which co-location assumed it effectively would be (both
+// processes sharing one container/network identity). Headscale is now a
+// fully separate deployment (deployments/compose/headscale.yml,
+// deployments/docker/headscale/ - a reverse proxy plus Headscale itself,
+// no Network-Manager code), reachable ONLY over the public network - the
+// same network EH-F-01/EH-F-02 and NM-F-14 already use, since Headscale's
+// own coordination endpoint must be reachable before a client has even
+// joined the mesh. NM-F-12 was reworded to match: pre-auth-key/ACL-tag
+// administration is restricted by mutual TLS (organization=NetworkManager,
+// PKI-F-02, RNF-SEC-04) rather than by network placement, since no
+// network-placement-based restriction can apply to a component that
+// cannot itself join the network it would otherwise be restricted to.
+//
+// buildHeadscaleAPIClient assembles the *http.Client
+// internal/headscale.NewClient uses for every admin call (NM-F-08/NM-F-09/
+// NM-F-10's mesh-user creation, tag grants/revokes, and NM-F-01..07's ACL
+// policy push): it presents this process's own already-bootstrapped mTLS
+// client certificate (reusing serverTLSConfig - the SAME CA-F-04 identity
+// this process's own inbound listener uses, exactly the same "one
+// bootstrapped identity, multiple outbound/inbound roles" pattern
+// Database-Vault's buildStorageServiceClient and Entry-Hub's
+// buildMetricsClient already establish) to the reverse proxy fronting
+// Headscale, which requires and verifies it (organization=NetworkManager)
+// ONLY on the `/api/v1/*` path this client calls - see that reverse
+// proxy's own Dockerfile doc comment for the full per-path mTLS design.
+// This is NOT the RAM-USB-internal-CA-to-RAM-USB-internal-CA trust model
+// pkg/pki's ClientTLSConfig/ForceServerName assume (both peers issued by
+// the same internal CA, SAN=organization) - the reverse proxy's OWN
+// server-facing TLS certificate is an ordinary public-style certificate
+// (self-signed dev-only in this Compose stack, Let's Encrypt in
+// production - the exact same scheme Entry-Hub's own public listener
+// uses), deliberately NOT issued by RAM-USB's internal Certificate-
+// Authority: real end-user Tailscale clients (CL-F-04) must be able to
+// trust this same certificate too, and have no reason to ever trust
+// RAM-USB's private internal CA. So this client's own RootCAs trust
+// decision is independent of pki.ClientTLSConfig's organization-SAN
+// matching entirely - see buildHeadscaleAPIClient's own doc comment for
+// exactly how that trust is established (envHeadscaleAPICAFile, optional,
+// same "trust one specific dev-only PEM file" mechanism pkg/mesh.Config.
+// ControlCAFile already established, empty in any deployment where the
+// reverse proxy's certificate already chains to a real, publicly trusted
+// root).
+//
+// This is the ONE call in the entire system that crosses the public
+// network instead of the private mesh - flagged here explicitly, and
+// again on buildHeadscaleAPIClient/buildHeadscaleService's own doc
+// comments, as a deliberate, accepted architectural exception forced by
+// Headscale's own limitation, not an oversight or a shortcut.
 //
 // Every configuration value is read from an environment variable, per
 // CONTRIBUTING.md §7's "cmd/<service>/main.go: wiring, config loading,
@@ -42,18 +88,40 @@
 // Database-Vault's cmd/database-vault/main.go established first
 // (PKI-F-01, PKI-F-02, CA-F-04 session).
 //
-// Headscale (internal/headscale.Dial) remains Network-Manager's one
-// outbound dependency that is NOT a RAM-USB mTLS peer under
-// PKI-F-01/PKI-F-02's rules (a gRPC bearer-API-key credential instead -
-// see internal/headscale/client.go's package doc comment). NM-F-10's
-// sweep calls back into internal/headscale through that same connection.
-//
 // See also deployments/compose/certificate-authority.yml's certificate-authority-init
 // service: the dev Certificate-Authority container needs a one-time,
 // idempotent setup step before any certificate it issues carries a
 // non-empty Subject.Organization at all - without it, PKI-F-02's
 // organization check would reject every connection. `docker compose up`
 // applies it automatically; no manual step is required.
+//
+// Mesh membership (NM-F-03's "only Security-Switch and Certificate-Authority
+// can contact Network-Manager" clause): this container joins the Headscale
+// mesh via a REAL, kernel-level OS tailscaled daemon (s6-supervised, see
+// deployments/docker/network-manager/rootfs/etc/s6-overlay/s6-rc.d/
+// tailscaled/ and tailscale-up/), not pkg/mesh's in-process tsnet - this
+// process also needs Certificate-Authority-bootstrap traffic (pkg/pki) and
+// MQTT metrics-publish traffic (pkg/metrics) to go through the mesh, and
+// neither of those libraries exposes a way to route through an
+// in-process-only netstack for their internal/background traffic
+// (confirmed by direct source reading, a hard library limitation - see
+// .claude/agent-memory/code-agent.md's "pkg/pki dialer routing" entry).
+// Once the container's only network egress is a real tailscale0
+// interface, every outbound connection this process makes THROUGH THE
+// MESH is forced through it automatically, with zero application-level
+// dial injection needed - the same mechanism Storage-Service already uses
+// (see its own Dockerfile package doc comment) for the identical reason
+// (sshd needs a kernel TUN device; here it is pkg/pki and pkg/metrics that
+// need OS-level routing instead). The one exception is
+// buildHeadscaleAPIClient's own outbound call above, which deliberately
+// goes over the public network, not the mesh - Headscale is not itself a
+// mesh member (see this file's own top-level doc comment). envListenAddr
+// is therefore a real host:port (assembled by the tailscale-up s6 oneshot
+// from this node's Tailscale-assigned IPv4 address, exactly like
+// Storage-Service's own storage-service/run script - see that file for
+// the identical pattern), and httpServer below binds it directly via
+// net/http.Server.Addr + ListenAndServeTLS, never a tsnet-specific Listen
+// call.
 package main
 
 import (
@@ -65,14 +133,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
-	"google.golang.org/grpc"
 
+	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
@@ -87,29 +153,49 @@ import (
 // (RAM_USB_CA_BOOTSTRAP_TOKEN) is already established by CA-F-04 and is not
 // redefined here - it is this server's single-use bootstrap token.
 const (
-	// envListenAddr is the address the listener accepts incoming
-	// mTLS connections from Security-Switch on (NM-F-03).
+	// envListenAddr is the address this server listens on for incoming
+	// mTLS connections from Security-Switch (NM-F-03) - a real host:port,
+	// assembled by the tailscale-up s6 oneshot from this node's real
+	// Tailscale-assigned IPv4 address before this binary is ever exec'd
+	// (see deployments/docker/network-manager/rootfs/etc/s6-overlay/
+	// s6-rc.d/network-manager/run), exactly like Storage-Service's own
+	// envListenAddr.
 	envListenAddr = "RAM_USB_NETWORK_MANAGER_LISTEN_ADDR"
 
-	// envHeadscaleAddr is Headscale's gRPC coordination endpoint address
-	// (internal/headscale.Dial), e.g.
-	// "network-manager-headscale:50443". Not part of any RAM-USB
-	// mTLS/PKI-F-01/PKI-F-02 role - see this file's package doc comment.
-	envHeadscaleAddr = "RAM_USB_HEADSCALE_ADDR"
+	// envHeadscaleAPIURL is the PUBLIC base URL of the reverse proxy
+	// fronting the separately-deployed Headscale instance (e.g.
+	// "https://headscale.ram-usb.example:8080" in production, ideally on
+	// its own dedicated VPS per NM-F-14; "https://headscale:8080" in this
+	// project's dev/test Compose stack) - see this file's own package doc
+	// comment for the full "why public, not mesh" reasoning.
+	envHeadscaleAPIURL = "RAM_USB_NETWORK_MANAGER_HEADSCALE_API_URL"
 
-	// envHeadscaleAPIKey is the bearer API key internal/headscale.Dial
-	// authenticates with (a Headscale-issued credential, minted
-	// out-of-band by a CA/ops process - "headscale apikeys create" -
-	// distinct from any RAM-USB mTLS certificate).
-	envHeadscaleAPIKey = "RAM_USB_HEADSCALE_API_KEY" //nolint:gosec // an env var *name*, not a credential value
+	// envHeadscaleAPIKey is Headscale's own bearer API key
+	// (internal/headscale.NewClient's apiKey parameter), minted
+	// out-of-band by the operator on the Headscale container/VPS itself
+	// ("headscale apikeys create" - see deployments/scripts/headscale.sh)
+	// and distributed to Network-Manager out-of-band as this env var, the
+	// same out-of-band-distribution pattern SRS §2.6 already establishes
+	// for RAM_USB_MASTER_KEY/RAM_USB_PASSWORD_PEPPER/CA-F-04's bootstrap
+	// token. Distinct from, and layered independently on top of, this
+	// process's own mTLS client certificate (NM-F-12) - Headscale's own
+	// httpAuthenticationMiddleware requires this bearer token regardless
+	// of the reverse proxy's separate mTLS check (see internal/headscale/
+	// client.go's package doc comment).
+	envHeadscaleAPIKey = "RAM_USB_NETWORK_MANAGER_HEADSCALE_API_KEY" //nolint:gosec // an env var *name*, not a credential value
 
-	// envHeadscaleInsecureSkipVerify, if set to "true", skips verifying
-	// Headscale's server certificate. Optional, defaults to false.
-	// third-party/network-manager/headscale/dev-tls/README.txt documents
-	// why this dev-only toggle exists: the dev-compose Headscale
-	// deployment uses a self-signed certificate not chained to any
-	// trusted root - never appropriate for a real deployment.
-	envHeadscaleInsecureSkipVerify = "RAM_USB_HEADSCALE_INSECURE_SKIP_VERIFY"
+	// envHeadscaleAPICAFile optionally names a PEM file trusting the
+	// reverse proxy's OWN public-facing TLS server certificate (NOT
+	// RAM-USB's internal Certificate-Authority - see this file's own
+	// package doc comment for why those are deliberately different trust
+	// roots). Left unset in any deployment where that certificate already
+	// chains to a real, publicly trusted root (a real Let's Encrypt
+	// certificate in production); only this project's dev-only
+	// self-signed reverse-proxy certificate
+	// (third-party/headscale/dev-tls) needs it set - same "trust one
+	// specific dev-only PEM file" mechanism pkg/mesh.Config.ControlCAFile
+	// already established for the exact same class of problem.
+	envHeadscaleAPICAFile = "RAM_USB_NETWORK_MANAGER_HEADSCALE_API_CA_FILE" //nolint:gosec // a file path, not a credential value
 
 	// envGrantsDBPath is the filesystem path to NM-F-11's SQLite grant
 	// store (internal/grants.Open). Required, not optional: NM-F-11 is a
@@ -150,6 +236,12 @@ const metricsPublishInterval = time.Minute
 // connection (metrics) to complete.
 const connectTimeout = 10 * time.Second
 
+// headscaleAPITimeout bounds every individual outbound call to Headscale's
+// admin API (buildHeadscaleAPIClient) - this crosses the public network
+// (see this file's package doc comment), so it gets its own explicit,
+// generous-but-finite budget rather than an unbounded call.
+const headscaleAPITimeout = 15 * time.Second
+
 // sweepInterval is NM-F-10's "periodically check recorded expiries."
 // NM-F-10 gives no concrete number - this session's judgment call: short
 // enough that an expired grant's real-world exposure window past its
@@ -170,35 +262,33 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	listenAddr, err := requireEnv(envListenAddr)
+	listenAddr, err := env.Require(envListenAddr)
 	if err != nil {
 		return err
 	}
-	grantsDBPath, err := requireEnv(envGrantsDBPath)
+	grantsDBPath, err := env.Require(envGrantsDBPath)
 	if err != nil {
 		return err
 	}
 
 	// serverTLSConfig is this process's one bootstrapped TLS identity
-	// (PKI-F-01, CA-F-04) - see this file's package doc comment for why
-	// no outbound RAM-USB mTLS client role exists here.
+	// (PKI-F-01, CA-F-04) - reused both for the inbound NM-F-03 listener
+	// AND as the outbound mTLS client certificate presented to Headscale's
+	// reverse proxy (NM-F-12) - see this file's own package doc comment.
 	serverTLSConfig, err := buildServerTLSConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("build server tls config: %w", err)
 	}
 
-	conn, err := buildHeadscaleConn()
+	headscaleClient, err := buildHeadscaleService(serverTLSConfig)
 	if err != nil {
-		return fmt.Errorf("dial headscale: %w", err)
+		return fmt.Errorf("build headscale api client: %w", err)
 	}
-	defer func() { _ = conn.Close() }()
-
-	headscaleService := v1.NewHeadscaleServiceClient(conn)
 
 	// pushStartupPolicy applies NM-F-01/02/03/04/05/06/07's static ACL
 	// policy to Headscale exactly once, before this process serves any
 	// mesh-provisioning traffic. Fatal on failure, same as every other
-	// startup dependency above (buildServerTLSConfig, buildHeadscaleConn):
+	// startup dependency above (buildServerTLSConfig, buildHeadscaleService):
 	// Headscale's ACL model is default-allow (open, unrestricted mesh
 	// reachability) until a policy is actively pushed, and only becomes
 	// default-deny once one exists - so a process that started serving
@@ -211,8 +301,8 @@ func run() error {
 	// "working" in a broken, unenforced state), while the separate
 	// SetTags admin call NM-F-09 depends on is rejected outright - neither
 	// behavior is safe to serve traffic under, so this failure aborts run()
-	// exactly like the other three startup dependencies above it.
-	if err := pushStartupPolicy(ctx, headscaleService); err != nil {
+	// exactly like the other startup dependencies above it.
+	if err := pushStartupPolicy(ctx, headscaleClient); err != nil {
 		return fmt.Errorf("push headscale acl policy (NM-F-01/02/03/04/05/06/07): %w", err)
 	}
 
@@ -227,10 +317,10 @@ func run() error {
 	}
 	defer func() { _ = grantStore.Close() }()
 
-	counters := &httpapi.Counters{}
+	counters := &metrics.RequestCounters{}
 
 	handler := &httpapi.Handler{
-		Mesh:      httpapi.HeadscaleAdapter{Service: headscaleService},
+		Mesh:      httpapi.HeadscaleAdapter{Service: headscaleClient},
 		Grants:    grantStore,
 		MeshUsers: grantStore,
 		Metrics:   counters,
@@ -255,7 +345,7 @@ func run() error {
 	// delete its persisted row.
 	sweepCtx, stopSweep := context.WithCancel(ctx)
 	defer stopSweep()
-	go grants.Run(sweepCtx, sweepInterval, grantStore, headscaleRevoker{svc: headscaleService})
+	go grants.Run(sweepCtx, sweepInterval, grantStore, headscaleRevoker{svc: headscaleClient})
 
 	metricsClient, err := buildMetricsClient(serverTLSConfig)
 	if err != nil {
@@ -274,7 +364,8 @@ func run() error {
 		// TLSConfig already carries the bootstrapped certificate (via
 		// buildServerTLSConfig's GetCertificate callback, not a static
 		// Certificates slice), so ListenAndServeTLS is called with empty
-		// file paths per net/http's documented convention for that case.
+		// file paths per net/http's documented convention for that case -
+		// same pattern as Storage-Service's own cmd/storage-service/main.go.
 		serveErr <- httpServer.ListenAndServeTLS("", "")
 	}()
 
@@ -308,33 +399,6 @@ func (r headscaleRevoker) Revoke(ctx context.Context, nodeID uint64, tag string)
 	return headscale.RemoveNodeTag(ctx, r.svc, nodeID, tag)
 }
 
-// requireEnv reads name from the environment, failing closed (RD-04) if
-// it is unset or empty.
-func requireEnv(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-	return value, nil
-}
-
-// getEnvBool reads name from the environment as a bool, defaulting to
-// false if unset or empty. A value present but not parseable as a bool
-// (strconv.ParseBool's accepted forms: 1/t/T/TRUE/true/True,
-// 0/f/F/FALSE/false/False) is a startup failure (RD-04, fail-secure) -
-// not silently treated as false.
-func getEnvBool(name string) (bool, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return false, nil
-	}
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		return false, fmt.Errorf("environment variable %s is not a valid bool: %w", name, err)
-	}
-	return parsed, nil
-}
-
 // buildServerTLSConfig bootstraps this process's one TLS identity from the
 // Certificate-Authority (CA-F-04, PKI-F-01), using pki.LoadBootstrapToken's
 // single-use token exactly once. The returned *tls.Config carries no
@@ -364,37 +428,83 @@ func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
 	return bootstrapped.TLSConfig, nil
 }
 
-// buildHeadscaleConn dials Headscale's gRPC coordination endpoint
-// (internal/headscale.Dial), the private, non-RAM-USB dependency NM-F-08/
-// NM-F-09's handlers and NM-F-10's sweep call through - not a
-// PKI-F-01/PKI-F-02 mTLS role, see this file's package doc comment.
-func buildHeadscaleConn() (*grpc.ClientConn, error) {
-	addr, err := requireEnv(envHeadscaleAddr)
+// buildHeadscaleAPIClient assembles the *http.Client
+// internal/headscale.NewClient sends every admin-API request through - see
+// this file's own package doc comment for the full design (why this is
+// the one deliberately-public-network call in the system, and why its
+// trust model is NOT pki.ClientTLSConfig's internal-CA-to-internal-CA
+// pattern). serverTLSConfig.GetClientCertificate presents this process's
+// own already-bootstrapped mTLS identity (organization=NetworkManager) as
+// the OUTBOUND client certificate the reverse proxy's `/api/v1/*` location
+// requires and verifies - reusing it here is safe for the exact reason
+// Database-Vault's buildStorageServiceClient/Entry-Hub's
+// buildMetricsClient already established: github.com/smallstep/
+// certificates/ca.Client.GetServerTLSConfig (what pki.NewServer calls
+// internally) unconditionally sets BOTH GetCertificate and
+// GetClientCertificate on the same *tls.Config, wired to the same
+// certificate renewer, so the resulting value already presents this
+// server's own certificate whether it is dialed as a TLS server or dials
+// out as a TLS client.
+//
+// RootCAs is deliberately NOT serverTLSConfig's own RootCAs (RAM-USB's
+// internal Certificate-Authority root) - the reverse proxy's OWN
+// server-facing certificate is never issued by that CA (see this file's
+// package doc comment for why). A nil RootCAs (envHeadscaleAPICAFile
+// unset) falls back to crypto/tls's own default, the host's real system
+// trust store - correct for a production deployment where that
+// certificate is a real, publicly trusted one (Let's Encrypt).
+func buildHeadscaleAPIClient(serverTLSConfig *tls.Config) (*http.Client, error) {
+	tlsConfig := &tls.Config{
+		MinVersion:           tls.VersionTLS13,
+		GetClientCertificate: serverTLSConfig.GetClientCertificate,
+	}
+
+	caFile := os.Getenv(envHeadscaleAPICAFile)
+	if caFile != "" {
+		pool, err := mtls.TrustPool(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", envHeadscaleAPICAFile, err)
+		}
+		tlsConfig.RootCAs = pool
+	}
+
+	return &http.Client{
+		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		Timeout:   headscaleAPITimeout,
+	}, nil
+}
+
+// buildHeadscaleService assembles internal/headscale.NewClient - the REST
+// connection to Headscale's admin API NM-F-08/NM-F-09/NM-F-10's handlers
+// and NM-F-01..07's ACL policy push all call through - from
+// buildHeadscaleAPIClient's *http.Client plus envHeadscaleAPIURL/
+// envHeadscaleAPIKey.
+func buildHeadscaleService(serverTLSConfig *tls.Config) (*headscale.Client, error) {
+	apiURL, err := env.Require(envHeadscaleAPIURL)
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := requireEnv(envHeadscaleAPIKey)
-	if err != nil {
-		return nil, err
-	}
-	insecureSkipVerify, err := getEnvBool(envHeadscaleInsecureSkipVerify)
+	apiKey, err := env.Require(envHeadscaleAPIKey)
 	if err != nil {
 		return nil, err
 	}
 
-	tlsConfig := &tls.Config{InsecureSkipVerify: insecureSkipVerify} //nolint:gosec // operator-controlled dev-only toggle (envHeadscaleInsecureSkipVerify), defaults to false; see third-party/network-manager/headscale/dev-tls/README.txt
+	httpClient, err := buildHeadscaleAPIClient(serverTLSConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	return headscale.Dial(addr, apiKey, tlsConfig)
+	return headscale.NewClient(apiURL, httpClient, apiKey), nil
 }
 
 // pushStartupPolicy is a thin, separately-testable wrapper over
 // headscale.PushPolicy - same "small named function wrapping one startup
-// dependency" shape as buildServerTLSConfig/buildHeadscaleConn/
+// dependency" shape as buildServerTLSConfig/buildHeadscaleAPIClient/
 // buildMetricsClient above, so a unit test can exercise it against a
 // hand-written fake without needing run()'s full real-listener/real-CA
 // setup. svc is typed as headscale.PolicyPusher (not the concrete
-// *v1.HeadscaleServiceClient run() passes in) precisely so a test can
-// substitute a fake here.
+// *headscale.Client run() passes in) precisely so a test can substitute a
+// fake here.
 func pushStartupPolicy(ctx context.Context, svc headscale.PolicyPusher) error {
 	return headscale.PushPolicy(ctx, svc)
 }
@@ -417,7 +527,7 @@ func buildMetricsClient(serverTLSConfig *tls.Config) (mqtt.Client, error) {
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(serverTLSConfig, metrics.OrganizationMQTTBroker))
 
-	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout)
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, nil)
 	if err != nil {
 		return nil, err
 	}

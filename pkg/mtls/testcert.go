@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"math/big"
 	"time"
@@ -63,6 +64,19 @@ func NewTestCA() (*TestCA, error) {
 // tls.Config.ClientCAs or tls.Config.RootCAs in tests.
 func (ca *TestCA) Pool() *x509.CertPool {
 	return ca.pool
+}
+
+// CertPEM returns this test CA's own root certificate, PEM-encoded -
+// suitable for a test that needs the CA's trust anchor as a standalone PEM
+// file on disk (e.g. a client that reads its own root-of-trust bundle from
+// a fixed path, like cmd/authorized-keys-command/main.go's client_ca
+// config key) rather than as an in-memory *x509.CertPool. x509.CertPool
+// itself has no supported accessor for the raw certificates it holds
+// (Subjects() is deprecated and does not return valid DER for this
+// purpose) - this method exists because Pool() alone cannot serve that use
+// case.
+func (ca *TestCA) CertPEM() []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.cert.Raw})
 }
 
 // IssueLeaf signs a leaf certificate for the given organization, usable as

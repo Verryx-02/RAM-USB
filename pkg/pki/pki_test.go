@@ -2,6 +2,7 @@ package pki
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"os"
@@ -98,5 +99,59 @@ func TestNewClient_MalformedToken(t *testing.T) {
 	_, err := NewClient(context.Background(), "not-a-real-token")
 	if err == nil {
 		t.Fatal("NewClient() with a malformed token error = nil, want non-nil")
+	}
+}
+
+// Requirement: NET-F-02
+//
+// NewServer's *tls.Config must enforce TLS 1.3, unconditionally
+// (forceTLS13 in pki.go) — the vendored SDK's own default (ca/tls.go's
+// getDefaultTLSConfig) falls back to TLS 1.2 whenever the CA's own
+// TLSOptions don't set MinVersion, which RAM-USB's Certificate-Authority
+// config does not.
+func TestNewServer_RealCA_EnforcesTLS13(t *testing.T) {
+	caURL, container := skipUnlessCAConfigured(t)
+	token := generateTestToken(t, caURL, container, "pki-test-server-tls13")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	server, err := NewServer(ctx, token, &http.Server{Addr: "127.0.0.1:0", ReadHeaderTimeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v, want nil", err)
+	}
+	if server.TLSConfig == nil {
+		t.Fatal("NewServer() TLSConfig = nil, want non-nil")
+	}
+	if server.TLSConfig.MinVersion != tls.VersionTLS13 {
+		t.Fatalf("NewServer() TLSConfig.MinVersion = %#x, want %#x (tls.VersionTLS13)", server.TLSConfig.MinVersion, tls.VersionTLS13)
+	}
+}
+
+// Requirement: NET-F-02
+//
+// Same guarantee as TestNewServer_RealCA_EnforcesTLS13, for the outbound
+// client side (NewClient/NewClientWithDialer's shared bootstrap path).
+func TestNewClient_RealCA_EnforcesTLS13(t *testing.T) {
+	caURL, container := skipUnlessCAConfigured(t)
+	token := generateTestToken(t, caURL, container, "pki-test-client-tls13")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	client, err := NewClient(ctx, token)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v, want nil", err)
+	}
+
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
+	}
+	if transport.TLSClientConfig == nil {
+		t.Fatal("client.Transport.TLSClientConfig = nil, want non-nil")
+	}
+	if transport.TLSClientConfig.MinVersion != tls.VersionTLS13 {
+		t.Fatalf("client.Transport.TLSClientConfig.MinVersion = %#x, want %#x (tls.VersionTLS13)", transport.TLSClientConfig.MinVersion, tls.VersionTLS13)
 	}
 }

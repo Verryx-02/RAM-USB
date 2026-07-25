@@ -60,6 +60,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
@@ -121,7 +122,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	databaseURL, err := requireEnv(envDatabaseURL)
+	databaseURL, err := env.Require(envDatabaseURL)
 	if err != nil {
 		return err
 	}
@@ -168,16 +169,6 @@ func run() error {
 	return nil
 }
 
-// requireEnv reads name from the environment, failing closed (RD-04) if
-// it is unset or empty.
-func requireEnv(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok || value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-	return value, nil
-}
-
 // getEnvOrDefault reads name from the environment, returning fallback if
 // it is unset or empty.
 func getEnvOrDefault(name, fallback string) string {
@@ -201,7 +192,7 @@ func getEnvOrDefault(name, fallback string) string {
 // when metrics publishing is left unconfigured), every value here is
 // required — see this file's package doc comment for why.
 func buildMQTTClient(ctx context.Context) (mqtt.Client, error) {
-	brokerURL, err := requireEnv(envMQTTBrokerURL)
+	brokerURL, err := env.Require(envMQTTBrokerURL)
 	if err != nil {
 		return nil, err
 	}
@@ -223,5 +214,5 @@ func buildMQTTClient(ctx context.Context) (mqtt.Client, error) {
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(base, metrics.OrganizationMQTTBroker))
 
-	return metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout)
+	return metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, nil) //nolint:contextcheck // paho's OpenConnectionFunc signature carries no context.Context to thread through (see pkg/metrics/dial.go's meshOpenConnectionFn doc comment)
 }

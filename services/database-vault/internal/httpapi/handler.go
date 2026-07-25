@@ -19,13 +19,12 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
-	"time"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/validation"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/encryption"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/hashing"
@@ -70,7 +69,7 @@ type Handler struct {
 
 	// Metrics accumulates request/error/response-time counts feeding
 	// DV-F-16/DV-F-17's periodic publish. Must not be nil.
-	Metrics *Counters
+	Metrics *metrics.RequestCounters
 
 	// Logger receives every structured log line this handler writes. If
 	// nil, slog.Default() is used. Tests inject a logger writing to a
@@ -95,12 +94,8 @@ func (h *Handler) logger() *slog.Logger {
 // line without the email or password, and no call to Register/Store/
 // POSIXProvisioner at all.
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	h.Metrics.BeginRequest()
 	isError := false
-	defer func() {
-		h.Metrics.EndRequest(time.Since(start), isError)
-	}()
+	defer h.Metrics.Track(&isError)()
 
 	req, err := validation.DecodeRegisterRequest(r.Body)
 	if err != nil {
@@ -121,7 +116,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		isError = true
 		h.logger().Error("register: encrypt email failed", "error", err)
-		writeAppError(w, apperrors.NewInternal(err))
+		apperrors.WriteAppError(w, apperrors.NewInternal(err))
 		return
 	}
 
@@ -129,7 +124,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		isError = true
 		h.logger().Error("register: generate salt failed", "error", err)
-		writeAppError(w, apperrors.NewInternal(err))
+		apperrors.WriteAppError(w, apperrors.NewInternal(err))
 		return
 	}
 
@@ -137,7 +132,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		isError = true
 		h.logger().Error("register: hash password failed", "error", err)
-		writeAppError(w, apperrors.NewInternal(err))
+		apperrors.WriteAppError(w, apperrors.NewInternal(err))
 		return
 	}
 
@@ -151,15 +146,15 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	switch result.Outcome {
 	case registration.OutcomeRegistered:
 		h.logger().Info("register: succeeded")
-		writeJSON(w, http.StatusCreated, registerResponse{PosixUsername: result.PosixUsername})
+		apperrors.WriteJSON(w, http.StatusCreated, registerResponse{PosixUsername: result.PosixUsername})
 	case registration.OutcomeDuplicate:
 		isError = true
 		h.logger().Warn("register: rejected as duplicate", "error", result.Err)
-		writeAppError(w, apperrors.NewConflict(result.Err))
+		apperrors.WriteAppError(w, apperrors.NewConflict(result.Err))
 	default:
 		isError = true
 		h.logger().Error("register: failed", "error", result.Err)
-		writeAppError(w, apperrors.NewInternal(result.Err))
+		apperrors.WriteAppError(w, apperrors.NewInternal(result.Err))
 	}
 }
 
@@ -167,12 +162,8 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 // and on success hand off to login.Login (DV-F-13..DV-F-15). On a decode
 // or validation failure, DV-F-20 applies identically to Register.
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	h.Metrics.BeginRequest()
 	isError := false
-	defer func() {
-		h.Metrics.EndRequest(time.Since(start), isError)
-	}()
+	defer h.Metrics.Track(&isError)()
 
 	req, err := validation.DecodeLoginRequest(r.Body)
 	if err != nil {
@@ -195,14 +186,14 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	switch result.Outcome {
 	case login.OutcomeSuccess:
 		h.logger().Info("login: succeeded")
-		writeJSON(w, http.StatusOK, loginResponse{Status: "ok"})
+		apperrors.WriteJSON(w, http.StatusOK, loginResponse{Status: "ok"})
 	default:
 		isError = true
 		// DV-F-15: result.Err is already one of the two fixed sentinels
 		// (login.ErrAuthenticationFailed, login.ErrPasswordVerificationFailed)
 		// carrying no per-record content — safe to log as-is.
 		h.logger().Warn("login: failed", "error", result.Err)
-		writeAppError(w, apperrors.NewUnauthorized(result.Err))
+		apperrors.WriteAppError(w, apperrors.NewUnauthorized(result.Err))
 	}
 }
 
@@ -213,8 +204,21 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 // offending field's value, so logging err.Error() here never risks
 // writing a credential to the log.
 func (h *Handler) failValidation(w http.ResponseWriter, endpoint string, err error) {
-	h.logger().Warn("validation failed", "endpoint", endpoint, "error", err)
-	writeAppError(w, apperrors.NewBadRequest(err))
+	failBadRequest(w, h.logger(), err, "validation failed", "endpoint", endpoint, "error", err)
+}
+
+// failBadRequest is the package-level building block DV-F-20's
+// failValidation above and PublicKeyHandler.PublicKey's malformed-username
+// rejection both call: log msg/args via logger (callers pass only sanitized/
+// generic fields, never the offending raw value) and respond HTTP 400 with
+// apperrors.NewBadRequest(err)'s generic body. Kept as a free function
+// rather than a Handler method so PublicKeyHandler — deliberately its own
+// type, see pubkey_handler.go's package doc comment for why it doesn't
+// share Handler's dependencies — can reuse it without gaining any of
+// Handler's fields.
+func failBadRequest(w http.ResponseWriter, logger *slog.Logger, err error, msg string, args ...any) {
+	logger.Warn(msg, args...)
+	apperrors.WriteAppError(w, apperrors.NewBadRequest(err))
 }
 
 // registerResponse is the JSON body Register writes on success. No SRS or
@@ -227,23 +231,4 @@ type registerResponse struct {
 // loginResponse is the JSON body Login writes on success.
 type loginResponse struct {
 	Status string `json:"status"`
-}
-
-// appErrorResponse is the JSON body written for every non-2xx response:
-// only the AppError's Public message, never its Internal detail.
-type appErrorResponse struct {
-	Error string `json:"error"`
-}
-
-// writeAppError writes appErr.Status and a body containing only
-// appErr.Public — appErr.Internal never reaches the response.
-func writeAppError(w http.ResponseWriter, appErr *apperrors.AppError) {
-	writeJSON(w, appErr.Status, appErrorResponse{Error: appErr.Public})
-}
-
-// writeJSON writes status and body, JSON-encoded, to w.
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
 }

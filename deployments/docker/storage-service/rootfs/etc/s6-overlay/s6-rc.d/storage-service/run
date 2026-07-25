@@ -1,9 +1,21 @@
 #!/command/with-contenv sh
 # with-contenv (not plain #!/bin/sh): S6_KEEP_ENV is left at its default (0)
-# so the sshd longrun does NOT inherit the container's environment, and this
-# is the one process that specifically needs
+# so this longrun does NOT inherit the container's environment implicitly,
+# and this is the one process that specifically needs
 # RAM_USB_STORAGE_SERVICE_LISTEN_ADDR/TLS_CERT/TLS_KEY/CLIENT_CA (see
 # services/storage-service/cmd/storage-service/main.go) pushed back into its
-# own environment. exec replaces this shell so the storage-service binary
-# becomes the directly supervised process and receives s6's signals itself.
+# own environment.
+#
+# RAM_USB_STORAGE_SERVICE_LISTEN_ADDR is no longer passed through verbatim
+# from docker-compose: it is assembled here from
+# RAM_USB_STORAGE_SERVICE_TAILSCALE_IP (written by the tailscale-up oneshot
+# this longrun depends on, dependencies.d/tailscale-up, into s6-overlay's
+# container-environment directory once this node's mesh IPv4 address is
+# known) and RAM_USB_STORAGE_SERVICE_LISTEN_PORT (a plain port number, set
+# in deployments/compose/storage-service.yml) - binding this server to the
+# Tailscale interface address only, never 0.0.0.0, per NET-F-01.
+export RAM_USB_STORAGE_SERVICE_LISTEN_ADDR="${RAM_USB_STORAGE_SERVICE_TAILSCALE_IP:?RAM_USB_STORAGE_SERVICE_TAILSCALE_IP is not set - tailscale-up must run first}:${RAM_USB_STORAGE_SERVICE_LISTEN_PORT:?RAM_USB_STORAGE_SERVICE_LISTEN_PORT is not set}"
+
+# exec replaces this shell so the storage-service binary becomes the
+# directly supervised process and receives s6's signals itself.
 exec /usr/local/bin/storage-service

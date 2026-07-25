@@ -1,0 +1,48 @@
+#!/command/with-contenv sh
+# with-contenv (not plain #!/bin/sh): S6_KEEP_ENV is left at its default (0)
+# so this longrun does NOT inherit the container's environment implicitly,
+# and this is the process that needs the full RAM_USB_* configuration group
+# (RAM_USB_MASTER_KEY, RAM_USB_PASSWORD_PEPPER, RAM_USB_CA_BOOTSTRAP_TOKEN,
+# RAM_USB_DATABASE_VAULT_DATABASE_URL, RAM_USB_DATABASE_VAULT_LISTEN_ADDR,
+# RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR, RAM_USB_STORAGE_SERVICE_URL,
+# the RAM_USB_MQTT_* group, ...) pushed back into its own environment - same
+# convention already established in Storage-Service's storage-service
+# longrun run script.
+#
+# RAM_USB_DATABASE_VAULT_LISTEN_ADDR is no longer passed through verbatim
+# from docker-compose: it is assembled here from
+# RAM_USB_DATABASE_VAULT_TAILSCALE_IP (written by the tailscale-up oneshot
+# this longrun depends on, dependencies.d/tailscale-up, into s6-overlay's
+# container-environment directory once this node's mesh IPv4 address is
+# known) and RAM_USB_DATABASE_VAULT_LISTEN_PORT (a plain port number, set
+# in deployments/compose/database-vault.yml) - binding the register/login
+# listener to the real Tailscale interface address only, never 0.0.0.0/
+# ramusb-net, per NET-F-01. Mirrors Storage-Service's own storage-service
+# longrun run script exactly. RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR
+# is untouched - ST-F-11's public-key listener stays on ramusb-net,
+# unaffected by this task (see cmd/database-vault/main.go's own doc
+# comment).
+#
+# database-vault's own main.go already performs automatic schema migration
+# at startup (internal/schema, applied before it starts serving) - no
+# separate migration oneshot is needed here, this longrun only has to wait
+# for Postgres to accept connections (dependencies.d/postgres-ready) AND
+# for this node's own Tailscale IP to be assigned (dependencies.d/
+# tailscale-up).
+export RAM_USB_DATABASE_VAULT_LISTEN_ADDR="${RAM_USB_DATABASE_VAULT_TAILSCALE_IP:?RAM_USB_DATABASE_VAULT_TAILSCALE_IP is not set - tailscale-up must run first}:${RAM_USB_DATABASE_VAULT_LISTEN_PORT:?RAM_USB_DATABASE_VAULT_LISTEN_PORT is not set}"
+
+# s6-overlay's /init-spawned longrun tree does NOT start this process at
+# the image's WORKDIR (/app, see the Dockerfile's own comment above the
+# migrations COPY) the way a plain `docker run --entrypoint sh <image> -c
+# pwd` would suggest - confirmed live, the binary otherwise fails every
+# single start resolving its default relative migrations path
+# (services/database-vault/migrations, see
+# services/database-vault/internal/schema/schema.go) with "open .: no such
+# file or directory". `cd` here, before exec, restores the cwd the
+# Dockerfile's layout (and main.go's defaultMigrationsDir constant) already
+# assumes, without needing a RAM_USB_DATABASE_VAULT_MIGRATIONS_DIR override.
+cd /app || exit 1
+
+# exec replaces this shell so the database-vault binary becomes the
+# directly supervised process and receives s6's signals itself.
+exec /app/database-vault

@@ -49,12 +49,27 @@ package pki
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"os"
 
 	stepca "github.com/smallstep/certificates/ca"
 )
+
+// forceTLS13 is a stepca.TLSOption applied unconditionally by every
+// bootstrap call in this package. NET-F-02 requires TLS 1.3 with no
+// exceptions, but ca.BootstrapServer/BootstrapClient's own default
+// *tls.Config (getDefaultTLSConfig, ca/tls.go) sets MinVersion to TLS 1.2
+// when the CA's TLSOptions are unset — and RAM-USB's Certificate-Authority
+// config doesn't set them either. TLSOptionCtx.Config is the same
+// *tls.Config pointer the SDK goes on to use for the listener/transport
+// (confirmed by reading ca/tls.go's GetServerTLSConfig/getClientTLSConfig),
+// so mutating it here survives certificate renewal.
+func forceTLS13(ctx *stepca.TLSOptionCtx) error {
+	ctx.Config.MinVersion = tls.VersionTLS13
+	return nil
+}
 
 // BootstrapTokenEnvVar names the environment variable holding this
 // service's single-use CA bootstrap token (CA-F-04), distributed
@@ -89,8 +104,25 @@ func LoadBootstrapToken() (string, error) {
 // client's certificate. The certificate renews automatically for the
 // lifetime of ctx — callers should pass a context that lives at least as
 // long as the server itself, not a short-lived per-request context.
+//
+// Every outbound call this package makes on base's behalf (the initial
+// bootstrap exchange, and the server's own background renewal calls back
+// to the Certificate-Authority) goes out over the process's default
+// network stack. Unlike NewClient/NewClientWithDialer, no dialer-injecting
+// variant exists here: github.com/smallstep/certificates@v0.30.2's
+// ca.Client.GetServerTLSConfig (called internally by ca.BootstrapServer,
+// in ca/tls.go) builds the *http.Transport its background
+// certificate-renewal goroutine dials through entirely inside that call
+// and never returns it to the caller - GetServerTLSConfig hands back only
+// the resulting *tls.Config, and BootstrapServer only ever exposes that
+// *tls.Config (as base.TLSConfig), discarding the transport. Unlike
+// BootstrapClient (whose returned *http.Client.Transport IS that same
+// renewal transport - see RouteThroughDialer), there is no reference to
+// it anywhere reachable from BootstrapServer's return value, so a
+// bootstrapped server's own outbound renewal traffic cannot be routed
+// through a custom dialer using only this library version's public API.
 func NewServer(ctx context.Context, token string, base *http.Server) (*http.Server, error) {
-	return stepca.BootstrapServer(ctx, token, base)
+	return stepca.BootstrapServer(ctx, token, base, forceTLS13)
 }
 
 // NewClient exchanges token for an initial certificate from the
@@ -98,6 +130,10 @@ func NewServer(ctx context.Context, token string, base *http.Server) (*http.Serv
 // it on every outbound mTLS connection (ca.BootstrapClient). The
 // certificate renews automatically, same as NewServer, for the lifetime
 // of ctx.
+//
+// This is NewClientWithDialer with a nil dial — see that function's doc
+// comment for how to route this package's outbound traffic (including
+// certificate renewal) through a mesh identity instead.
 func NewClient(ctx context.Context, token string) (*http.Client, error) {
-	return stepca.BootstrapClient(ctx, token)
+	return NewClientWithDialer(ctx, token, nil)
 }

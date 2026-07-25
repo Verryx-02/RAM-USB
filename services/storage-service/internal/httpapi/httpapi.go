@@ -32,6 +32,7 @@ import (
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 )
 
 // CreateUserPath is the HTTP endpoint Database-Vault calls on
@@ -100,7 +101,7 @@ type Handler struct {
 	// cmd/storage-service/main.go). Must not be nil - same
 	// "always required, wired by every constructor" convention as
 	// Database-Vault's and Network-Manager's own Handler.Metrics.
-	Metrics *Counters
+	Metrics *metrics.RequestCounters
 
 	// Logger receives every structured log line this handler writes. If
 	// nil, slog.Default() is used.
@@ -157,7 +158,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger().Info("create-user: POSIX user created")
-	writeJSON(w, http.StatusCreated, createUserResponse{Success: true})
+	apperrors.WriteJSON(w, http.StatusCreated, createUserResponse{Success: true})
 }
 
 // decodeCreateUserRequest reads and decodes r's body as a createUserRequest,
@@ -185,12 +186,5 @@ func decodeCreateUserRequest(r *http.Request) (createUserRequest, error) {
 // which stays in the log line the caller already wrote, per pkg/errors's
 // no-detail-leak convention (ST-F-* per CONTRIBUTING.md §7.3).
 func writeResult(w http.ResponseWriter, appErr *apperrors.AppError) {
-	writeJSON(w, appErr.Status, createUserResponse{Success: false, Error: appErr.Public})
-}
-
-// writeJSON writes status and body, JSON-encoded, to w.
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	apperrors.WriteJSON(w, appErr.Status, createUserResponse{Success: false, Error: appErr.Public})
 }

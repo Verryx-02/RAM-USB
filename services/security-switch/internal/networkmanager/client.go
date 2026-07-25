@@ -25,14 +25,14 @@
 package networkmanager
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
+
+	"github.com/Verryx-02/RAM-USB/services/security-switch/internal/httpclient"
 )
 
 // GrantPath is the endpoint Security-Switch calls on Network-Manager to
@@ -129,32 +129,14 @@ var (
 // client, to grant the user identified by email access to Storage-Service
 // for GrantDuration (SS-F-05). A nil return means the grant succeeded.
 func GrantAccess(ctx context.Context, client *http.Client, baseURL string, email string) error {
-	body, err := json.Marshal(grantRequest{
+	req := grantRequest{
 		Email:           email,
 		DurationSeconds: int64(GrantDuration.Seconds()),
-	})
-	if err != nil {
-		return fmt.Errorf("networkmanager: encode grant request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+GrantPath, bytes.NewReader(body))
+	respBody, status, err := httpclient.Post(ctx, client, baseURL+GrantPath, req, ErrNetworkManagerUnreachable, ErrNetworkManagerTimeout)
 	if err != nil {
-		return fmt.Errorf("networkmanager: build grant request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return fmt.Errorf("%w: %w", ErrNetworkManagerTimeout, err)
-		}
-		return fmt.Errorf("%w: %w", ErrNetworkManagerUnreachable, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("%w: read response: %w", ErrNetworkManagerUnreachable, err)
+		return err
 	}
 
 	// A 5xx status means Network-Manager itself failed to process the
@@ -166,23 +148,23 @@ func GrantAccess(ctx context.Context, client *http.Client, baseURL string, email
 	// commonly a plain-text error page or empty, not JSON, and treating
 	// that as ErrGrantDenied would misreport a Network-Manager outage as
 	// "the user's grant was denied."
-	if resp.StatusCode >= http.StatusInternalServerError {
-		return fmt.Errorf("%w: status %d", ErrNetworkManagerUnreachable, resp.StatusCode)
+	if status >= http.StatusInternalServerError {
+		return fmt.Errorf("%w: status %d", ErrNetworkManagerUnreachable, status)
 	}
 
 	var parsed grantResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return fmt.Errorf("%w: status %d, malformed response body: %w", ErrGrantDenied, resp.StatusCode, err)
+		return fmt.Errorf("%w: status %d, malformed response body: %w", ErrGrantDenied, status, err)
 	}
 
-	if resp.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("%w: status %d", ErrGrantDenied, resp.StatusCode)
+	if status == http.StatusForbidden {
+		return fmt.Errorf("%w: status %d", ErrGrantDenied, status)
 	}
-	if (resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated) || !parsed.Success {
+	if (status != http.StatusOK && status != http.StatusCreated) || !parsed.Success {
 		if parsed.Error != "" {
-			return fmt.Errorf("%w: status %d: %s", ErrGrantDenied, resp.StatusCode, parsed.Error)
+			return fmt.Errorf("%w: status %d: %s", ErrGrantDenied, status, parsed.Error)
 		}
-		return fmt.Errorf("%w: status %d", ErrGrantDenied, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrGrantDenied, status)
 	}
 
 	return nil
@@ -195,52 +177,34 @@ func GrantAccess(ctx context.Context, client *http.Client, baseURL string, email
 // the pre-auth key to include in the response Security-Switch sends back
 // up to Entry-Hub (UC-01 step 8).
 func CreateMeshUser(ctx context.Context, client *http.Client, baseURL string, email string) (string, error) {
-	body, err := json.Marshal(meshUserRequest{Email: email})
-	if err != nil {
-		return "", fmt.Errorf("networkmanager: encode mesh user request: %w", err)
-	}
+	req := meshUserRequest{Email: email}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+MeshUserPath, bytes.NewReader(body))
+	respBody, status, err := httpclient.Post(ctx, client, baseURL+MeshUserPath, req, ErrNetworkManagerUnreachable, ErrNetworkManagerTimeout)
 	if err != nil {
-		return "", fmt.Errorf("networkmanager: build mesh user request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return "", fmt.Errorf("%w: %w", ErrNetworkManagerTimeout, err)
-		}
-		return "", fmt.Errorf("%w: %w", ErrNetworkManagerUnreachable, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("%w: read response: %w", ErrNetworkManagerUnreachable, err)
+		return "", err
 	}
 
 	// Same reasoning as GrantAccess above: a 5xx status is Network-
 	// Manager's own failure to process the request, not a considered
 	// refusal, and is checked before the malformed-body branch below for
 	// the same reason (a 5xx body is commonly not JSON at all).
-	if resp.StatusCode >= http.StatusInternalServerError {
-		return "", fmt.Errorf("%w: status %d", ErrNetworkManagerUnreachable, resp.StatusCode)
+	if status >= http.StatusInternalServerError {
+		return "", fmt.Errorf("%w: status %d", ErrNetworkManagerUnreachable, status)
 	}
 
 	var parsed meshUserResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return "", fmt.Errorf("%w: status %d, malformed response body: %w", ErrMeshUserCreationDenied, resp.StatusCode, err)
+		return "", fmt.Errorf("%w: status %d, malformed response body: %w", ErrMeshUserCreationDenied, status, err)
 	}
 
-	if resp.StatusCode == http.StatusForbidden {
-		return "", fmt.Errorf("%w: status %d", ErrMeshUserCreationDenied, resp.StatusCode)
+	if status == http.StatusForbidden {
+		return "", fmt.Errorf("%w: status %d", ErrMeshUserCreationDenied, status)
 	}
-	if (resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated) || !parsed.Success {
+	if (status != http.StatusOK && status != http.StatusCreated) || !parsed.Success {
 		if parsed.Error != "" {
-			return "", fmt.Errorf("%w: status %d: %s", ErrMeshUserCreationDenied, resp.StatusCode, parsed.Error)
+			return "", fmt.Errorf("%w: status %d: %s", ErrMeshUserCreationDenied, status, parsed.Error)
 		}
-		return "", fmt.Errorf("%w: status %d", ErrMeshUserCreationDenied, resp.StatusCode)
+		return "", fmt.Errorf("%w: status %d", ErrMeshUserCreationDenied, status)
 	}
 
 	return parsed.PreAuthKey, nil

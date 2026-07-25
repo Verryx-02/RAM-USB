@@ -1,0 +1,1 @@
+with-contenv /bin/sh /etc/network-manager/tailscale-up.sh

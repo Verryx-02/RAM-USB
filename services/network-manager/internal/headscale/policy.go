@@ -4,22 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
-	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
-	"google.golang.org/grpc"
 )
 
 // This file implements NM-F-01, NM-F-02, NM-F-04, NM-F-05, NM-F-06, and
 // NM-F-07: the static mesh-reachability rules restricting which components
 // may contact which others, translated from
 // docs/design/diagrams/09-security-trust-zones.puml into a real Headscale
-// ACL policy document pushed via the gRPC SetPolicy call (available
-// because deployments' network-manager-headscale config sets
-// policy.mode: database - see client.go's package doc comment for why that
-// mode was chosen). Unlike NM-F-08/NM-F-09 (per-request, dynamic tag
-// assignment on an individual node), these six rules are static for the
-// lifetime of the deployment, so PushPolicy is meant to be called once at
-// Network-Manager startup, not per request.
+// ACL policy document pushed via PUT /api/v1/policy (available because
+// deployments/docker/headscale's own config sets policy.mode: database -
+// see client.go's package doc comment for why that mode was chosen, and
+// for why this package now reaches Headscale over REST through a reverse
+// proxy, not gRPC directly). Unlike NM-F-08/NM-F-09 (per-request, dynamic
+// tag assignment on an individual node), these six rules are static for
+// the lifetime of the deployment, so PushPolicy is meant to be called once
+// at Network-Manager startup, not per request.
 //
 // Schema confirmed empirically against a real headscale/headscale:0.29
 // container this session (docker compose's network-manager-headscale
@@ -30,12 +28,11 @@ import (
 //     "tagOwners"/"acls", each ACL entry "action"/"src"/"dst", a
 //     "tag:x:*" suffix on every dst entry for "any port") before any Go
 //     code was written.
-//   - A throwaway SetPolicy/GetPolicy gRPC round trip against the same
-//     live container (go doc github.com/juanfont/headscale/gen/go/
-//     headscale/v1 confirmed SetPolicyRequest{Policy string}/
-//     SetPolicyResponse{Policy string, UpdatedAt}) confirmed the policy
-//     Headscale returns from GetPolicy afterward is byte-for-byte the
-//     document that was pushed.
+//   - A throwaway SetPolicy/GetPolicy round trip against the same live
+//     container (this session, over the new REST transport - see
+//     rest.go's Client.SetPolicy/GetPolicy) confirmed the policy Headscale
+//     returns from GetPolicy afterward is byte-for-byte the document that
+//     was pushed.
 //   - Reading github.com/juanfont/headscale@v0.29.2's hscontrol/policy/v2
 //     package (not imported - see policyDocument's own doc comment for
 //     why) confirmed every "tag:" literal referenced by an ACL's src/dst
@@ -75,6 +72,30 @@ const (
 	TagStorageService       = "tag:storage-service"
 	TagNetworkManager       = "tag:network-manager"
 	TagCertificateAuthority = "tag:certificate-authority"
+	// TagMQTTBroker/TagMetricsCollector identify the MQTT broker's own
+	// sidecar mesh identity (deployments/compose/mqtt-broker.yml's
+	// tailscale/tailscale sidecar, network_mode: "service:mqtt-broker" -
+	// Mosquitto is a C binary and cannot embed pkg/mesh, same reasoning as
+	// Certificate-Authority's TagCertificateAuthority) and Metrics-
+	// Collector's mesh identity respectively. No SRS ID names MQTT-broker
+	// mesh reachability the explicit way NM-F-04 names it for
+	// Certificate-Authority; these two tags and the ACL rule referencing
+	// them below exist to keep every metrics publisher/subscriber
+	// (MT-F-01..04, CA-F-03/DV-F-16/EH-F-10/NM-F-17/SS-F-07/ST-F-12) able
+	// to reach the broker once it, too, is mesh-only - flagged for
+	// confirmation against the requirement owner, same as this file's
+	// existing NM-F-03 scope-expansion note above.
+	TagMQTTBroker       = "tag:mqtt-broker"
+	TagMetricsCollector = "tag:metrics-collector"
+	// TagGrafana identifies Grafana's own mesh sidecar
+	// (deployments/proxmox/grafana.md), needed only for its own outbound
+	// query connection to TimescaleDB - now co-located inside
+	// Metrics-Collector's own container/mesh identity (KI-18,
+	// docs/Known_Issues.md), not a separate guest. No SRS ID names this
+	// rule the way NM-F-04 names it for Certificate-Authority, same
+	// judgment call already documented for TagMQTTBroker/TagMetricsCollector
+	// above.
+	TagGrafana = "tag:grafana"
 )
 
 // policyAdminGroup/policyAdminOwner exist solely to give every tag
@@ -97,6 +118,9 @@ var allTags = []string{
 	TagStorageService,
 	TagNetworkManager,
 	TagCertificateAuthority,
+	TagMQTTBroker,
+	TagMetricsCollector,
+	TagGrafana,
 	TagMeshMember,
 	TagStorageAccess,
 }
@@ -157,6 +181,20 @@ func dstAny(tag string) string {
 // the moment this policy is pushed. This is flagged explicitly, not a
 // silent scope expansion: confirm with the requirement owner if a
 // different resolution is wanted.
+//
+// An eighth rule grants every metrics publisher, plus Metrics-Collector
+// itself, reachability toward the MQTT broker's mesh identity
+// (TagMQTTBroker) - see that constant's own doc comment for why no single
+// SRS ID names this rule the way NM-F-04 names Certificate-Authority's,
+// and why it is included here anyway.
+//
+// A ninth rule grants Grafana's own mesh sidecar reachability toward
+// Metrics-Collector's mesh identity (TagMetricsCollector) - TimescaleDB
+// (MT-F-03) is now co-located inside Metrics-Collector's own container
+// (KI-18), so Grafana's outbound query connection (UC-05, RU-10) reaches
+// TimescaleDB's Postgres-wire port under this same tag, not a separate
+// one. See TagGrafana's own doc comment for why no single SRS ID names
+// this rule.
 func buildACLs() []policyACL {
 	return []policyACL{
 		{ // NM-F-01: only Entry-Hub, Database-Vault, Network-Manager, and
@@ -174,15 +212,33 @@ func buildACLs() []policyACL {
 		{ // NM-F-03 (already implemented at the mTLS boundary; included
 			// here so the network layer does not block it - see this
 			// function's own doc comment): only Security-Switch and
-			// Certificate-Authority can contact Network-Manager.
+			// Certificate-Authority can contact Network-Manager's own mTLS
+			// listener - Entry-Hub no longer needs mesh reachability to
+			// Network-Manager now that NM-F-14's Headscale coordination
+			// endpoint is directly public-facing (EH-F-12 withdrawn; see
+			// services/network-manager/cmd/network-manager/main.go's own
+			// package doc comment).
 			Action: "accept",
 			Src:    []string{TagSecuritySwitch, TagCertificateAuthority},
 			Dst:    []string{dstAny(TagNetworkManager)},
 		},
 		{ // NM-F-04, direction one: every internal component can contact
-			// Certificate-Authority.
+			// Certificate-Authority. TagMQTTBroker is included alongside
+			// the original five (KI-16/PKI-F-03): the MQTT broker's own
+			// cert-renewal sidecar (mqtt-broker-cert-renewer, sharing
+			// mqtt-broker's mesh identity via network_mode:
+			// "service:mqtt-broker") needs to reach Certificate-Authority
+			// for `step ca renew`'s own mTLS-authenticated renewal calls,
+			// mesh-routed since Certificate-Authority is reachable only
+			// via the mesh in production (deployments/proxmox/
+			// certificate-authority.md) - confirmed live this session that
+			// omitting this tag here makes that renewal call hang until
+			// "context deadline exceeded" with no other error, the same
+			// silent-deny-at-the-receiving-node behavior this function's
+			// own NM-F-05 rule comment already documents for a missing
+			// rule.
 			Action: "accept",
-			Src:    []string{TagEntryHub, TagSecuritySwitch, TagDatabaseVault, TagStorageService, TagNetworkManager},
+			Src:    []string{TagEntryHub, TagSecuritySwitch, TagDatabaseVault, TagStorageService, TagNetworkManager, TagMQTTBroker},
 			Dst:    []string{dstAny(TagCertificateAuthority)},
 		},
 		{ // NM-F-04, direction two: Certificate-Authority can contact
@@ -200,9 +256,19 @@ func buildACLs() []policyACL {
 		{ // NM-F-05 and (together with the rule below) half of NM-F-07:
 			// only authenticated Users - nodes holding TagStorageAccess,
 			// assigned by GrantStorageAccess/NM-F-09 - can contact
-			// Storage-Service.
+			// Storage-Service. Database-Vault is included too (DV-F-09,
+			// ST-F-01's "access to the private mesh network" clause):
+			// Database-Vault's own POSIX-user-creation request to
+			// Storage-Service is a standing reachability need for the
+			// lifetime of the deployment, unlike a User's grant, which is
+			// per-request/dynamic (NM-F-09) - it belongs in this static
+			// rule, not a runtime-granted tag. Confirmed live: this call
+			// previously hung until context-canceled with no ACL rule
+			// permitting it (Headscale's packet filter is enforced at the
+			// receiving node, so an absent rule denies silently rather
+			// than erroring).
 			Action: "accept",
-			Src:    []string{TagStorageAccess},
+			Src:    []string{TagStorageAccess, TagDatabaseVault},
 			Dst:    []string{dstAny(TagStorageService)},
 		},
 		{ // NM-F-06 and (together with the rule above) the other half of
@@ -214,6 +280,31 @@ func buildACLs() []policyACL {
 			Action: "accept",
 			Src:    []string{TagMeshMember},
 			Dst:    []string{dstAny(TagEntryHub)},
+		},
+		{ // Every metrics publisher, plus Metrics-Collector itself
+			// (subscriber), can contact the MQTT broker's mesh identity -
+			// see buildACLs' own doc comment and TagMQTTBroker's for why
+			// this rule has no single SRS ID of its own.
+			Action: "accept",
+			Src: []string{
+				TagEntryHub,
+				TagSecuritySwitch,
+				TagDatabaseVault,
+				TagStorageService,
+				TagNetworkManager,
+				TagMetricsCollector,
+				TagCertificateAuthority,
+			},
+			Dst: []string{dstAny(TagMQTTBroker)},
+		},
+		{ // Grafana's own mesh sidecar can contact Metrics-Collector's mesh
+			// identity - TimescaleDB now lives inside this same container
+			// (KI-18), so this rule is what lets Grafana's outbound query
+			// connection (UC-05) reach it over the mesh. See TagGrafana's
+			// own doc comment for why this rule has no single SRS ID.
+			Action: "accept",
+			Src:    []string{TagGrafana},
+			Dst:    []string{dstAny(TagMetricsCollector)},
 		},
 	}
 }
@@ -246,14 +337,14 @@ func PolicyDocument() ([]byte, error) {
 	return data, nil
 }
 
-// PolicyPusher is the narrow subset of Headscale's gRPC API PushPolicy
+// PolicyPusher is the narrow subset of Headscale's REST API PushPolicy
 // needs - SetPolicy to push the document, GetPolicy for a caller wanting
-// to confirm what is currently active. v1.NewHeadscaleServiceClient's
-// result already satisfies this through Go's ordinary structural typing,
-// same pattern as the Service interface above.
+// to confirm what is currently active. *Client (rest.go) satisfies this
+// through Go's ordinary structural typing, same pattern as the Service
+// interface in client.go.
 type PolicyPusher interface {
-	SetPolicy(ctx context.Context, in *v1.SetPolicyRequest, opts ...grpc.CallOption) (*v1.SetPolicyResponse, error)
-	GetPolicy(ctx context.Context, in *v1.GetPolicyRequest, opts ...grpc.CallOption) (*v1.GetPolicyResponse, error)
+	SetPolicy(ctx context.Context, policy string) error
+	GetPolicy(ctx context.Context) (string, error)
 }
 
 // PushPolicy implements NM-F-01/02/04/05/06/07 (plus NM-F-03, see
@@ -267,7 +358,7 @@ func PushPolicy(ctx context.Context, svc PolicyPusher) error {
 		return err
 	}
 
-	if _, err := svc.SetPolicy(ctx, &v1.SetPolicyRequest{Policy: string(doc)}); err != nil {
+	if err := svc.SetPolicy(ctx, string(doc)); err != nil {
 		return fmt.Errorf("%w: set policy: %w", ErrHeadscaleRequestFailed, err)
 	}
 

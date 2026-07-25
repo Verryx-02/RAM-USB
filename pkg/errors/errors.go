@@ -15,7 +15,10 @@
 // caller-supplied detail.
 package errors
 
-import "net/http"
+import (
+	"encoding/json"
+	"net/http"
+)
 
 // AppError is a structured error carrying a fixed, safe public message
 // for a given HTTP status code, plus the full internal error for logging.
@@ -149,6 +152,28 @@ func NewGatewayTimeout(internal error) *AppError {
 		Public:   "the request could not be completed",
 		Internal: internal,
 	}
+}
+
+// ErrorResponse is the {"error": "..."} envelope every HTTP boundary in
+// this codebase writes for a non-2xx response, via WriteAppError.
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// WriteJSON writes status and body to w as JSON, setting the
+// Content-Type header. Identical across every service's own HTTP
+// boundary, so it lives here once rather than duplicated per service.
+func WriteJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+// WriteAppError writes appErr's Status and Public fields to w as JSON,
+// via WriteJSON — Internal is never written to the response body
+// (CONTRIBUTING.md §7.3, EH-F-09, SS-F-06, DV-F-20).
+func WriteAppError(w http.ResponseWriter, appErr *AppError) {
+	WriteJSON(w, appErr.Status, ErrorResponse{Error: appErr.Public})
 }
 
 // NewServiceUnavailable builds an AppError for HTTP 503: an outbound call

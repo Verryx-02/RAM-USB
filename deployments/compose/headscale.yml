@@ -1,22 +1,49 @@
-# Headscale, Network-Manager's mesh backend (NM-F-08/NM-F-09).
-# Standalone: no variable required.
+# Headscale, standalone (this session's architectural change - see
+# deployments/docker/headscale/Dockerfile's own doc comment for the full
+# reasoning: Headscale's own documented limitation is that it can never
+# safely join the mesh it coordinates, so it cannot be co-located with any
+# RAM-USB mesh-joined service). Requires no CA bootstrap token and is NOT
+# itself a mesh member - the only container in this project's stack that
+# is neither.
+#
+# In production this container is ideally deployed on its own dedicated,
+# publicly-addressable VPS (NM-F-14's own literal wording), not this
+# Compose stack's shared Docker host - kept here as a real container for
+# local dev/test only, per this project's established convention (see
+# MANUAL-DISTRIBUTED-RUN.md).
 name: ramusb-headscale
 services:
-  network-manager-headscale:
-    image: headscale/headscale:0.29
-    container_name: network-manager-headscale
-    command: serve
+  headscale:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/headscale/Dockerfile
+    container_name: headscale
     volumes:
       - ramusb-headscale-data:/var/lib/headscale
-      - ../../third-party/network-manager/headscale/config:/etc/headscale:ro
-      - ../../third-party/network-manager/headscale/dev-tls:/etc/headscale-tls:ro
+      - ../../third-party/headscale/config:/etc/headscale:ro
+      # nginx's own public-facing TLS certificate (NEVER RAM-USB's
+      # internal Certificate-Authority - see the Dockerfile's own doc
+      # comment for why) - dev-only self-signed pair, same "*.dev-only.*"
+      # convention as Entry-Hub's own public listener certificate.
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/etc/headscale-public-tls/cert.pem:ro
+      - ../../third-party/headscale/dev-tls/key.dev-only.pem:/etc/headscale-public-tls/key.pem:ro
+      # RAM-USB's internal Certificate-Authority root certificate (NOT a
+      # bootstrap token - this container has no RAM-USB mTLS identity of
+      # its own) - trusted by nginx ONLY to verify a client certificate
+      # offered for /api/v1/ (NM-F-12). Extracted as a plain file by
+      # deployments/scripts/headscale.sh (`docker cp` from the running
+      # certificate-authority container) since this container has no
+      # pkg/pki bootstrap flow to obtain it through - regenerated on every
+      # run, same "mint fresh, never commit" convention as every other
+      # dev-only credential in this project.
+      - ../../third-party/headscale/ca-root/root_ca.dev-only.crt:/etc/ram-usb-ca/root_ca.crt:ro
     ports:
-      - "50443:50443"
-    healthcheck:
-      test: ["CMD", "/ko-app/headscale", "health"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      # NM-F-14: the ONE deliberately public port in this deployment -
+      # Headscale's own coordination protocol AND its NM-F-12-gated
+      # /api/v1/ admin surface, dispatched by nginx per nginx.conf's own
+      # doc comment. Headscale's own loopback-only listener (127.0.0.1:
+      # 8081) is never published.
+      - "8080:8080"
     networks:
       - ramusb-net
 

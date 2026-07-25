@@ -1,4 +1,6 @@
-# Storage-Service. Requires ONLY its own CA token.
+# Storage-Service. Requires two CA tokens (its own server identity plus
+# cmd/identity-provisioner's separate ST-F-11/KI-01 identity) and Database-
+# Vault's public-key lookup URL - no cross-Compose-project secret.
 name: ramusb-storage-service
 services:
   storage-service:
@@ -13,18 +15,73 @@ services:
       - SETUID
       - SETGID
       - SYS_CHROOT
+      # NET_ADMIN/NET_RAW: the real tailscaled client's own minimum
+      # requirement to create/manage the mesh TUN interface (see the
+      # Dockerfile's package doc comment) - not needed by sshd or
+      # storage-service themselves.
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
     environment:
-      RAM_USB_STORAGE_SERVICE_LISTEN_ADDR: "0.0.0.0:8448"
+      # ST-F-01/ST-F-06: the port half only - the IP half is this node's
+      # Tailscale mesh address, known only at runtime once tailscale-up
+      # joins (see rootfs/etc/s6-overlay/s6-rc.d/storage-service/run),
+      # never 0.0.0.0/ramusb-net (NET-F-01).
+      RAM_USB_STORAGE_SERVICE_LISTEN_PORT: "8448"
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token StorageService --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
       # ST-F-12/ST-F-13: metrics publish, reuses the same mTLS identity
       # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
       # static MQTT certificate/key.
       RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
-    ports:
-      - "2222:2222"
+      # ST-F-11 (KI-01): cmd/identity-provisioner's OWN bootstrap token - a
+      # SECOND "StorageService"-organization identity, distinct from
+      # RAM_USB_CA_BOOTSTRAP_TOKEN above (single-use, and this is a separate
+      # long-lived process in the same container) - and Database-Vault's
+      # public-key lookup base URL it writes into
+      # authorized-keys-command.conf (must match database-vault.yml's own
+      # RAM_USB_DATABASE_VAULT_PUBLIC_KEY_LISTEN_ADDR port, 8446).
+      RAM_USB_STORAGE_SERVICE_AKC_BOOTSTRAP_TOKEN: "${RAM_USB_STORAGE_SERVICE_AKC_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token StorageService --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      RAM_USB_DATABASE_VAULT_PUBLIC_KEY_URL: "https://database-vault:8446"
+      # Real tailscaled mesh membership (rootfs/etc/s6-overlay/s6-rc.d/
+      # tailscaled, tailscale-up): this node's MagicDNS short name, the
+      # shared Headscale coordination URL, and a single-use pre-auth key -
+      # see services/network-manager/internal/headscale/policy.go for the
+      # tag:storage-service ACL rule this key's --tags must match. Unlike
+      # Security-Switch/Database-Vault's pkg/mesh identity (a persistent
+      # tsnet state directory), this is a real OS-level tailscaled, so its
+      # equivalent persistent state lives in the
+      # ramusb-storage-service-mesh-state volume below, not a Go-managed
+      # directory.
+      RAM_USB_STORAGE_SERVICE_MESH_HOSTNAME: "storage-service"
+      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://headscale:8080}"
+      RAM_USB_STORAGE_SERVICE_TAILSCALE_AUTHKEY: >-
+        ${RAM_USB_STORAGE_SERVICE_TAILSCALE_AUTHKEY:?mint with:
+        docker exec headscale headscale users create storage-service
+        && docker exec headscale headscale users list --name storage-service -o json
+        && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:storage-service}
+    volumes:
+      - ramusb-storage-service-mesh-state:/var/lib/tailscale
+      # Dev-only: Headscale's self-signed control-plane certificate,
+      # trusted via the real OS trust store (update-ca-certificates, see
+      # rootfs/etc/s6-overlay/s6-rc.d/tailscale-up/up) - unlike pkg/mesh's
+      # distroless SSL_CERT_FILE workaround (Security-Switch/Database-
+      # Vault), this base image has a real shell/package manager, so the
+      # standard mechanism applies directly. Leave this volume unmounted
+      # once RAM_USB_TAILSCALE_CONTROL_URL carries a publicly-trusted-root
+      # certificate.
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+    # No "ports:" - sshd no longer binds 0.0.0.0/ramusb-net at all (fixed a
+    # NET-F-01 violation: only Entry-Hub's port should ever be published),
+    # it binds exclusively to this node's Tailscale interface address. SFTP
+    # access now happens only from another mesh node with reachability
+    # toward tag:storage-service.
     networks:
       - ramusb-net
 
 networks:
   ramusb-net:
     external: true
+
+volumes:
+  ramusb-storage-service-mesh-state:

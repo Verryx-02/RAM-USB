@@ -5,9 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
-	"google.golang.org/grpc"
-
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
 )
 
@@ -24,16 +21,13 @@ type fakePolicyPusher struct {
 	setPolicyCall int
 }
 
-func (f *fakePolicyPusher) SetPolicy(_ context.Context, in *v1.SetPolicyRequest, _ ...grpc.CallOption) (*v1.SetPolicyResponse, error) {
+func (f *fakePolicyPusher) SetPolicy(_ context.Context, _ string) error {
 	f.setPolicyCall++
-	if f.setPolicyErr != nil {
-		return nil, f.setPolicyErr
-	}
-	return &v1.SetPolicyResponse{Policy: in.GetPolicy()}, nil
+	return f.setPolicyErr
 }
 
-func (f *fakePolicyPusher) GetPolicy(_ context.Context, _ *v1.GetPolicyRequest, _ ...grpc.CallOption) (*v1.GetPolicyResponse, error) {
-	return &v1.GetPolicyResponse{}, nil
+func (f *fakePolicyPusher) GetPolicy(_ context.Context) (string, error) {
+	return "", nil
 }
 
 // Requirement: NM-F-01

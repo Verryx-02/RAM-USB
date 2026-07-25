@@ -11,6 +11,19 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: "${RAM_USB_GRAFANA_ADMIN_USER:?set the Grafana admin username}"
       GF_SECURITY_ADMIN_PASSWORD: "${RAM_USB_GRAFANA_ADMIN_PASSWORD:?set a Grafana admin password}"
+      # Recent Grafana OSS versions auto-download ~13 "preinstalled" plugins
+      # on first start (grafana-lokiexplore-app, elasticsearch, zipkin,
+      # tempo, jaeger, etc. - see pkg/setting/setting_plugins.go upstream),
+      # none used by MT-F-04. On this project's memory-constrained dev
+      # machine this download/unpack burst has been observed to OOM-kill
+      # the container (exit 137) - disabled here. Deduced from Grafana's
+      # own GF_<section>_<key> env-var mapping convention
+      # (plugins.preinstall_async -> GF_PLUGINS_PREINSTALL_ASYNC), not
+      # found spelled out verbatim in official docs - verified empirically
+      # against a real container instead (see deployments/scripts/grafana.sh
+      # history/commit message if this stops working after a Grafana
+      # upgrade).
+      GF_PLUGINS_PREINSTALL_ASYNC: "false"
     volumes:
       - ../../third-party/grafana/provisioning:/etc/grafana/provisioning:ro
       - ../../third-party/grafana/dashboards:/var/lib/grafana/dashboards:ro

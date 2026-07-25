@@ -45,9 +45,9 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
-	"time"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
+	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/storage"
 )
 
@@ -111,7 +111,7 @@ type PublicKeyHandler struct {
 	// Register/Login traffic — both count toward the same one
 	// service-wide metrics snapshot, there is no separate "public-key"
 	// metric.
-	Metrics *Counters
+	Metrics *metrics.RequestCounters
 
 	// Logger receives every structured log line this handler writes. If
 	// nil, slog.Default() is used, same fallback as Handler.Logger.
@@ -131,12 +131,8 @@ func (h *PublicKeyHandler) logger() *slog.Logger {
 // doc comment for why a distinct HTTP 404 (posixUsername well-formed but no
 // matching user) is safe to return here, unlike DV-F-15's login lookup.
 func (h *PublicKeyHandler) PublicKey(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	h.Metrics.BeginRequest()
 	isError := false
-	defer func() {
-		h.Metrics.EndRequest(time.Since(start), isError)
-	}()
+	defer h.Metrics.Track(&isError)()
 
 	posixUsername := r.PathValue("posix_username")
 	if !posixUsernamePattern.MatchString(posixUsername) {
@@ -145,8 +141,7 @@ func (h *PublicKeyHandler) PublicKey(w http.ResponseWriter, r *http.Request) {
 		// is untrusted input, and this codebase's convention (DV-F-20) is
 		// to log a validation failure's cause, never the offending raw
 		// value.
-		h.logger().Warn("public-key: rejected malformed posix username")
-		writeAppError(w, apperrors.NewBadRequest(errMalformedPosixUsername))
+		failBadRequest(w, h.logger(), errMalformedPosixUsername, "public-key: rejected malformed posix username")
 		return
 	}
 
@@ -155,16 +150,16 @@ func (h *PublicKeyHandler) PublicKey(w http.ResponseWriter, r *http.Request) {
 		isError = true
 		if errors.Is(err, storage.ErrPosixUsernameNotFound) {
 			h.logger().Info("public-key: not found")
-			writeAppError(w, apperrors.NewNotFound(err))
+			apperrors.WriteAppError(w, apperrors.NewNotFound(err))
 			return
 		}
 		h.logger().Error("public-key: lookup failed", "error", err)
-		writeAppError(w, apperrors.NewInternal(err))
+		apperrors.WriteAppError(w, apperrors.NewInternal(err))
 		return
 	}
 
 	h.logger().Info("public-key: succeeded")
-	writeJSON(w, http.StatusOK, publicKeyResponse{SSHPublicKey: sshPublicKey})
+	apperrors.WriteJSON(w, http.StatusOK, publicKeyResponse{SSHPublicKey: sshPublicKey})
 }
 
 // publicKeyResponse is the JSON body PublicKey writes on success. No SRS or

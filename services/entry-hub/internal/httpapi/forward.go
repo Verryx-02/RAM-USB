@@ -37,7 +37,7 @@ func (h *Handler) relay(w http.ResponseWriter, result securityswitch.Result, isE
 	if result.Err != nil {
 		*isError = true
 		h.logger().Error("forward to security-switch failed", "error", result.Err)
-		writeAppError(w, mapSecuritySwitchError(result.Err))
+		apperrors.WriteAppError(w, mapSecuritySwitchError(result.Err))
 		return
 	}
 

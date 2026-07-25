@@ -1,9 +1,10 @@
 package mtls
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
+
+	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
 )
 
 // RequireOrganization and WrapRoundTripper are the HTTP-request-level
@@ -19,25 +20,11 @@ import (
 // ClientConfig perform inside VerifyConnection can run one layer up, at the
 // HTTP boundary, instead.
 
-// appErrorBody is the JSON body written on rejection, matching the
-// {"error": "..."} envelope every other HTTP boundary in this codebase
-// writes via its own writeAppError (see e.g.
-// services/database-vault/internal/httpapi/handler.go) - this package has
-// no dependency on pkg/errors (avoiding a dependency edge back toward a
-// package that itself may, in the future, want to depend on pkg/mtls), so
-// it reproduces the same minimal envelope locally rather than importing
-// pkg/errors.AppError for two call sites.
-type appErrorBody struct {
-	Error string `json:"error"`
-}
-
 // writeForbidden writes HTTP 403 with a fixed, safe public message - no
 // detail about which organization was expected or received ever reaches
 // the response body.
 func writeForbidden(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusForbidden)
-	_ = json.NewEncoder(w).Encode(appErrorBody{Error: "the request was refused"})
+	apperrors.WriteAppError(w, apperrors.NewForbidden(fmt.Errorf("mtls: organization check rejected the request")))
 }
 
 // RequireOrganization returns http.Handler middleware that denies (RD-04,

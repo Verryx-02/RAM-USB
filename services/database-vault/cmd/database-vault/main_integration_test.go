@@ -215,6 +215,105 @@ func TestBuildServerTLSConfig_RealCA_EnforcesOrganization(t *testing.T) {
 }
 
 // Requirement: PKI-F-01
+// Requirement: NET-F-02
+//
+// buildServerTLSConfig's *tls.Config must enforce TLS 1.3 with no
+// exceptions (pkg/pki's forceTLS13, applied unconditionally inside
+// pki.NewServer): a real CA-issued client certificate, presented over a
+// handshake explicitly capped at TLS 1.2, is rejected by the real
+// listener - an actual dial attempt that fails, not merely a *tls.Config
+// field assertion.
+func TestBuildServerTLSConfig_RealCA_RejectsTLS12(t *testing.T) {
+	caURL, container := skipUnlessCAConfigured(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	serverToken := generateToken(ctx, t, caURL, container, "DatabaseVault-itest-tls12-server")
+	t.Setenv(pki.BootstrapTokenEnvVar, serverToken)
+	serverTLSConfig, err := buildServerTLSConfig(ctx)
+	if err != nil {
+		t.Fatalf("buildServerTLSConfig() error = %v, want nil", err)
+	}
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = serverTLSConfig
+	srv.StartTLS()
+	defer srv.Close()
+
+	clientToken := generateToken(ctx, t, caURL, container, server.AllowedClientOrganization)
+	client, err := pki.NewClient(ctx, clientToken)
+	if err != nil {
+		t.Fatalf("pki.NewClient() error = %v, want nil", err)
+	}
+	if err := pki.ForceServerName(client, "DatabaseVault-itest-tls12-server"); err != nil {
+		t.Fatalf("pki.ForceServerName() error = %v, want nil", err)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
+	}
+	transport.TLSClientConfig.MinVersion = 0
+	transport.TLSClientConfig.MaxVersion = tls.VersionTLS12
+
+	baseURL := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
+	resp, err := client.Get(baseURL) //nolint:noctx // test, ctx already bounds the token mint above
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err == nil {
+		t.Fatal("client.Get() over a TLS-1.2-capped handshake error = nil, want a version-negotiation failure")
+	}
+}
+
+// Requirement: RNF-SEC-04
+//
+// buildServerTLSConfig's *tls.Config enforces mTLS with no exceptions: a
+// real TLS 1.3 connection that presents NO client certificate at all is
+// rejected - proving mTLS is mandatory for this listener, not merely
+// available, against the real bootstrapped identity (real CA, real
+// ca.BootstrapServer default of RequireAndVerifyClientCert - see
+// pki.NewServer's own doc comment).
+func TestBuildServerTLSConfig_RealCA_RejectsNoClientCert(t *testing.T) {
+	caURL, container := skipUnlessCAConfigured(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	serverToken := generateToken(ctx, t, caURL, container, "DatabaseVault-itest-nocert-server")
+	t.Setenv(pki.BootstrapTokenEnvVar, serverToken)
+	serverTLSConfig, err := buildServerTLSConfig(ctx)
+	if err != nil {
+		t.Fatalf("buildServerTLSConfig() error = %v, want nil", err)
+	}
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = serverTLSConfig
+	srv.StartTLS()
+	defer srv.Close()
+
+	// Deliberately NOT pki.NewClient: a bare TLS client presenting no
+	// certificate at all, standing in for an attacker or misconfigured
+	// caller that skips mTLS entirely.
+	noCertClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test client verifying server cert is not this test's concern
+		},
+	}
+	baseURL := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
+	resp, err := noCertClient.Get(baseURL) //nolint:noctx // test, ctx already bounds the token mint above
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err == nil {
+		t.Fatal("noCertClient.Get() with no client certificate error = nil, want a TLS handshake failure")
+	}
+}
+
 // Requirement: PKI-F-02
 // Requirement: CA-F-04
 //

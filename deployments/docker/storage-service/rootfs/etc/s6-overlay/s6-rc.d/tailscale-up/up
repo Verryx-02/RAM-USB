@@ -1,0 +1,1 @@
+with-contenv /bin/sh /etc/storage-service/tailscale-up.sh

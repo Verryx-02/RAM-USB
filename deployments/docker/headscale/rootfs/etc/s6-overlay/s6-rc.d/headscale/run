@@ -1,0 +1,10 @@
+#!/command/with-contenv sh
+# with-contenv: Headscale reads its config exclusively from
+# /etc/headscale/config.yaml (mounted read-only, see deployments/compose/
+# headscale.yml) - no env var of its own is required, but with-contenv is
+# used anyway for consistency with every other longrun in this project's
+# containers (S6_KEEP_ENV stays at its default 0).
+#
+# exec replaces this shell so the headscale binary becomes the directly
+# supervised process and receives s6's signals itself.
+exec /usr/local/bin/headscale serve

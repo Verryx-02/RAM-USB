@@ -74,13 +74,13 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "register":
-		err = runRegister(os.Args[2:])
+		err = runRegister(os.Args[2:], execrunner.Real{})
 	case "login":
 		err = runLogin(os.Args[2:])
 	case "backup":
-		err = runBackup(os.Args[2:])
+		err = runBackup(os.Args[2:], execrunner.Real{})
 	case "restore":
-		err = runRestore(os.Args[2:])
+		err = runRestore(os.Args[2:], execrunner.Real{})
 	default:
 		usage()
 		os.Exit(2)
@@ -133,8 +133,11 @@ func resolveCredentials(fs *flag.FlagSet, args []string) (email, password string
 	return *emailFlag, password, nil
 }
 
-// runRegister implements CL-F-01/CL-F-02/CL-F-04/CL-F-09.
-func runRegister(args []string) error {
+// runRegister implements CL-F-01/CL-F-02/CL-F-04/CL-F-09. runner is the
+// execrunner.Runner used for the CL-F-04 "tailscale up" invocation - main()
+// passes execrunner.Real{}, a test passes an execrunner.Fake, so this
+// function's mesh.Join call is exercisable without a real tailscale binary.
+func runRegister(args []string, runner execrunner.Runner) error {
 	fs := flag.NewFlagSet("register", flag.ContinueOnError)
 	email, password, err := resolveCredentials(fs, args)
 	if err != nil {
@@ -182,7 +185,7 @@ func runRegister(args []string) error {
 		return nil
 	}
 
-	if err := mesh.Join(context.Background(), execrunner.Real{}, loginServer, result.PreauthKey); err != nil {
+	if err := mesh.Join(context.Background(), runner, loginServer, result.PreauthKey); err != nil {
 		return fmt.Errorf("join mesh network: %w", err)
 	}
 	fmt.Println("joined the mesh network successfully")
@@ -213,8 +216,10 @@ func runLogin(args []string) error {
 // resticConfig builds the shared restic.Config backup and restore both
 // need: the local key pair, the persisted POSIX username from a prior
 // register, the repository password, and the Storage-Service mesh
-// hostname.
-func resticConfig() (restic.Config, error) {
+// hostname. runner is the execrunner.Runner the returned Config invokes
+// "restic" through - main() passes execrunner.Real{}, a test passes an
+// execrunner.Fake.
+func resticConfig(runner execrunner.Runner) (restic.Config, error) {
 	dir, err := sshkey.ConfigDir()
 	if err != nil {
 		return restic.Config{}, fmt.Errorf("prepare local config directory: %w", err)
@@ -247,7 +252,7 @@ func resticConfig() (restic.Config, error) {
 	}
 
 	return restic.Config{
-		Runner:             execrunner.Real{},
+		Runner:             runner,
 		Host:               host,
 		PosixUsername:      posixUsername,
 		PrivateKeyPath:     keyPair.PrivateKeyPath,
@@ -255,8 +260,9 @@ func resticConfig() (restic.Config, error) {
 	}, nil
 }
 
-// runBackup implements CL-F-06.
-func runBackup(args []string) error {
+// runBackup implements CL-F-06. runner is the execrunner.Runner used for
+// the restic invocations - see resticConfig's own doc comment.
+func runBackup(args []string, runner execrunner.Runner) error {
 	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -266,7 +272,7 @@ func runBackup(args []string) error {
 	}
 	localPath := fs.Arg(0)
 
-	cfg, err := resticConfig()
+	cfg, err := resticConfig(runner)
 	if err != nil {
 		return err
 	}
@@ -282,8 +288,9 @@ func runBackup(args []string) error {
 	return nil
 }
 
-// runRestore implements CL-F-07.
-func runRestore(args []string) error {
+// runRestore implements CL-F-07. runner is the execrunner.Runner used for
+// the restic invocations - see resticConfig's own doc comment.
+func runRestore(args []string, runner execrunner.Runner) error {
 	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
 	target := fs.String("target", "", "local directory to restore into")
 	if err := fs.Parse(args); err != nil {
@@ -297,7 +304,7 @@ func runRestore(args []string) error {
 	}
 	snapshotID := fs.Arg(0)
 
-	cfg, err := resticConfig()
+	cfg, err := resticConfig(runner)
 	if err != nil {
 		return err
 	}

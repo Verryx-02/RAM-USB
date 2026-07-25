@@ -44,6 +44,45 @@ func TestTLSConfig_AcceptsConnectionsWithNoClientCertificate(t *testing.T) {
 	}
 }
 
+// Requirement: EH-F-01
+func TestTLSConfig_RejectsTLS12Handshake(t *testing.T) {
+	ca, err := mtls.NewTestCA()
+	if err != nil {
+		t.Fatalf("NewTestCA() error = %v", err)
+	}
+
+	serverCert, err := ca.IssueLeaf("EntryHub", "entry-hub-under-test")
+	if err != nil {
+		t.Fatalf("IssueLeaf(server) error = %v", err)
+	}
+
+	addr, results, stop := startTestServer(t, serverCert)
+	defer stop()
+
+	// A client capped at TLS 1.2 must be rejected by NewTLSConfig's
+	// MinVersion: tls.VersionTLS13 floor - proving this package's own
+	// listener enforces the floor, not just the cmd/entry-hub real-CA
+	// integration test's client side.
+	config := &tls.Config{
+		ServerName:         "localhost",
+		InsecureSkipVerify: true, //nolint:gosec // test dialer, see dial()'s own comment
+		MaxVersion:         tls.VersionTLS12,
+	}
+	dialer := &tls.Dialer{Config: config}
+	conn, dialErr := dialer.DialContext(context.Background(), "tcp", addr)
+	if dialErr == nil {
+		_ = conn.Close()
+		t.Fatal("dial() with MaxVersion TLS 1.2 succeeded, want handshake rejection")
+	}
+
+	select {
+	case <-results:
+		// Server-side handshake also errors out; either signal proves
+		// rejection, no assertion needed on its specific error value.
+	case <-time.After(2 * time.Second):
+	}
+}
+
 // startTestServer starts a plain-TLS listener using server.NewTLSConfig and
 // accepts one connection in the background, same shape as
 // security-switch/internal/server/server_test.go's helper, minus the client

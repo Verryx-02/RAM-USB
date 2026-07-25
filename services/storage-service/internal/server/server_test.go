@@ -90,15 +90,23 @@ func TestTLSConfig_AcceptsOnlyDatabaseVaultOrganization(t *testing.T) {
 	}
 }
 
-// startTestServer starts an mTLS listener using server.NewTLSConfig and
-// accepts connections in the background. Each accepted connection's own
-// handshake result (the server's authoritative view of whether it accepted
-// that peer) is sent to the returned channel. It also returns the listener
-// address and a stop function to close it.
+// startTestServer starts an mTLS listener built directly from
+// mtls.ServerConfig (the same building block Storage-Service's production
+// code composes with mtls.RequireOrganization at the HTTP layer, see
+// server.go's package doc comment) and accepts connections in the
+// background. Exercising ServerConfig itself here - rather than only
+// RequireOrganization, already covered by
+// pkg/mtls/organization_http_test.go - is what proves ST-F-01's full
+// accept-side behavior: a missing client certificate is rejected at the
+// handshake (tls.RequireAndVerifyClientCert), never reaching the HTTP layer
+// at all. Each accepted connection's own handshake result (the server's
+// authoritative view of whether it accepted that peer) is sent to the
+// returned channel. It also returns the listener address and a stop
+// function to close it.
 func startTestServer(t *testing.T, serverCert tls.Certificate, clientCAs *x509.CertPool) (string, <-chan error, func()) {
 	t.Helper()
 
-	listener, err := tls.Listen("tcp", "127.0.0.1:0", server.NewTLSConfig(serverCert, clientCAs))
+	listener, err := tls.Listen("tcp", "127.0.0.1:0", mtls.ServerConfig(serverCert, clientCAs, server.AllowedClientOrganization))
 	if err != nil {
 		t.Fatalf("tls.Listen() error = %v", err)
 	}

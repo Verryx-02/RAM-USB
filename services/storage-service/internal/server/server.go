@@ -1,14 +1,12 @@
-// Package server holds Storage-Service's connection-acceptance logic: the
-// mTLS configuration required for a client to reach it at all (ST-F-01),
-// before any request-level handling is considered.
+// Package server holds Storage-Service's connection-acceptance identity for
+// ST-F-01: the organization every mTLS client connecting to it must carry.
+// cmd/storage-service/main.go reads AllowedClientOrganization to build its
+// production HTTP handler chain via mtls.RequireOrganization, layered on top
+// of the *tls.Config pki.NewServer's bootstrap certificate already produces
+// (see that file's own package doc comment for why the check happens at the
+// HTTP-request level here rather than via mtls.ServerConfig's
+// handshake-level VerifyConnection).
 package server
-
-import (
-	"crypto/tls"
-	"crypto/x509"
-
-	"github.com/Verryx-02/RAM-USB/pkg/mtls"
-)
 
 // AllowedClientOrganization is the organization ST-F-01 requires of every
 // mTLS client connecting to Storage-Service. Database-Vault is the only
@@ -26,14 +24,3 @@ import (
 // (no hyphen), matching this constant and the codebase's established
 // convention — this is no longer an open discrepancy.
 const AllowedClientOrganization = "DatabaseVault"
-
-// NewTLSConfig returns the mTLS server configuration Storage-Service uses
-// to satisfy ST-F-01: a connection completes its handshake only if the
-// peer presents a valid certificate issued by a CA in clientCAs whose
-// Subject.Organization is AllowedClientOrganization. The requirement's
-// third condition, that the caller also be reachable only from the private
-// mesh network, is enforced by Network-Manager's ACL rules (NM-F-02), not
-// here.
-func NewTLSConfig(serverCert tls.Certificate, clientCAs *x509.CertPool) *tls.Config {
-	return mtls.ServerConfig(serverCert, clientCAs, AllowedClientOrganization)
-}

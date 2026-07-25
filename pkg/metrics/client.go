@@ -23,6 +23,8 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+
+	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 )
 
 // NewClient builds and connects a paho MQTT client for publishing/
@@ -31,14 +33,22 @@ import (
 // the caller builds tlsConfig from its own already-bootstrapped mTLS
 // identity, reused for this MQTT connection rather than a second,
 // independent certificate). It blocks until the connection completes or
-// connectTimeout elapses.
-func NewClient(brokerURL string, tlsConfig *tls.Config, clientID string, connectTimeout time.Duration) (mqtt.Client, error) {
+// connectTimeout elapses. dial is optional (nil routes the connection
+// through the default plain TCP dial); pass pkg/mesh.Server.Dial (or
+// equivalent) to route the underlying connection through a custom dialer
+// (e.g. the private mesh) instead - NET-F-02 requires TLS 1.3, which
+// tlsConfig already enforces independent of the dial path.
+func NewClient(brokerURL string, tlsConfig *tls.Config, clientID string, connectTimeout time.Duration, dial mesh.DialFunc) (mqtt.Client, error) {
 	options := mqtt.NewClientOptions().
 		AddBroker(brokerURL).
 		SetClientID(clientID).
 		SetTLSConfig(tlsConfig).
 		SetConnectTimeout(connectTimeout).
 		SetAutoReconnect(true)
+
+	if dial != nil {
+		options.SetCustomOpenConnectionFn(meshOpenConnectionFn(dial, tlsConfig, connectTimeout))
+	}
 
 	client := mqtt.NewClient(options)
 
