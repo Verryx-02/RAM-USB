@@ -19,6 +19,25 @@ entirely if keeping a closed entry adds no value.
 Each entry: **ID**, **Found** (date, context), **Area**, **Description**,
 **Status** (`OPEN` / `FIXED`).
 
+## Currently open (2026-07-25)
+
+Keep this list in sync whenever an entry's status changes — it's the
+at-a-glance worklist; the full entries below are the detail/history.
+
+| ID | One-line | Blocked on |
+|---|---|---|
+| KI-02 | EH-F-03's mesh-only `/api/login` split undocumented in SRS/diagrams | — |
+| KI-06 | NM-F-12/14/15/16/NET-F-01/MT-F-01..04 missing `[Code]` links | — |
+| KI-07 | `09-security-trust-zones.puml` one-directional arrow bug | — |
+| KI-12 | MT-F-02/CA-F-03/ST-F-12/13 broken or missing `[Code]` links | — |
+| KI-14 | Headscale missing from 2 security diagrams; certificate-authority-metrics missing from the deployment diagram | — |
+| KI-15 | §5.1 non-functional requirements have no `[Code]`/test link at all | user decision |
+| KI-19 | Entry-Hub/certificate-authority-metrics have no restart policy | user decision |
+
+Everything else in this file (KI-01, KI-03–KI-05, KI-09–KI-11, KI-13,
+KI-16–KI-18) is `FIXED` — kept below for history/traceability, not part
+of the active worklist.
+
 ---
 
 ## KI-01 — ST-F-11's `authorized-keys-command` has no provisioning mechanism for its own mTLS identity
@@ -191,24 +210,6 @@ Each entry: **ID**, **Found** (date, context), **Area**, **Description**,
   inconsistent with the diagram's own convention, not a deliberate
   simplification.
 - **Status:** OPEN.
-
-## KI-08 — `11-operations-metrics-flow.puml`'s note overstates which services actually publish metrics
-
-- **Found:** 2026-07-24, `consistency-agent` audit (SRS vs. code).
-- **Area:** `docs/design/diagrams/11-operations-metrics-flow.puml:13-19`.
-- **Description:** The diagram's descriptive note lists ST-F-12 and
-  CA-F-03 alongside EH-F-10/SS-F-07/DV-F-16/NM-F-17 as services that
-  "every service publishes, every minute and only" metrics for — stated
-  as settled fact, with no caveat. ST-F-12 and CA-F-03 are not
-  implemented at all (see KI-04 and KI-03) — the note should distinguish
-  the services that genuinely publish today from the two that don't yet,
-  not present all six uniformly.
-- **Status:** STALE — this entry itself, not the diagram. Re-checked
-  2026-07-25 (`consistency-agent`): KI-03 and KI-04 are both FIXED now, so
-  the diagram's note (ST-F-12/CA-F-03 alongside the other four as
-  services that publish metrics) is currently *accurate*. Nothing left to
-  fix in the diagram. Keeping this entry only long enough to record that
-  correction; safe to delete on the next pass through this file.
 
 ## KI-09 — SRS §2.1: Headscale's status may be stale ("In progress")
 
