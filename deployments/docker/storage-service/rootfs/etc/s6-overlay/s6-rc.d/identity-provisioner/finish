@@ -1,0 +1,22 @@
+#!/bin/sh
+# s6-rc runs this after ../run exits, before respawning it. Without a
+# finish script, a plain longrun respawns instantly on any exit - fine for
+# a transient error, but "run"'s only failure mode today is main.go's
+# os.Exit(1) after a fatal startup error (e.g. an already-consumed,
+# single-use CA-F-04 bootstrap token - this process mints its OWN token,
+# separate from storage-service's own, per KI-01's design - which can
+# never succeed twice, so every respawn after that point is guaranteed to
+# fail identically). Left unthrottled, that produces a sub-second crash
+# loop that spams logs, keeps hammering the CA with doomed requests, and
+# gives an operator no real window to notice and fix it (mint a fresh
+# token, recreate the container) - confirmed live for this exact pattern
+# on Network-Manager (KI-10), same fix applied here since this longrun has
+# the identical shape.
+#
+# $1 is the run script's exit code, or 256 if it was killed by a signal
+# (s6-overlay convention - $2 then carries the signal number). A clean
+# container stop (SIGTERM) must not be delayed, so only a genuine nonzero
+# exit code gets the backoff.
+if [ "$1" -ne 0 ] && [ "$1" -ne 256 ]; then
+  sleep 30
+fi
