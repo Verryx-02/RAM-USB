@@ -2,6 +2,7 @@ package accesslog
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ import (
 // two independent file descriptions already.
 func openWriter(t *testing.T, path string) *os.File {
 	t.Helper()
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644) //nolint:gosec // test-only, path is t.TempDir()-derived, not attacker input
 	if err != nil {
 		t.Fatalf("open writer: %v", err)
 	}
@@ -33,7 +34,7 @@ func openWriter(t *testing.T, path string) *os.File {
 
 func openReader(t *testing.T, path string) *os.File {
 	t.Helper()
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // test-only, path is t.TempDir()-derived, not attacker input
 	if err != nil {
 		t.Fatalf("open reader: %v", err)
 	}
@@ -98,7 +99,7 @@ func TestFollow_DeliversLinesAppendedAfterStart(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		if err != context.Canceled {
+		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("Follow returned err = %v, want context.Canceled", err)
 		}
 	case <-time.After(2 * time.Second):

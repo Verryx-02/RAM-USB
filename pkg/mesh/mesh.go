@@ -306,7 +306,7 @@ func Up(ctx context.Context, cfg Config) (*Server, error) {
 // container", for the full mechanism and why this process-wide env var
 // mutation is safe here specifically.
 func trustControlCA(path string) error {
-	pemBytes, err := os.ReadFile(path)
+	pemBytes, err := os.ReadFile(path) //nolint:gosec // path is Config.ControlCAFile, an operator-supplied deployment setting, not attacker input
 	if err != nil {
 		return fmt.Errorf("mesh: read ControlCAFile %s: %w", path, err)
 	}
@@ -325,6 +325,16 @@ func (s *Server) Listen(network, addr string) (net.Listener, error) {
 	return s.ts.Listen(network, addr)
 }
 
+// DialFunc dials a network connection to addr, exactly the shape
+// (*Server).Dial and (*net.Dialer).DialContext both already implement.
+// pkg/metrics.NewClient and pkg/pki.NewClientWithDialer/RouteThroughDialer
+// each accept one, so a mesh-joined service's own meshNode.Dial can be
+// passed directly to route that package's outbound traffic through this
+// server's mesh identity instead of plain DNS/TCP (NET-F-01, NM-F-04).
+// Defined here, this type's one real implementation, rather than
+// independently in each consuming package.
+type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+
 // Dial connects to addr over the mesh only, never falling back to a
 // plain network dial - this is what makes a caller's outbound call
 // (e.g. Security-Switch's SS-F-04 call to Database-Vault) pass
@@ -340,16 +350,6 @@ func (s *Server) Listen(network, addr string) (net.Listener, error) {
 // that peer is up yet (see "Data-plane readiness is NOT a resolution
 // gate"), so a dial issued right after resolution can still fail or hang
 // once or twice before the lazy handshake it itself triggers completes.
-// DialFunc dials a network connection to addr, exactly the shape
-// (*Server).Dial and (*net.Dialer).DialContext both already implement.
-// pkg/metrics.NewClient and pkg/pki.NewClientWithDialer/RouteThroughDialer
-// each accept one, so a mesh-joined service's own meshNode.Dial can be
-// passed directly to route that package's outbound traffic through this
-// server's mesh identity instead of plain DNS/TCP (NET-F-01, NM-F-04).
-// Defined here, this type's one real implementation, rather than
-// independently in each consuming package.
-type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
-
 func (s *Server) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	var lastErr error
 	for {
@@ -366,7 +366,7 @@ func (s *Server) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("mesh: dial %q: %w (last dial attempt error: %v)", addr, ctx.Err(), lastErr)
+			return nil, fmt.Errorf("mesh: dial %q: %w (last dial attempt error: %w)", addr, ctx.Err(), lastErr)
 		case <-time.After(peerResolvePollInterval):
 		}
 	}

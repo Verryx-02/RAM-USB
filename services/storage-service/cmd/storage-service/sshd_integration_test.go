@@ -117,7 +117,7 @@ func buildSSHDImage(ctx context.Context, t *testing.T) {
 	buildCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(buildCtx, "docker", "build", //nolint:noctx // ctx already bounds this call
+	cmd := exec.CommandContext(buildCtx, "docker", "build", //nolint:noctx,gosec // ctx already bounds this call; fixed argv, test-only
 		"-f", dockerfile, "-t", sshdImageTag, buildContext)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("docker build: %v\n%s", err, out)
@@ -146,7 +146,7 @@ func startSSHDContainer(ctx context.Context, t *testing.T) *sshdContainer {
 
 	runCtx, cancel := context.WithTimeout(ctx, dockerCommandTimeout)
 	defer cancel()
-	runCmd := exec.CommandContext(runCtx, "docker", "run", "-d", "--rm", //nolint:noctx // ctx already bounds this call
+	runCmd := exec.CommandContext(runCtx, "docker", "run", "-d", "--rm", //nolint:noctx,gosec // ctx already bounds this call; fixed argv, test-only
 		"--name", name,
 		"--cap-drop", "ALL",
 		"--cap-add", "CHOWN",
@@ -159,8 +159,8 @@ func startSSHDContainer(ctx context.Context, t *testing.T) *sshdContainer {
 	if out, err := runCmd.CombinedOutput(); err != nil {
 		t.Fatalf("docker run: %v\n%s", err, out)
 	}
-	t.Cleanup(func() {
-		_ = exec.Command("docker", "rm", "-f", name).Run()
+	t.Cleanup(func() { //nolint:contextcheck // deliberately context.Background() below, not the enclosing ctx, so this cleanup still runs the container removal even if the test's own ctx is already cancelled/expired by the time t.Cleanup runs
+		_ = exec.CommandContext(context.Background(), "docker", "rm", "-f", name).Run() //nolint:gosec // fixed argv, test-only cleanup
 	})
 
 	dockerExec(ctx, t, name, "mkdir", "-p", "-m", "0755", "/run/sshd")
@@ -181,7 +181,7 @@ func dockerExec(ctx context.Context, t *testing.T, container string, args ...str
 	defer cancel()
 
 	full := append([]string{"exec", container}, args...)
-	out, err := exec.CommandContext(execCtx, "docker", full...).CombinedOutput() //nolint:noctx // ctx already bounds this call
+	out, err := exec.CommandContext(execCtx, "docker", full...).CombinedOutput() //nolint:noctx,gosec // ctx already bounds this call; fixed argv, test-only
 	if err != nil {
 		t.Fatalf("docker exec %s %v: %v\n%s", container, args, err, out)
 	}
@@ -196,7 +196,7 @@ func hostPort(ctx context.Context, t *testing.T, container, containerPort string
 	portCtx, cancel := context.WithTimeout(ctx, dockerCommandTimeout)
 	defer cancel()
 
-	out, err := exec.CommandContext(portCtx, "docker", "port", container, containerPort).Output() //nolint:noctx // ctx already bounds this call
+	out, err := exec.CommandContext(portCtx, "docker", "port", container, containerPort).Output() //nolint:noctx,gosec // ctx already bounds this call; fixed argv, test-only
 	if err != nil {
 		t.Fatalf("docker port %s %s: %v", container, containerPort, err)
 	}
@@ -241,7 +241,7 @@ func buildProvisionHelper(ctx context.Context, t *testing.T) string {
 
 	buildCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(buildCtx, "go", "build", "-o", binPath, "../itest-provision-user") //nolint:noctx // ctx already bounds this call
+	cmd := exec.CommandContext(buildCtx, "go", "build", "-o", binPath, "../itest-provision-user") //nolint:noctx,gosec // ctx already bounds this call; fixed argv, test-only
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build itest-provision-user: %v\n%s", err, out)
@@ -255,7 +255,7 @@ func copyIntoContainer(ctx context.Context, t *testing.T, container, hostPath, c
 
 	cpCtx, cancel := context.WithTimeout(ctx, dockerCommandTimeout)
 	defer cancel()
-	if out, err := exec.CommandContext(cpCtx, "docker", "cp", hostPath, container+":"+containerPath).CombinedOutput(); err != nil { //nolint:noctx // ctx already bounds this call
+	if out, err := exec.CommandContext(cpCtx, "docker", "cp", hostPath, container+":"+containerPath).CombinedOutput(); err != nil { //nolint:noctx,gosec // ctx already bounds this call; fixed argv, test-only
 		t.Fatalf("docker cp %s %s:%s: %v\n%s", hostPath, container, containerPath, err, out)
 	}
 }
@@ -300,7 +300,7 @@ func installAuthorizedKey(ctx context.Context, t *testing.T, container, username
 
 	writeCtx, cancel := context.WithTimeout(ctx, dockerCommandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(writeCtx, "docker", "exec", "-i", container, //nolint:noctx // ctx already bounds this call
+	cmd := exec.CommandContext(writeCtx, "docker", "exec", "-i", container, //nolint:noctx,gosec // ctx already bounds this call; fixed argv, test-only
 		"sh", "-c", "cat > "+sshDir+"/authorized_keys")
 	cmd.Stdin = strings.NewReader(authorizedKeyLine)
 	if out, err := cmd.CombinedOutput(); err != nil {

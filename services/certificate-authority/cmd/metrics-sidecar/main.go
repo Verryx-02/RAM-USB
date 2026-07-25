@@ -193,11 +193,11 @@ func run() error {
 		})
 	}
 
-	logFile, err := os.Open(accessLogPath)
+	logFile, err := os.Open(accessLogPath) //nolint:gosec // accessLogPath is an operator-supplied deployment setting, not attacker input
 	if err != nil {
 		return fmt.Errorf("open access log %s: %w", accessLogPath, err)
 	}
-	defer logFile.Close()
+	defer func() { _ = logFile.Close() }()
 
 	// Only report on requests from this process's own start onward - see
 	// accesslog.Follow's own doc comment.

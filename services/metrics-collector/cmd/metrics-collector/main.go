@@ -214,5 +214,5 @@ func buildMQTTClient(ctx context.Context) (mqtt.Client, error) {
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(base, metrics.OrganizationMQTTBroker))
 
-	return metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, nil)
+	return metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, nil) //nolint:contextcheck // paho's OpenConnectionFunc signature carries no context.Context to thread through (see pkg/metrics/dial.go's meshOpenConnectionFn doc comment)
 }

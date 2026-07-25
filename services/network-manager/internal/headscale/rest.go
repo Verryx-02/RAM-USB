@@ -1,8 +1,9 @@
-// This file implements Client, the real HTTP-backed Service (client.go)
+package headscale
+
+// rest.go implements Client, the real HTTP-backed Service (client.go)
 // and PolicyPusher (policy.go) - see client.go's own package doc comment
 // for the full architectural reasoning (why REST, wire shapes confirmed
 // against Headscale's own generated swagger).
-package headscale
 
 import (
 	"bytes"

@@ -231,7 +231,10 @@ func TestNewClientWithDialer_DialerIsInvoked(t *testing.T) {
 		t.Fatalf("http.NewRequestWithContext() error = %v, want nil", err)
 	}
 
-	_, err = client.Do(healthReq)
+	resp, err := client.Do(healthReq)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if err == nil {
 		t.Fatal("client.Do() error = nil, want the fake dialer's error (the real CA must never be reached once a dialer is installed)")
 	}

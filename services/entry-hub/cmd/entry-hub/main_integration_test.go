@@ -276,7 +276,11 @@ func TestBuildSecuritySwitchClient_RealCA_RejectsTLS12(t *testing.T) {
 		t.Fatalf("buildSecuritySwitchClient() error = %v, want nil", err)
 	}
 
-	if _, err := client.Get(baseURL); err == nil { //nolint:noctx // test, ctx already bounds the token mint above
+	resp, err := client.Get(baseURL) //nolint:noctx // test, ctx already bounds the token mint above
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err == nil {
 		t.Fatal("client.Get() against a TLS-1.2-capped peer error = nil, want a version-negotiation failure")
 	}
 }
@@ -312,7 +316,7 @@ func writeSelfSignedKeyPair(t *testing.T) (certPath, keyPath string) {
 	certPath = filepath.Join(dir, "cert.pem")
 	keyPath = filepath.Join(dir, "key.pem")
 
-	certOut, err := os.Create(certPath)
+	certOut, err := os.Create(certPath) //nolint:gosec // test-only, path is t.TempDir()-derived, not attacker input
 	if err != nil {
 		t.Fatalf("os.Create(cert) error = %v, want nil", err)
 	}
@@ -321,7 +325,7 @@ func writeSelfSignedKeyPair(t *testing.T) (certPath, keyPath string) {
 		t.Fatalf("pem.Encode(cert) error = %v, want nil", err)
 	}
 
-	keyOut, err := os.Create(keyPath)
+	keyOut, err := os.Create(keyPath) //nolint:gosec // test-only, path is t.TempDir()-derived, not attacker input
 	if err != nil {
 		t.Fatalf("os.Create(key) error = %v, want nil", err)
 	}

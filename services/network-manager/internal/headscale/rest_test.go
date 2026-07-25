@@ -205,7 +205,7 @@ func TestClient_SetPolicy_And_GetPolicy(t *testing.T) {
 // every Service/PolicyPusher method funnels through do(), so this proves
 // the shared error path once.
 func TestClient_NonSuccessStatus_IsAnError(t *testing.T) {
-	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	client, _ := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"message":"denied"}`))
 	})
@@ -257,7 +257,7 @@ func TestFormatID_ParseID_RoundTrip(t *testing.T) {
 // A malformed response body (valid HTTP status, undecodable JSON) is an
 // error, not a zero-value success.
 func TestClient_MalformedResponseBody_IsAnError(t *testing.T) {
-	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	client, _ := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`not json`))
 	})

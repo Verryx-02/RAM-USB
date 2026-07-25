@@ -334,7 +334,7 @@ func run() error {
 		})
 	}
 
-	rawListener, err := net.Listen("tcp", listenAddr)
+	rawListener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", listenAddr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", listenAddr, err)
 	}

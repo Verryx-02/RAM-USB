@@ -247,7 +247,11 @@ func TestBuildServerTLSConfig_RealCA_RejectsTLS12(t *testing.T) {
 	transport.TLSClientConfig.MaxVersion = tls.VersionTLS12
 
 	baseURL := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
-	if _, err := client.Get(baseURL); err == nil { //nolint:noctx // test, ctx already bounds the token mint above
+	resp, err := client.Get(baseURL) //nolint:noctx // test, ctx already bounds the token mint above
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err == nil {
 		t.Fatal("client.Get() over a TLS-1.2-capped handshake error = nil, want a version-negotiation failure")
 	}
 }
@@ -289,7 +293,11 @@ func TestBuildServerTLSConfig_RealCA_RejectsNoClientCert(t *testing.T) {
 		},
 	}
 	baseURL := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
-	if _, err := noCertClient.Get(baseURL); err == nil { //nolint:noctx // test, ctx already bounds the token mint above
+	resp, err := noCertClient.Get(baseURL) //nolint:noctx // test, ctx already bounds the token mint above
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err == nil {
 		t.Fatal("noCertClient.Get() with no client certificate error = nil, want a TLS handshake failure")
 	}
 }

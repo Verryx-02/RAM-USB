@@ -38,7 +38,7 @@ import (
 // keeping the two paths' connection-establishment budget identical.
 func meshOpenConnectionFn(dial mesh.DialFunc, tlsConfig *tls.Config, timeout time.Duration) mqtt.OpenConnectionFunc {
 	return func(uri *url.URL, _ mqtt.ClientOptions) (net.Conn, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout) //nolint:contextcheck // paho's OpenConnectionFunc signature carries no context.Context to thread through (see doc comment above)
 		defer cancel()
 
 		conn, err := dial(ctx, "tcp", uri.Host)

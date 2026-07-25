@@ -93,7 +93,7 @@ func TestCertificateAuthorityRestart_RealStack_OtherServicesUninterrupted(t *tes
 				mu.Lock()
 				pollCount++
 				mu.Unlock()
-				if unexpected := probeMQTTBrokerAlive(); unexpected != "" {
+				if unexpected := probeMQTTBrokerAlive(pollCtx); unexpected != "" {
 					mu.Lock()
 					unexpectedErrors = append(unexpectedErrors, unexpected)
 					mu.Unlock()
@@ -110,7 +110,7 @@ func TestCertificateAuthorityRestart_RealStack_OtherServicesUninterrupted(t *tes
 	// an unset required var) - placeholders are correct and safe here
 	// because this command only ever restarts "certificate-authority"
 	// itself, never touches "certificate-authority-mesh".
-	restartCmd := exec.Command("docker", "compose", "-f", caComposeYML, "restart", caContainer) //nolint:gosec // fixed args, not untrusted input
+	restartCmd := exec.CommandContext(t.Context(), "docker", "compose", "-f", caComposeYML, "restart", caContainer) //nolint:gosec // fixed args, not untrusted input
 	restartCmd.Env = append(restartCmd.Environ(),
 		"RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY=itest-placeholder-unused",
 		"RAM_USB_TAILSCALE_CONTROL_URL=https://headscale:8080",
@@ -153,12 +153,17 @@ func TestCertificateAuthorityRestart_RealStack_OtherServicesUninterrupted(t *tes
 // require_certificate), or a description of the unexpected failure
 // otherwise (e.g. connection refused, timeout - signs the restart next to
 // it impacted this unrelated service).
-func probeMQTTBrokerAlive() (unexpected string) {
-	dialer := &net.Dialer{Timeout: 2 * time.Second}
-	conn, err := tls.DialWithDialer(dialer, "tcp", "localhost:8883", &tls.Config{
-		InsecureSkipVerify: true, //nolint:gosec // only checking the broker is reachable/alive, not verifying its identity
-		MinVersion:         tls.VersionTLS13,
-	})
+func probeMQTTBrokerAlive(ctx context.Context) (unexpected string) {
+	dialCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	tlsDialer := &tls.Dialer{
+		NetDialer: &net.Dialer{},
+		Config: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // only checking the broker is reachable/alive, not verifying its identity
+			MinVersion:         tls.VersionTLS13,
+		},
+	}
+	conn, err := tlsDialer.DialContext(dialCtx, "tcp", "localhost:8883")
 	if err != nil {
 		// A handshake-level rejection (no cert presented) is the
 		// expected outcome, not a failure - this listener requires a
@@ -213,7 +218,7 @@ func assertCAHealthy(t *testing.T) {
 func repoRoot(t *testing.T) string {
 	t.Helper()
 
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	out, err := exec.CommandContext(t.Context(), "git", "rev-parse", "--show-toplevel").Output() //nolint:gosec // fixed args, not untrusted input
 	if err != nil {
 		t.Fatalf("git rev-parse --show-toplevel error = %v, want nil", err)
 	}

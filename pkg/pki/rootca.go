@@ -87,6 +87,6 @@ func RootCA(ctx context.Context, token string) ([]byte, error) {
 
 	return pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
-		Bytes: root.RootPEM.Certificate.Raw,
+		Bytes: root.RootPEM.Raw,
 	}), nil
 }

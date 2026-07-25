@@ -74,7 +74,7 @@ func TestEncodePrivateKey(t *testing.T) {
 	if !ok {
 		t.Fatalf("x509.ParsePKCS8PrivateKey() = %T, want *ecdsa.PrivateKey", parsed)
 	}
-	if parsedKey.D.Cmp(key.D) != 0 {
+	if !parsedKey.Equal(key) {
 		t.Fatal("EncodePrivateKey() round trip produced a different key")
 	}
 }
@@ -126,8 +126,7 @@ func TestRenderConfig(t *testing.T) {
 // Requirement: ST-F-11
 func TestWriteFileAtomic(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "sub", "does-not-exist-yet", "..", "target.txt")
-	path = filepath.Join(dir, "target.txt")
+	path := filepath.Join(dir, "target.txt")
 
 	if err := WriteFileAtomic(path, []byte("first"), 0o600); err != nil {
 		t.Fatalf("WriteFileAtomic() first write error = %v, want nil", err)

@@ -85,7 +85,7 @@ func TestNewClient_WithDial_DialerErrorSurfaces(t *testing.T) {
 	defer stop()
 
 	wantErr := errors.New("mesh: forced dial failure for test")
-	failingDial := func(ctx context.Context, network, dialAddr string) (net.Conn, error) {
+	failingDial := func(_ context.Context, _, _ string) (net.Conn, error) {
 		return nil, wantErr
 	}
 

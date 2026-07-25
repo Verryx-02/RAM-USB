@@ -109,10 +109,15 @@ func TestServer_DialReachesListener_OnlyThroughMesh_RealHeadscale(t *testing.T) 
 	defer func() { _ = ln.Close() }()
 
 	const wantBody = "reached only through the mesh"
-	go func() {
-		_ = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = io.WriteString(w, wantBody)
-		}))
+		}),
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+	}
+	go func() {
+		_ = srv.Serve(ln)
 	}()
 
 	// Positive case: a call issued through clientNode.Dial (the same
@@ -133,9 +138,13 @@ func TestServer_DialReachesListener_OnlyThroughMesh_RealHeadscale(t *testing.T) 
 		// context.Background() internally, not this test's own outer ctx.
 		Timeout: 30 * time.Second,
 	}
-	resp, err := httpClient.Get("http://mesh-test-server-" + strconv.FormatInt(stamp, 10) + ":8945")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://mesh-test-server-"+strconv.FormatInt(stamp, 10)+":8945", nil)
 	if err != nil {
-		t.Fatalf("httpClient.Get() over the mesh error = %v", err)
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		t.Fatalf("httpClient.Do() over the mesh error = %v", err)
 	}
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
@@ -156,7 +165,8 @@ func TestServer_DialReachesListener_OnlyThroughMesh_RealHeadscale(t *testing.T) 
 	if !ip4.IsValid() {
 		t.Fatal("serverNode.TailscaleIPs() returned no valid IPv4 address")
 	}
-	directConn, err := net.DialTimeout("tcp", net.JoinHostPort(ip4.String(), "8945"), 5*time.Second)
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	directConn, err := dialer.DialContext(t.Context(), "tcp", net.JoinHostPort(ip4.String(), "8945"))
 	if err == nil {
 		_ = directConn.Close()
 		t.Fatalf("net.DialTimeout() to %s:8945 succeeded from outside the mesh, want a failure - the listener must be reachable only via Server.Dial", ip4)

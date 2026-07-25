@@ -70,5 +70,5 @@ func ParseLine(line []byte) (entry Entry, ok bool, err error) {
 	if fields.Status == 0 {
 		return Entry{}, false, nil
 	}
-	return Entry{Status: fields.Status, DurationNs: fields.DurationNs}, true, nil
+	return Entry(fields), true, nil
 }

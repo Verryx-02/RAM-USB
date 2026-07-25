@@ -6,6 +6,7 @@
 package nonfunctional
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
@@ -27,7 +28,7 @@ func skipUnlessContainerRunning(t *testing.T, container string) {
 		t.Skipf("docker CLI not available: %v", err)
 	}
 
-	out, err := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", container).Output() //nolint:gosec // fixed container name literal per call site, not untrusted input
+	out, err := exec.CommandContext(t.Context(), "docker", "inspect", "-f", "{{.State.Running}}", container).Output() //nolint:gosec // fixed container name literal per call site, not untrusted input
 	if err != nil || strings.TrimSpace(string(out)) != "true" {
 		t.Skipf("container %q is not running; start it first (see this test's doc comment)", container)
 	}
@@ -109,11 +110,16 @@ func TestMosquitto_RealStack_RejectsNoClientCert(t *testing.T) {
 	const container = "mqtt-broker"
 	skipUnlessContainerRunning(t, container)
 
-	dialer := &net.Dialer{Timeout: 5 * time.Second}
-	conn, err := tls.DialWithDialer(dialer, "tcp", "localhost:8883", &tls.Config{
-		InsecureSkipVerify: true, //nolint:gosec // this test only cares whether the broker demands a client cert, not about verifying its own server identity
-		MinVersion:         tls.VersionTLS13,
-	})
+	dialCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	tlsDialer := &tls.Dialer{
+		NetDialer: &net.Dialer{},
+		Config: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // this test only cares whether the broker demands a client cert, not about verifying its own server identity
+			MinVersion:         tls.VersionTLS13,
+		},
+	}
+	conn, err := tlsDialer.DialContext(dialCtx, "tcp", "localhost:8883")
 	if err != nil {
 		// Rejected at the handshake itself - the strongest form of
 		// rejection.
@@ -171,7 +177,7 @@ func TestGrafanaTimescaleDB_RealStack_RNF_SEC_04_PlaintextConnectionShouldBeReje
 	// Exactly the connection Grafana's own datasource provisioning
 	// (third-party/grafana/provisioning/datasources) uses: plaintext,
 	// password-only, no client certificate, no mTLS.
-	out, err := exec.Command("docker", "exec", container, "psql", //nolint:gosec // fixed container/args, not untrusted input
+	out, err := exec.CommandContext(t.Context(), "docker", "exec", container, "psql", //nolint:gosec // fixed container/args, not untrusted input
 		"postgres://metrics_collector:metrics_collector_dev_only@localhost:5432/metrics_collector?sslmode=disable",
 		"-c", "SELECT 1;").CombinedOutput()
 

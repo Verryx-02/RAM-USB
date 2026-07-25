@@ -187,7 +187,7 @@ func buildDNSProbe(t *testing.T) string {
 	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
 
 	out := filepath.Join(t.TempDir(), "dnsprobe")
-	cmd := exec.CommandContext(context.Background(), "go", "build", "-o", out,
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", out, //nolint:gosec // fixed argv, test-only
 		"github.com/Verryx-02/RAM-USB/user-client/internal/mesh/testdata/dnsprobe")
 	cmd.Dir = repoRoot
 	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0")
@@ -273,7 +273,7 @@ func startStandinNode(t *testing.T, headscaleContainer, devTLSCert string, userI
 		t.Fatalf("docker run %s: %v (output: %s)", containerName, err, output)
 	}
 	t.Cleanup(func() {
-		_ = exec.Command("docker", "rm", "-f", containerName).Run() //nolint:gosec // fixed argv, test-only cleanup
+		_ = exec.CommandContext(context.Background(), "docker", "rm", "-f", containerName).Run() //nolint:gosec // fixed argv, test-only cleanup; no ctx available inside t.Cleanup
 	})
 	return containerName
 }

@@ -35,7 +35,7 @@ func TestTrustPool(t *testing.T) {
 		},
 		{
 			name: "file does not exist",
-			write: func(t *testing.T, dir string) string {
+			write: func(_ *testing.T, dir string) string {
 				return filepath.Join(dir, "does-not-exist.pem")
 			},
 			wantErr: true,
