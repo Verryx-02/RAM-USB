@@ -11,6 +11,38 @@ import (
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 )
 
+// Requirement: NM-F-09
+//
+// matchesHostname is pure string matching (trailing-dot normalization,
+// case-folding, FQDN-vs-short-name comparison) - no real Headscale/tsnet
+// infrastructure needed, unlike lookupPeerIP (which requires a real
+// *local.Client's Status() and is exercised only by this package's
+// env-gated real-Headscale integration test).
+func TestMatchesHostname(t *testing.T) {
+	tests := []struct {
+		name string
+		peer string
+		host string
+		want bool
+	}{
+		{name: "exact short name match", peer: "storage-service", host: "storage-service", want: true},
+		{name: "FQDN peer name vs short host", peer: "storage-service.tailnet.ts.net", host: "storage-service", want: true},
+		{name: "trailing-dot FQDN vs short host", peer: "storage-service.tailnet.ts.net.", host: "storage-service", want: true},
+		{name: "case-insensitive match", peer: "Storage-Service", host: "storage-service", want: true},
+		{name: "case-insensitive FQDN match", peer: "STORAGE-SERVICE.tailnet.ts.net.", host: "storage-service", want: true},
+		{name: "genuine no-match", peer: "entry-hub", host: "storage-service", want: false},
+		{name: "no-match despite shared prefix", peer: "storage-service-2", host: "storage-service", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := matchesHostname(tt.peer, tt.host); got != tt.want {
+				t.Fatalf("matchesHostname(%q, %q) = %v, want %v", tt.peer, tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
 // Requirement: SS-F-01, DV-F-01
 //
 // Up fails closed (RD-04) on any missing config field, before ever
