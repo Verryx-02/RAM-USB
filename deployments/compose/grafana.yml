@@ -3,6 +3,39 @@
 # no manual UI configuration. Requires its own admin credentials
 # (GF_SECURITY_ADMIN_USER/PASSWORD, native env vars of the grafana/grafana
 # image) - no image default is left active.
+#
+# grafana-cert-issuer / grafana-cert-renewer (KI-22, PKI-F-03, RNF-SEC-04):
+# Grafana (a third-party Go binary, not pkg/pki-integrated) needs its OWN
+# mTLS CLIENT identity to satisfy TimescaleDB's own
+# `hostssl ... clientcert=verify-full` rule
+# (third-party/timescaledb/pg_hba-mtls.sh) - minted and kept renewed the
+# same "single-use bootstrap token once, mTLS-authenticated renewal
+# forever after" way Mosquitto's own KI-16 sidecars already give it (see
+# mqtt-broker.yml's own top comment for the full design this mirrors).
+# Grafana is a standalone, single-process container like Mosquitto (no
+# s6/no in-container supervision to add a reload step to), so - unlike
+# metrics-collector.yml's own in-container-adjacent renewer - this one
+# stays a genuinely separate sidecar, closer to mqtt-broker-cert-renewer's
+# own shape.
+#
+# The client certificate's CommonName is "metrics_collector" -
+# EXACTLY the Postgres role Grafana connects as
+# (third-party/grafana/provisioning/datasources/timescaledb.yaml) -
+# because TimescaleDB's clientcert=verify-full requires the two to match
+# with no pg_ident.conf mapping layer added (YAGNI - see this task's own
+# report/KI-22 update for the reasoning).
+#
+# Reload-on-renew: Grafana's Postgres datasource driver loads
+# sslCertFile/sslKeyFile into an in-memory tls.Config when the datasource
+# is (re)provisioned, not per-connection - a renewed cert sitting on disk
+# alone does not take effect. grafana-cert-renewer's `--exec` hook calls
+# Grafana's own documented provisioning-reload admin API
+# (POST /api/admin/provisioning/datasources/reload,
+# grafana.com/docs/grafana/latest/developers/http_api/admin/#reload-provisioning-configurations)
+# rather than restarting the container - see this task's own report for
+# the live verification this needed (whether that API call alone is
+# sufficient to pick up the new cert files, vs. still requiring a
+# container restart).
 name: ramusb-grafana
 services:
   grafana:
@@ -24,12 +57,88 @@ services:
       # history/commit message if this stops working after a Grafana
       # upgrade).
       GF_PLUGINS_PREINSTALL_ASYNC: "false"
+      # KI-22: same value metrics-collector.yml's own POSTGRES_PASSWORD
+      # uses - Grafana's own provisioning-file environment-variable
+      # expansion (grafana.com/docs/grafana/latest/administration/provisioning/#using-environment-variables)
+      # reads this INSIDE timescaledb.yaml's secureJsonData.password,
+      # rather than a literal duplicated here - deployments/scripts/
+      # grafana.sh queries the already-running metrics-collector
+      # container for the current value instead of re-deriving it, the
+      # cross-project shared-secret pattern documented in
+      # .claude/agent-memory/code-agent/compose-convention.md.
+      RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD: "${RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD:?query with: docker exec metrics-collector printenv POSTGRES_PASSWORD}"
     volumes:
       - ../../third-party/grafana/provisioning:/etc/grafana/provisioning:ro
       - ../../third-party/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - ramusb-grafana-data:/var/lib/grafana
+      # Written by grafana-cert-issuer, kept current by
+      # grafana-cert-renewer below - read-only here, same "different mount
+      # mode per service for the same named volume" pattern already
+      # confirmed live for mqtt-broker.yml's own certs volume.
+      - ramusb-grafana-certs:/etc/grafana/tls:ro
     ports:
       - "3000:3000"
+    depends_on:
+      grafana-cert-issuer:
+        condition: service_completed_successfully
+    networks:
+      - ramusb-net
+
+  # Initial issuance (CA-F-04's bootstrap-token flow, PKI-F-03). Runs as
+  # root (unlike mqtt-broker-cert-issuer's fixed non-root uid) because it
+  # also needs to `chown` the minted files to uid 472/gid 0 - the
+  # grafana/grafana image's own fixed runtime user, confirmed live this
+  # session via `docker run --rm --entrypoint sh grafana/grafana:13.1 -c
+  # id` ("uid=472(grafana) gid=0(root) groups=0(root)").
+  grafana-cert-issuer:
+    image: smallstep/step-cli:0.30.6
+    user: root
+    environment:
+      RAM_USB_GRAFANA_TIMESCALEDB_BOOTSTRAP_TOKEN: "${RAM_USB_GRAFANA_TIMESCALEDB_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token metrics_collector --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        cp /ca-data/certs/root_ca.crt /certs/timescaledb-dev-ca.dev-only.crt
+        step ca certificate metrics_collector /certs/grafana.dev-only.crt /certs/grafana.dev-only.key \
+          --token "$$RAM_USB_GRAFANA_TIMESCALEDB_BOOTSTRAP_TOKEN" \
+          --ca-url https://certificate-authority:9000 --root /certs/timescaledb-dev-ca.dev-only.crt --force
+        chown 472:0 /certs/grafana.dev-only.crt /certs/grafana.dev-only.key /certs/timescaledb-dev-ca.dev-only.crt
+        chmod 0644 /certs/timescaledb-dev-ca.dev-only.crt
+        chmod 0640 /certs/grafana.dev-only.crt /certs/grafana.dev-only.key
+    volumes:
+      - ramusb-grafana-certs:/certs
+      - ramusb-ca-data:/ca-data:ro
+    networks:
+      - ramusb-net
+    restart: "no"
+
+  # Renewal sidecar (KI-22, PKI-F-03): `step ca renew --daemon` renews
+  # before ~2/3 of the certificate's validity elapses, authenticated by
+  # mTLS using the certificate being renewed itself - not the single-use
+  # bootstrap token, which grafana-cert-issuer above already consumed. See
+  # this file's own top comment for the reload-hook design (Grafana's own
+  # provisioning-reload admin API, not a container restart).
+  grafana-cert-renewer:
+    image: smallstep/step-cli:0.30.6
+    container_name: grafana-cert-renewer
+    user: root
+    depends_on:
+      grafana:
+        condition: service_started
+    environment:
+      RAM_USB_GRAFANA_ADMIN_USER: "${RAM_USB_GRAFANA_ADMIN_USER:?set the Grafana admin username}"
+      RAM_USB_GRAFANA_ADMIN_PASSWORD: "${RAM_USB_GRAFANA_ADMIN_PASSWORD:?set a Grafana admin password}"
+    volumes:
+      - ramusb-grafana-certs:/certs
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        exec step ca renew --daemon --force \
+          --ca-url https://certificate-authority:9000 --root /certs/timescaledb-dev-ca.dev-only.crt \
+          --exec "sh -c 'chown 472:0 /certs/grafana.dev-only.crt /certs/grafana.dev-only.key && chmod 0644 /certs/grafana.dev-only.crt && chmod 0640 /certs/grafana.dev-only.key && wget -q --user=$$RAM_USB_GRAFANA_ADMIN_USER --password=$$RAM_USB_GRAFANA_ADMIN_PASSWORD --post-data= -O- http://grafana:3000/api/admin/provisioning/datasources/reload'" \
+          /certs/grafana.dev-only.crt /certs/grafana.dev-only.key
     networks:
       - ramusb-net
 
@@ -39,3 +148,13 @@ networks:
 
 volumes:
   ramusb-grafana-data:
+  # Written by grafana-cert-issuer, kept current by grafana-cert-renewer,
+  # mounted read-only into grafana itself.
+  ramusb-grafana-certs:
+  # certificate-authority.yml's own project (ramusb-certificate-authority)
+  # owns this volume - referenced here by its fully-qualified
+  # Compose-generated name, same pattern as mqtt-broker.yml's own
+  # ramusb-ca-data reference.
+  ramusb-ca-data:
+    external: true
+    name: ramusb-certificate-authority_ramusb-ca-data

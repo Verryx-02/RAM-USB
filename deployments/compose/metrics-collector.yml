@@ -28,13 +28,65 @@
 # caveat already accepted for TimescaleDB's own listen_addresses (see the
 # timescaledb longrun's own run script), part of the same deferred,
 # dev-only limitation class as docs/Known_Issues.md's KI-05.
+#
+# metrics-collector-timescaledb-cert-issuer / -cert-renewer (KI-22,
+# PKI-F-03, RNF-SEC-04): TimescaleDB (a C/postgres binary, not a
+# pkg/pki-integrated Go process) needs its OWN server mTLS identity, minted
+# and kept renewed the same "single-use bootstrap token once, mTLS-
+# authenticated renewal forever after" way Mosquitto's own KI-16 sidecars
+# already give it - see that pair's own doc comment in mqtt-broker.yml for
+# the full design this mirrors. The one genuine difference: TimescaleDB is
+# CO-LOCATED inside this same container (not standalone like Mosquitto),
+# so its renewer reloads the new certificate by sending SIGHUP directly to
+# the real postmaster PID (read from the co-located data volume's own
+# postmaster.pid, confirmed the correct, authoritative PID by PostgreSQL's
+# own documented `pg_ctl reload` mechanism) rather than a wire-protocol
+# `pg_reload_conf()` call - the renewer shares metrics-collector's PID
+# namespace (`pid: "service:metrics-collector"`) specifically so that PID
+# number resolves to the real process, the same "share the target's own
+# namespace, signal it directly" shape as mqtt-broker-cert-renewer's own
+# `kill -HUP 1`, adapted because postgres is not this container's own PID 1
+# (s6-overlay's supervisor is).
 name: ramusb-metrics-collector
 services:
+  # Named-volume ownership fix is folded into the issuer itself below
+  # (it runs as root, unlike mqtt-broker-cert-issuer's fixed non-root
+  # uid, because it also needs to `chown` the minted files to uid 70 -
+  # TimescaleDB's own "postgres" OS user inside the timescale/timescaledb
+  # image, confirmed live this session via `docker run --rm
+  # timescale/timescaledb:2.23.0-pg18 id postgres` - so no separate
+  # certs-init oneshot is needed here, unlike mqtt-broker.yml's.
+  metrics-collector-timescaledb-cert-issuer:
+    image: smallstep/step-cli:0.30.6
+    user: root
+    environment:
+      RAM_USB_METRICS_COLLECTOR_TIMESCALEDB_BOOTSTRAP_TOKEN: "${RAM_USB_METRICS_COLLECTOR_TIMESCALEDB_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token MetricsCollectorTimescaleDB --san MetricsCollectorTimescaleDB --san metrics-collector --san localhost --san 127.0.0.1 --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        cp /ca-data/certs/root_ca.crt /certs/timescaledb-dev-ca.dev-only.crt
+        step ca certificate MetricsCollectorTimescaleDB /certs/timescaledb.dev-only.crt /certs/timescaledb.dev-only.key \
+          --token "$$RAM_USB_METRICS_COLLECTOR_TIMESCALEDB_BOOTSTRAP_TOKEN" \
+          --ca-url https://certificate-authority:9000 --root /certs/timescaledb-dev-ca.dev-only.crt --force
+        chown 70:70 /certs/timescaledb.dev-only.crt /certs/timescaledb.dev-only.key /certs/timescaledb-dev-ca.dev-only.crt
+        chmod 0644 /certs/timescaledb.dev-only.crt /certs/timescaledb-dev-ca.dev-only.crt
+        chmod 0600 /certs/timescaledb.dev-only.key
+    volumes:
+      - ramusb-metrics-collector-timescaledb-certs:/certs
+      - ramusb-ca-data:/ca-data:ro
+    networks:
+      - ramusb-net
+    restart: "no"
+
   metrics-collector:
     build:
       context: ../..
       dockerfile: deployments/docker/metrics-collector/Dockerfile
     container_name: metrics-collector
+    depends_on:
+      metrics-collector-timescaledb-cert-issuer:
+        condition: service_completed_successfully
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -77,8 +129,31 @@ services:
         && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:metrics-collector}
     volumes:
       - ramusb-metrics-collector-mesh-state:/var/lib/tailscale
-      - ramusb-metrics-collector-timescaledb-data:/var/lib/postgresql/data
+      # PGDATA for this image is "/var/lib/postgresql/18/docker" (confirmed
+      # live this session via `docker exec metrics-collector printenv
+      # PGDATA` - the Debian/Alpine postgres packaging convention,
+      # version-suffixed), NOT the "/var/lib/postgresql/data" path this
+      # mount used to name - a pre-existing bug, found while implementing
+      # KI-22's renewer (which needs to read the real, persisted
+      # postmaster.pid): TimescaleDB's own data never actually landed on
+      # this named volume before this fix, so it did not survive container
+      # recreation despite MT-F-03's 30-day retention intent. Fixed here,
+      # not filed as a separate Known Issue - this task's own renewer is
+      # what surfaced and needed it fixed.
+      - ramusb-metrics-collector-timescaledb-data:/var/lib/postgresql/18/docker
       - ../../third-party/timescaledb/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # KI-22, RNF-SEC-04: REPLACES the upstream image's own default
+      # pg_hba.conf (see pg_hba-mtls.sh's own doc comment for why it must
+      # be a full replace, not an append) with one requiring
+      # `clientcert=verify-full` for every network caller except this
+      # container's own loopback connection.
+      - ../../third-party/timescaledb/pg_hba-mtls.sh:/docker-entrypoint-initdb.d/pg_hba-mtls.sh:ro
+      # Written by metrics-collector-timescaledb-cert-issuer, kept current
+      # by metrics-collector-timescaledb-cert-renewer below - read-only
+      # here, same "different mount mode per service for the same named
+      # volume" pattern already confirmed live for mqtt-broker.yml's own
+      # certs volume.
+      - ramusb-metrics-collector-timescaledb-certs:/run/timescaledb-certs:ro
       # Dev-only: Headscale's self-signed control-plane certificate,
       # trusted via the real OS trust store (update-ca-certificates, see
       # rootfs/etc/s6-overlay/s6-rc.d/tailscale-up/up and
@@ -95,6 +170,61 @@ services:
     networks:
       - ramusb-net
 
+  # Renewal sidecar (KI-22, PKI-F-03): `step ca renew --daemon` renews
+  # before ~2/3 of the certificate's validity elapses, authenticated by
+  # mTLS using the certificate being renewed itself - not the single-use
+  # bootstrap token, which metrics-collector-timescaledb-cert-issuer above
+  # already consumed. See this file's own top comment for why reload here
+  # is a direct SIGHUP to the real postmaster PID (read from the
+  # co-located, read-only-mounted data volume's own postmaster.pid) rather
+  # than mqtt-broker-cert-renewer's `kill -HUP 1` - postgres is not this
+  # container's own PID 1 (s6-overlay's supervisor is), so `pid:
+  # "service:metrics-collector"` below is what makes that PID number
+  # resolve to the real process at all. `network_mode:
+  # "service:metrics-collector"` (not a plain `networks: ramusb-net`)
+  # keeps this renewer's own outbound `step ca renew` calls to
+  # Certificate-Authority on the exact same interface(s) metrics-collector
+  # itself already has - required in production, where Certificate-
+  # Authority is reachable only over the Tailscale mesh, same reasoning as
+  # mqtt-broker-cert-renewer's own identical choice.
+  metrics-collector-timescaledb-cert-renewer:
+    image: smallstep/step-cli:0.30.6
+    container_name: metrics-collector-timescaledb-cert-renewer
+    user: root
+    depends_on:
+      metrics-collector:
+        condition: service_started
+    volumes:
+      - ramusb-metrics-collector-timescaledb-certs:/certs
+      - ramusb-metrics-collector-timescaledb-data:/var/lib/postgresql/18/docker:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        # metrics-collector "started" (depends_on above) does not mean its
+        # own s6-supervised timescaledb longrun has finished initdb/started
+        # postgres yet - wait for postmaster.pid to actually exist so the
+        # PID captured into the --exec string below is real, not a startup
+        # race. Captured ONCE here (not re-read on every renewal): postgres
+        # is a stable, long-lived single process for this container's
+        # whole uptime, the same assumption mqtt-broker-cert-renewer's own
+        # fixed `kill -HUP 1` already makes for Mosquitto.
+        i=0
+        while [ ! -f /var/lib/postgresql/18/docker/postmaster.pid ]; do
+          i=$$((i + 1))
+          if [ "$$i" -ge 60 ]; then
+            echo "metrics-collector-timescaledb-cert-renewer: timed out waiting for postmaster.pid" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+        exec step ca renew --daemon --force \
+          --ca-url https://certificate-authority:9000 --root /certs/timescaledb-dev-ca.dev-only.crt \
+          --exec "sh -c 'chown 70:70 /certs/timescaledb.dev-only.crt /certs/timescaledb.dev-only.key && chmod 0644 /certs/timescaledb.dev-only.crt && chmod 0600 /certs/timescaledb.dev-only.key && kill -HUP $$(head -n1 /var/lib/postgresql/18/docker/postmaster.pid)'" \
+          /certs/timescaledb.dev-only.crt /certs/timescaledb.dev-only.key
+    network_mode: "service:metrics-collector"
+    pid: "service:metrics-collector"
+
 networks:
   ramusb-net:
     external: true
@@ -102,3 +232,14 @@ networks:
 volumes:
   ramusb-metrics-collector-mesh-state:
   ramusb-metrics-collector-timescaledb-data:
+  # Written by metrics-collector-timescaledb-cert-issuer, kept current by
+  # metrics-collector-timescaledb-cert-renewer, mounted read-only into
+  # metrics-collector itself.
+  ramusb-metrics-collector-timescaledb-certs:
+  # certificate-authority.yml's own project (ramusb-certificate-authority)
+  # owns this volume - referenced here by its fully-qualified
+  # Compose-generated name, same pattern as mqtt-broker.yml's own
+  # ramusb-ca-data reference.
+  ramusb-ca-data:
+    external: true
+    name: ramusb-certificate-authority_ramusb-ca-data

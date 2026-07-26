@@ -19,6 +19,8 @@ via file-based provisioning - no manual UI setup:
   Metrics-Collector's own container/guest (KI-18, see `.claude/agent-memory/
   code-agent.md`'s note that Grafana's file-based provisioning does not
   resolve `"${DS_VARNAME}"` template syntax - a fixed `uid:` is required).
+  This connection is mTLS (KI-22, RNF-SEC-04, `sslmode: verify-full`) -
+  see "mTLS to TimescaleDB" below.
 - `third-party/grafana/provisioning/dashboards/dashboards.yaml` +
   `third-party/grafana/dashboards/metrics-overview.json` provision the
   MT-F-04 dashboards (response time, throughput, active connections) at
@@ -90,6 +92,46 @@ none was needed: the Admin never joins the mesh at all (see point 1
 above). No `tag:admin` needed in `services/network-manager/internal/
 headscale/policy.go`. Tracked and closed as `docs/Known_Issues.md`'s
 KI-17.
+
+## mTLS to TimescaleDB (KI-22, RNF-SEC-04, PKI-F-03)
+
+Grafana's own outbound connection to TimescaleDB is genuine cross-guest
+inter-service traffic (UC-05), so RNF-SEC-04's "no exceptions" clause
+applies - unlike Metrics-Collector's own same-container loopback
+connection to this same database, which stays password-only
+(`third-party/timescaledb/pg_hba-mtls.sh`'s own doc comment explains why
+that specific exemption is principled, not a loophole).
+
+`deployments/compose/grafana.yml`'s `grafana-cert-issuer`/
+`grafana-cert-renewer` mint and keep renewed a client certificate whose
+CommonName is exactly `metrics_collector` - the Postgres role Grafana
+connects as - because TimescaleDB's `hostssl ... clientcert=verify-full`
+pg_hba.conf rule requires the two to match exactly, with no
+`pg_ident.conf` mapping layer (YAGNI). The datasource itself
+(`third-party/grafana/provisioning/datasources/timescaledb.yaml`) points
+`sslmode: verify-full` at three file-path-mounted certificates
+(`tlsConfigurationMethod: file-path`, Grafana's own documented mechanism)
+- the client cert/key plus the CA root used to verify TimescaleDB's own
+server certificate. The `secureJsonData.password` field is KEPT alongside
+the client certificate (defense-in-depth, RNF-SEC-02/03), expanded from
+the same `RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD` value
+`metrics-collector.yml`'s own `POSTGRES_PASSWORD` uses, via Grafana's own
+provisioning-file environment-variable expansion.
+
+In this dev Compose stack, `grafana-cert-issuer`/`grafana-cert-renewer`
+reach Certificate-Authority directly over `ramusb-net` (Grafana's own
+mesh sidecar below is not yet a real Compose service - see "What was
+genuinely undecided here" above). **Flagged, not yet closed**: once
+Grafana's own mesh sidecar is actually built for production, its
+cert-issuer/renewer would need to reach Certificate-Authority over the
+mesh the same way `mqtt-broker-cert-renewer` does - `tag:grafana` does
+NOT currently carry that reachability in
+`services/network-manager/internal/headscale/policy.go` (only
+`TagEntryHub`/`TagSecuritySwitch`/`TagDatabaseVault`/`TagStorageService`/
+`TagNetworkManager`/`TagMQTTBroker` do). Not added here: adding an ACL
+rule for a sidecar that has no Compose service yet would be speculative -
+see `docs/Known_Issues.md`'s KI-25 (a new entry, not this task's own
+KI-22) for the tracked gap.
 
 ## LXC vs KVM placement (RNF-ORG-04)
 

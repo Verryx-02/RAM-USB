@@ -10,6 +10,43 @@
 # hostname below; in production (deployments/proxmox/grafana.md) this
 # same connection crosses the Tailscale mesh instead, to
 # Metrics-Collector's own mesh identity.
+#
+# mTLS (KI-22, RNF-SEC-04): this is genuine inter-service, cross-guest
+# traffic (UC-05's "query on Grafana -> TimescaleDB"), so RNF-SEC-04's
+# "no exceptions" clause applies - unlike Metrics-Collector's OWN
+# same-container loopback connection to this same database (exempted, see
+# third-party/timescaledb/pg_hba-mtls.sh's own doc comment for why that
+# is a principled distinction, not a loophole). `sslmode: verify-full` +
+# `tlsConfigurationMethod: file-path` is Grafana's own documented
+# file-path TLS client-cert configuration
+# (grafana.com/docs/grafana/latest/datasources/postgres/configure/) - the
+# three cert/key/root-CA files it names are minted and kept current by
+# grafana-cert-issuer/grafana-cert-renewer
+# (deployments/compose/grafana.yml). The client certificate's CommonName
+# is "metrics_collector" - EXACTLY the Postgres role below - because
+# TimescaleDB's `clientcert=verify-full` pg_hba.conf rule requires the two
+# to match with no `pg_ident.conf` mapping layer (see
+# pg_hba-mtls.sh's own doc comment). The password below is KEPT alongside
+# the client certificate (defense-in-depth, RNF-SEC-02/03) - both factors
+# are independently required by TimescaleDB's own `hostssl ...
+# scram-sha-256 clientcert=verify-full` rule.
+#
+# The password itself is expanded from the SAME
+# RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD environment variable
+# metrics-collector.yml's own POSTGRES_PASSWORD uses (Grafana's own
+# provisioning-file environment-variable expansion,
+# grafana.com/docs/grafana/latest/administration/provisioning/#using-environment-variables)
+# - deployments/scripts/grafana.sh queries the already-running
+# metrics-collector container for its current value
+# (`docker exec metrics-collector printenv POSTGRES_PASSWORD`) rather than
+# duplicating the literal, the same "both projects reference the same env
+# var name, never a duplicated literal" cross-project shared-secret
+# pattern already documented for every other credential this project
+# shares across two separate Compose projects
+# (`.claude/agent-memory/code-agent/compose-convention.md`) - this
+# specific pairing needed a live query instead of a plain shared
+# `${VAR:?...}` because the value is generated randomly, fresh, inside
+# metrics-collector.sh's own shell.
 apiVersion: 1
 
 datasources:
@@ -23,8 +60,12 @@ datasources:
     isDefault: true
     editable: false
     secureJsonData:
-      password: metrics_collector_dev_only
+      password: ${RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD}
     jsonData:
-      sslmode: disable
+      sslmode: verify-full
+      tlsConfigurationMethod: file-path
+      sslRootCertFile: /etc/grafana/tls/timescaledb-dev-ca.dev-only.crt
+      sslCertFile: /etc/grafana/tls/grafana.dev-only.crt
+      sslKeyFile: /etc/grafana/tls/grafana.dev-only.key
       postgresVersion: 1800
       timescaledb: true
