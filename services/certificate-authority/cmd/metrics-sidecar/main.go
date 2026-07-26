@@ -15,14 +15,12 @@
 // step-ca is a third-party binary (github.com/smallstep/certificates),
 // not RAM-USB's own code - there is no hook to add a metrics publish loop
 // to it directly. This sidecar reads step-ca's own log stream out-of-band
-// instead: deployments/compose/certificate-authority.yml's
-// certificate-authority-config-init step pre-seeds step-ca's ca.json
-// config with "logger": {"format": "json"} before step-ca's own first
-// start, and the certificate-authority service's own command: override
-// tees step-ca's stderr (where its logger always writes, confirmed live -
-// no config option redirects it to a file directly) into a file on a
-// shared, read-only-mounted volume this process reads from
-// (envAccessLogPath).
+// instead. Since docs/Known_Issues.md's KI-28, this process is no longer a
+// separate container: it is s6-supervised alongside step-ca itself, inside
+// the SAME "certificate-authority" container/image
+// (deployments/docker/certificate-authority/), reading step-ca's tee'd
+// access log from a plain local filesystem path
+// (envAccessLogPath) rather than a cross-container shared Docker volume.
 //
 // # RD-01: what this process reads, and what it never lets past its own
 // boundary
@@ -40,33 +38,50 @@
 // this same log stream) logs that the line was skipped, never the line
 // itself.
 //
-// # Identity and mesh membership
+// # Identity and mesh membership (KI-28)
 //
-// This process holds no server role and no outbound HTTP-client role
-// beyond CA-F-04's own bootstrap exchange (pki.NewClientWithDialer,
-// discarding the resulting *http.Client immediately after extracting its
-// *tls.Config via pki.TLSConfig - see pki.TLSConfig's own doc comment,
-// "e.g. Metrics-Collector's MQTT-only subscribe identity", the same shape
-// this process needs) - its one and only outbound connection after
-// startup is CA-F-03's own MQTT publish. It therefore joins the mesh via
-// pkg/mesh's in-process tsnet, the same reasoning
-// services/entry-hub/cmd/entry-hub/main.go's own package doc comment gives
-// for Entry-Hub staying on pkg/mesh rather than a real OS tailscaled: no
-// server role means no ca.BootstrapServer library limitation to work
-// around (see .claude/agent-memory/code-agent.md's "pkg/pki dialer
-// routing" entry). Its Headscale pre-auth key is minted with the SAME
-// tag:certificate-authority tag services/network-manager/internal/
-// headscale/policy.go's certificate-authority-mesh sidecar already uses -
-// that tag's existing ACL rule already grants reachability to the MQTT
-// broker's mesh identity (TagMQTTBroker), so no policy.go change is
-// needed for a second tag:certificate-authority-tagged mesh node.
+// This process holds no server role: its own outbound calls are the
+// CA-F-04 bootstrap-token exchange (against step-ca's own
+// "https://localhost:9000", since it now runs inside the very same
+// container - see deployments/docker/certificate-authority/rootfs's own
+// mint-metrics-token oneshot for how that token reaches this process) and
+// CA-F-03's periodic MQTT publish. It previously joined the mesh via
+// pkg/mesh's in-process tsnet, mirroring Entry-Hub's own reasoning for
+// staying off a real tailscaled (see services/entry-hub/cmd/entry-hub/
+// main.go's package doc comment) - but KI-28 (docs/Known_Issues.md) found
+// that reasoning did not actually hold for this process in production:
+// Certificate-Authority itself is mesh-only reachable there (no published
+// port, no shared Docker network - see
+// deployments/proxmox/certificate-authority.md), and pkg/mesh's in-process
+// tsnet has no OS-level route to fall back on for this process's own
+// non-interceptable CA-bootstrap-token exchange, the same gap KI-27 found
+// for Entry-Hub. Consolidating this process into Certificate-Authority's
+// own container fixes this at its root rather than working around it:
+// this container already runs a real OS-level `tailscaled` sidecar
+// (`certificate-authority-mesh`, deployments/compose/
+// certificate-authority.yml, sharing this container's network namespace)
+// for step-ca's own inbound mesh reachability (NM-F-04) - since a real
+// kernel `tailscale0` interface routes every outbound connection any
+// process in this shared namespace makes, this process's own MQTT publish
+// now goes out over the mesh automatically too, with zero mesh-membership
+// code of its own (no pkg/mesh, no separate Tailscale identity/pre-auth
+// key). Its own bootstrap-token exchange no longer needs mesh routing at
+// all: the CA it bootstraps against is this same container's own step-ca
+// process, reachable at https://localhost:9000 without leaving the
+// container. This process therefore now calls pki.NewClient (no dialer
+// parameter) exactly like Metrics-Collector's own client-role-only
+// process (services/metrics-collector/cmd/metrics-collector/main.go),
+// and passes a nil mesh.DialFunc to metrics.NewClient/pkg/metrics - see
+// that function's own doc comment for why nil means "dial over this
+// process's ordinary default route," which here is the shared real
+// tailscale0 interface.
 //
-// This container also keeps a ramusb-net attachment (see
-// deployments/compose/certificate-authority.yml): pkg/pki's very first
-// CA-bootstrap-token exchange has no interceptable dial path (same
-// documented library limitation Entry-Hub's own main.go relies on), so it
-// always goes out over the container's default network path regardless of
-// mesh membership.
+// It keeps its own separate CA-F-04 bootstrap token (subject
+// "CertificateAuthority", matching third-party/mosquitto/acl.conf's
+// existing MQTT ACL grant for that subject, not this container's own
+// name) - a distinct mTLS identity is still required for MQTT publish,
+// even though no separate mesh-join machinery is needed to reach the
+// broker anymore.
 package main
 
 import (
@@ -83,7 +98,6 @@ import (
 
 	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
-	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
 	"github.com/Verryx-02/RAM-USB/services/certificate-authority/internal/accesslog"
@@ -95,27 +109,12 @@ import (
 // Env var names, following the same RAM_USB_<SERVICE>_<PURPOSE> convention
 // every other mesh-joined service's own main.go uses.
 const (
-	// envAccessLogPath is the shared, read-only-mounted file this process
-	// tails (CA-F-03) - see this file's own package doc comment for how it
-	// gets there.
+	// envAccessLogPath is the local file this process tails (CA-F-03),
+	// written by step-ca's own tee'd command inside this same container
+	// (see deployments/compose/certificate-authority.yml's own top
+	// comment for how it gets there) - no longer a cross-container shared
+	// volume, per KI-28.
 	envAccessLogPath = "RAM_USB_CERTIFICATE_AUTHORITY_ACCESS_LOG_PATH"
-
-	// envMeshDir/envMeshHostname/envMeshAuthKey are this node's own
-	// pkg/mesh identity - distinct from certificate-authority-mesh's own
-	// sidecar identity (deployments/compose/certificate-authority.yml),
-	// which is a separate tailscale/tailscale container sharing
-	// Certificate-Authority's OWN network namespace, not this Go process.
-	envMeshDir      = "RAM_USB_CERTIFICATE_AUTHORITY_METRICS_MESH_DIR"
-	envMeshHostname = "RAM_USB_CERTIFICATE_AUTHORITY_METRICS_MESH_HOSTNAME"
-	//nolint:gosec // an env var *name*, not a credential value
-	envMeshAuthKey = "RAM_USB_CERTIFICATE_AUTHORITY_METRICS_TAILSCALE_AUTHKEY"
-
-	// envMeshControlURL/envMeshControlCAFile are shared, unmodified,
-	// verbatim env var names every mesh-joined service already reads -
-	// see services/entry-hub/cmd/entry-hub/main.go's own doc comments for
-	// why the same names are reused rather than a per-service variant.
-	envMeshControlURL    = "RAM_USB_TAILSCALE_CONTROL_URL"
-	envMeshControlCAFile = "RAM_USB_TAILSCALE_CONTROL_CA_FILE"
 
 	// envMQTTBrokerURL is the same shared env var name every other
 	// service's own metrics client reads.
@@ -165,24 +164,14 @@ func run() error {
 		return err
 	}
 
-	meshNode, err := buildMeshNode(ctx)
-	if err != nil {
-		return fmt.Errorf("join mesh: %w", err)
-	}
-	defer func() {
-		if closeErr := meshNode.Close(); closeErr != nil {
-			slog.Warn("certificate-authority-metrics: mesh node close error", "error", logging.Sanitize(closeErr.Error()))
-		}
-	}()
-
-	mqttTLSBase, err := buildMQTTIdentity(ctx, meshNode.Dial)
+	mqttTLSBase, err := buildMQTTIdentity(ctx)
 	if err != nil {
 		return fmt.Errorf("bootstrap mtls identity from certificate-authority: %w", err)
 	}
 
 	acc := &counters.Counters{}
 
-	metricsClient, err := buildMetricsClient(mqttTLSBase, meshNode.Dial)
+	metricsClient, err := buildMetricsClient(mqttTLSBase)
 	if err != nil {
 		return fmt.Errorf("build metrics client: %w", err)
 	}
@@ -227,57 +216,22 @@ func run() error {
 	return followErr
 }
 
-// buildMeshNode joins this process to the private Headscale mesh using
-// envMeshDir/envMeshHostname/envMeshControlURL/envMeshAuthKey, failing
-// closed (RD-04) if any is unset. ctx bounds only the join itself; the
-// returned node lives for this process's whole lifetime (closed via a
-// deferred call in run).
-func buildMeshNode(ctx context.Context) (*mesh.Server, error) {
-	dir, err := env.Require(envMeshDir)
-	if err != nil {
-		return nil, err
-	}
-	hostname, err := env.Require(envMeshHostname)
-	if err != nil {
-		return nil, err
-	}
-	controlURL, err := env.Require(envMeshControlURL)
-	if err != nil {
-		return nil, err
-	}
-	authKey, err := env.Require(envMeshAuthKey)
-	if err != nil {
-		return nil, err
-	}
-	// Optional - see envMeshControlCAFile's own doc comment on every
-	// other service's main.go for why this is only set in local dev.
-	controlCAFile := os.Getenv(envMeshControlCAFile)
-
-	return mesh.Up(ctx, mesh.Config{
-		Dir:           dir,
-		Hostname:      hostname,
-		ControlURL:    controlURL,
-		AuthKey:       authKey,
-		ControlCAFile: controlCAFile,
-	})
-}
-
 // buildMQTTIdentity bootstraps this process's one and only mTLS identity
 // (CA-F-04) via the Certificate-Authority and returns its *tls.Config,
 // extracted via pki.TLSConfig before the *http.Client itself is discarded
 // - this process makes no other outbound HTTP call, so there is no
 // ForceServerName/mtls.WrapRoundTripper step to perform the way a service
 // with a real HTTP-client role (e.g. Entry-Hub's buildSecurityWitchClient)
-// needs. dial routes the bootstrapped client's own background certificate
-// renewal through the mesh; the one-time bootstrap-token exchange itself
-// is not routable regardless (see this file's own package doc comment).
-func buildMQTTIdentity(ctx context.Context, dial mesh.DialFunc) (*tls.Config, error) {
+// needs. pki.NewClient (no dialer) is correct here per this file's own
+// "Identity and mesh membership" package doc comment: the CA it
+// bootstraps against is this same container's own step-ca process.
+func buildMQTTIdentity(ctx context.Context) (*tls.Config, error) {
 	token, err := pki.LoadBootstrapToken()
 	if err != nil {
 		return nil, fmt.Errorf("load ca bootstrap token: %w", err)
 	}
 
-	client, err := pki.NewClientWithDialer(ctx, token, dial)
+	client, err := pki.NewClient(ctx, token)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap mtls identity: %w", err)
 	}
@@ -292,10 +246,13 @@ func buildMQTTIdentity(ctx context.Context, dial mesh.DialFunc) (*tls.Config, er
 // buildMetricsClient assembles and connects the mTLS MQTT client CA-F-03's
 // periodic publish uses, reusing mqttTLSBase (buildMQTTIdentity's own
 // bootstrapped identity) as the source of this connection's client
-// certificate. dial routes the connection itself through the mesh. A nil,
-// nil return (no error) means metrics publishing is not configured
+// certificate. A nil mesh.DialFunc (see metrics.NewClient's own doc
+// comment) means this connection goes out over this process's ordinary
+// default route - the shared real tailscale0 interface, per this file's
+// own "Identity and mesh membership" package doc comment. A nil, nil
+// return (no error) means metrics publishing is not configured
 // (envMQTTBrokerURL unset).
-func buildMetricsClient(mqttTLSBase *tls.Config, dial mesh.DialFunc) (mqtt.Client, error) {
+func buildMetricsClient(mqttTLSBase *tls.Config) (mqtt.Client, error) {
 	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
 	if !ok || brokerURL == "" {
 		slog.Warn("certificate-authority-metrics: metrics publishing disabled, " + envMQTTBrokerURL + " is not set")
@@ -304,7 +261,7 @@ func buildMetricsClient(mqttTLSBase *tls.Config, dial mesh.DialFunc) (mqtt.Clien
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(mqttTLSBase, metrics.OrganizationMQTTBroker))
 
-	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, dial)
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, nil)
 	if err != nil {
 		return nil, err
 	}

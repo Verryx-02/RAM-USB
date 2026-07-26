@@ -1,0 +1,20 @@
+#!/bin/sh
+# s6-rc runs this after ../run exits, before respawning it. Without a
+# finish script, a plain longrun respawns instantly on any exit - fine for
+# a transient error, but this process's own fatal-startup failure mode
+# (e.g. an already-consumed, single-use CA-F-04 bootstrap token - see
+# ../mint-metrics-token/mint-metrics-token.sh's own doc comment: that
+# oneshot runs exactly ONCE per container start, it does not re-mint a
+# fresh token on every respawn of THIS longrun) is guaranteed to fail
+# identically on every respawn once it happens. Left unthrottled, that
+# produces a sub-second crash loop that spams logs - same fix already
+# applied to every other RAM-USB longrun with this shape (Network-Manager,
+# KI-10; Database-Vault; Metrics-Collector).
+#
+# $1 is the run script's exit code, or 256 if it was killed by a signal
+# (s6-overlay convention - $2 then carries the signal number). A clean
+# container stop (SIGTERM) must not be delayed, so only a genuine nonzero
+# exit code gets the backoff.
+if [ "$1" -ne 0 ] && [ "$1" -ne 256 ]; then
+  sleep 30
+fi

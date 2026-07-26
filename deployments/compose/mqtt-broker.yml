@@ -286,9 +286,9 @@ volumes:
   ramusb-mqtt-broker-certs:
   # certificate-authority.yml's own project (ramusb-certificate-authority)
   # owns this volume - referenced here by its fully-qualified
-  # Compose-generated name, same pattern as
-  # certificate-authority-metrics.yml's own ramusb-certificate-authority-logs
-  # reference.
+  # Compose-generated name, same pattern deployments/proxmox/
+  # certificate-authority.md's own docs use for that project's other
+  # volumes.
   ramusb-ca-data:
     external: true
     name: ramusb-certificate-authority_ramusb-ca-data
