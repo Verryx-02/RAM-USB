@@ -36,7 +36,7 @@ at-a-glance worklist; the full entries below are the detail/history.
 | KI-20 | NM-F-12..16 (Headscale coordination/DNS cluster) have zero test coverage | user decision |
 | KI-23 | Restarting a CA-F-04-bootstrapped service needs a manually-minted fresh token; only Certificate-Authority itself restarts with zero manual step | user decision |
 | KI-24 | `08-security-pki-hierarchy.puml` draws a `PrivateCA -> Metrics-Visualizer` signing edge that doesn't exist (Grafana has no mTLS identity) | diagram-agent re-assessment (KI-22 changed the premise) |
-| KI-26 | `ramusb-net`'s bootstrap-phase role, live-verified per service: Database-Vault/Security-Switch/Storage-Service survive without it, Network-Manager and Entry-Hub do not | user decision (Network-Manager needs a scoped DNS mechanism; Entry-Hub's own gap is tracked separately as KI-27) |
+| KI-26 | `ramusb-net`'s bootstrap-phase role, live-verified per service: Database-Vault/Security-Switch/Storage-Service/Network-Manager survive without it, Entry-Hub does not (tracked separately as KI-27) | FIXED for Network-Manager, 2026-07-26 (`--accept-dns=true`, see RISK-04); Entry-Hub's own gap remains open as KI-27 |
 | KI-27 | Entry-Hub's CA-bootstrap-token exchange has no viable path to a mesh-only Certificate-Authority in production | user decision (3 design options recorded) |
 
 Everything else in this file (KI-01, KI-03–KI-05, KI-09–KI-11, KI-13,
@@ -1038,32 +1038,43 @@ history/traceability, not part of the active worklist.
   - **Storage-Service: survives without `ramusb-net`**, same mechanism,
     same live confirmation (`mqtt-broker` log: `New client connected from
     100.64.0.4`, Storage-Service's mesh IP).
-  - **Network-Manager: does NOT survive without `ramusb-net`** - a real,
-    live-confirmed gap, distinct from Database-Vault/Security-Switch/
-    Storage-Service. `network-manager`'s own `tailscale-up.sh` sets
-    `--accept-dns=false` (NM-F-16, required as literally worded in the SRS
-    to avoid Headscale-pushed-DNS circularity, even though the specific
-    scenario that originally motivated it no longer applies now that
-    Headscale is deployed separately). Consequence: this container's
-    `/etc/resolv.conf` stays on Docker's embedded resolver, so its own
-    outbound CA-token bootstrap and MQTT-publish calls resolve
-    `certificate-authority`/`mqtt-broker` via `ramusb-net`, not MagicDNS -
-    confirmed live: `certificate-authority`'s access log shows
-    `remote-address: 172.19.0.8` (Network-Manager's own `ramusb-net` IP,
-    confirmed via `docker inspect`) for its real `/root`+`/sign` bootstrap
-    calls, and `mqtt-broker`'s log shows `New client connected from
-    172.19.0.8`. **Not small/fixable within this task** - NM-F-16 fixes
-    `--accept-dns=false` as a requirement, so simply flipping it would
-    violate that requirement; a real fix needs a design decision (e.g. a
-    scoped resolver/hosts mechanism that answers only the specific
-    mesh-peer hostnames Network-Manager itself needs - Certificate-
-    Authority, MQTT-Broker - while still refusing Headscale's own pushed
-    DNS wholesale). This also means Network-Manager, alone among the four
-    real-`tailscaled` services, has **no working production path** to
-    Certificate-Authority/MQTT-Broker as currently built, since production
-    has no `ramusb-net`-equivalent at all and Certificate-Authority is
-    mesh-only reachable there (KI-05) - this is a genuine production-
-    readiness gap, not just a dev-convenience question.
+  - **Network-Manager: FIXED, 2026-07-26** (was: does NOT survive without
+    `ramusb-net`, same gap as originally found here). The design decision
+    this entry called for was made explicitly by the user this session:
+    accept the residual risk and flip `--accept-dns` to its default
+    (`true`), same as Database-Vault/Security-Switch/Storage-Service - see
+    NM-F-16's reworded text and the new RISK-04 (SRS §8) for the accepted
+    trade-off (Network-Manager's own DNS resolution now depends on the ACL
+    policy it itself pushes to Headscale). Fixed in
+    `deployments/docker/network-manager/rootfs/etc/network-manager/
+    tailscale-up.sh`. Live-verified end-to-end with a fresh container/mesh
+    identity: `/etc/resolv.conf` now shows MagicDNS
+    (`nameserver 100.100.100.100`, `search ramusb-mesh.internal`), and
+    `certificate-authority`'s own access log shows `remote-address:
+    100.64.0.20` (Network-Manager's mesh IP, not its `172.19.0.x`
+    `ramusb-net` IP) for its real `/root`+`/sign` bootstrap calls - the
+    `POST /sign` itself returned `201` (success) on the first attempt, with
+    every later `401 token already used` coming only from the same
+    single-use-token crash-loop retry behavior every mesh-joined service
+    already has (see `pkg-mesh.md` rule 5), not a regression. Hit the same
+    stale-duplicate-node testing obstacle this entry already documents
+    above (a second, unrelated `certificate-authority` registration was
+    also present at verification time) - worked around the identical way,
+    a temporary live-reverted `/etc/hosts` override, not a permanent fix.
+    Also confirmed no regression to Network-Manager's own core job: its ACL
+    policy push to Headscale's admin API (`policy.go`, reached over
+    `ramusb-net`, not the mesh, per this file's own compose comment)
+    remains resolvable - `getent hosts headscale` still returns the
+    `ramusb-net` IP from inside the container even with `/etc/resolv.conf`
+    now MagicDNS-only, since Tailscale's local MagicDNS stub resolver
+    (`100.100.100.100`) falls back to the pre-existing upstream resolver
+    for any name it doesn't itself own, rather than replacing it outright.
+    MQTT-Broker's own reachability could not be independently re-confirmed
+    at verification time (its container was down, a side effect of the
+    concurrent KI-28 session's own Certificate-Authority work in the shared
+    dev daemon, unrelated to this fix) - MagicDNS resolution of
+    `mqtt-broker` to its correct mesh IP was confirmed directly instead
+    (`getent hosts mqtt-broker` → `100.64.0.3`).
   - **Entry-Hub: does NOT survive without `ramusb-net`**, confirmed live -
     with `networks: ramusb-net` temporarily removed from a worktree-local
     copy of `entry-hub.yml` (reverted before this session ended, see below)
@@ -1088,16 +1099,13 @@ history/traceability, not part of the active worklist.
   `network-manager.yml`/`storage-service.yml` needed no compose-file
   edits at all for their own verification (the `/etc/hosts` workaround was
   applied live inside the running container, never to the compose file).
-- **Status:** OPEN - 3 of 5 services (Database-Vault, Security-Switch,
-  Storage-Service) confirmed to survive without `ramusb-net` for their
+- **Status:** OPEN for Entry-Hub only (tracked separately as KI-27) - 4 of 5
+  services (Database-Vault, Security-Switch, Storage-Service,
+  Network-Manager) now confirmed to survive without `ramusb-net` for their
   bootstrap-phase CA-token/MQTT calls (their own compose-file comments
   claiming otherwise are stale and should be corrected next time either
-  file is touched). Network-Manager and Entry-Hub do **not** survive
-  without `ramusb-net` today, for two structurally different reasons (see
-  verdicts above) - real, `ramusb-net`-permanent-removal-blocking gaps,
-  left open pending a design decision rather than a speculative fix.
-  `ramusb-net` itself stays attached to every service's compose file
-  regardless (KI-05's resolution, unchanged).
+  file is touched). `ramusb-net` itself stays attached to every service's
+  compose file regardless (KI-05's resolution, unchanged).
 
 ## KI-27 — Entry-Hub's CA-bootstrap-token exchange has no viable path to a mesh-only Certificate-Authority in production
 
