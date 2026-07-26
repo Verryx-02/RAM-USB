@@ -337,6 +337,17 @@ func dialSSHDContainer(c *sshdContainer, user string, signer ssh.Signer) (*ssh.C
 // chroots), this test actually attempts each requirement's violation and
 // confirms sshd rejects it - never a static check of the config file's
 // own directive strings.
+//
+// Wall-clock budget (KI-21): the docker build + container start + helper
+// cross-compile + multiple sequential real SSH/SFTP round trips this test
+// drives have been observed to take anywhere from ~45s to ~115s on the
+// same machine back to back, purely from Docker daemon/build-cache load
+// variance - there is no deadlock in this file (every exec.Cmd call here
+// uses CombinedOutput/Output, which os/exec already drains stdout+stderr
+// concurrently; never StdoutPipe/StderrPipe read sequentially). Pass
+// `-timeout` of at least 180s when running this test standalone; a tighter
+// external timeout (e.g. 120s) can abort a still-progressing, slow-but-not-
+// stuck run and look like a hang.
 func TestStorageServiceSSHD_RealContainer_EnforcesHardening(t *testing.T) {
 	skipUnlessDockerAvailable(t)
 

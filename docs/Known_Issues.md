@@ -34,14 +34,13 @@ at-a-glance worklist; the full entries below are the detail/history.
 | KI-15 | §5.1 non-functional requirements have no `[Code]`/test link at all | user decision |
 | KI-19 | Entry-Hub/certificate-authority-metrics have no restart policy | user decision |
 | KI-20 | NM-F-12..16 (Headscale coordination/DNS cluster) have zero test coverage | user decision |
-| KI-21 | `TestStorageServiceSSHD_RealContainer_EnforcesHardening` fails/hangs in this dev sandbox | investigation |
 | KI-22 | Grafana -> TimescaleDB uses plaintext password auth, no mTLS (RNF-SEC-04 violation) | user decision |
 | KI-23 | Restarting a CA-F-04-bootstrapped service needs a manually-minted fresh token; only Certificate-Authority itself restarts with zero manual step | user decision |
 | KI-24 | `08-security-pki-hierarchy.puml` draws a `PrivateCA -> Metrics-Visualizer` signing edge that doesn't exist (Grafana has no mTLS identity) | — |
 
 Everything else in this file (KI-01, KI-03–KI-05, KI-09–KI-11, KI-13,
-KI-16–KI-18) is `FIXED` — kept below for history/traceability, not part
-of the active worklist.
+KI-16–KI-18, KI-21) is `FIXED` — kept below for history/traceability, not
+part of the active worklist.
 
 ---
 
@@ -667,7 +666,38 @@ of the active worklist.
   unrelated `ss-sshd-itest-*` container was also observed mid-test) rather
   than a real regression in Storage-Service itself; not investigated
   further since it's outside this task's scope.
-- **Status:** OPEN, needs investigation.
+- **Root cause (2026-07-26):** no code bug - confirmed environment timing,
+  not a deadlock. Audited every `exec.Cmd` in `sshd_integration_test.go`
+  and its sole helper dependency (`execrunner.Real.Run`, used by
+  `posixuser.Creator` inside the container via `itest-provision-user`):
+  every call site uses `CombinedOutput()`/`Output()`, never
+  `StdoutPipe()`/`StderrPipe()` read sequentially - `os/exec` already
+  drains stdout+stderr concurrently for those, so the classic
+  pipe-buffer-fills-then-both-sides-block shape this bug's symptom
+  matches (`Cmd.Start`/`io.Copy` blocked) cannot occur anywhere in this
+  code path. Confirmed by measurement instead: with the leftover
+  `ss-itest-manual` container removed and no other Storage-Service test
+  container present, 5 back-to-back real runs of the test (`go test -run
+  TestStorageServiceSSHD_RealContainer_EnforcesHardening -count=1
+  -timeout 180s`) all **passed**, with wall-clock time ranging from 45s
+  to 115s purely from Docker daemon/build-cache load variance on this
+  machine - no run showed any sign of being stuck (all either completed
+  or, had they not, would show forward-progressing docker/ssh calls, not
+  a repeatedly-identical stack). The prior session's manually-chosen
+  120s external `-timeout` left essentially zero margin against this
+  test's own normal ~115s worst-case runtime even before counting any
+  contention from the already-confirmed leftover container or a second
+  concurrent real-container test - not a hang, a still-progressing run
+  that got cut off by too tight a budget. `t.Cleanup`'s `docker rm -f`
+  ran and left no leftover container after every one of the 5 runs,
+  including the slowest one.
+- **Fix:** documentation only, no code/logic change - added a doc comment
+  to `TestStorageServiceSSHD_RealContainer_EnforcesHardening` recording
+  the observed 45-115s range and recommending `-timeout` of at least 180s
+  when invoking this test standalone, so a future tight external timeout
+  doesn't get misread as a hang again.
+- **Status:** FIXED, 2026-07-26 (root-caused as environment timing, not a
+  code defect; documented the correct invocation timeout).
 
 ---
 
