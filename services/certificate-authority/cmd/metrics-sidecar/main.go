@@ -193,6 +193,8 @@ func run() error {
 		})
 	}
 
+	// codeql[go/path-injection] accessLogPath comes from env.Require(envAccessLogPath), an operator-supplied
+	// deployment setting, not attacker input.
 	logFile, err := os.Open(accessLogPath) //nolint:gosec // accessLogPath is an operator-supplied deployment setting, not attacker input
 	if err != nil {
 		return fmt.Errorf("open access log %s: %w", accessLogPath, err)

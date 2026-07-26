@@ -16,6 +16,8 @@ import (
 // Network-Manager's Headscale admin-API client and Storage-Service's
 // Database-Vault client.
 func TrustPool(path string) (*x509.CertPool, error) {
+	// codeql[go/path-injection] re-verified against every TrustPool caller (storage-service's cfg.clientCAPath,
+	// network-manager's envHeadscaleAPICAFile): all trace to operator-supplied deployment config, never request input.
 	pemBytes, err := os.ReadFile(path) //nolint:gosec // path is an operator-controlled deployment path, not request input
 	if err != nil {
 		return nil, fmt.Errorf("mtls: read CA file %s: %w", path, err)
