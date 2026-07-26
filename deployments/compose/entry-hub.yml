@@ -1,19 +1,42 @@
-# Entry-Hub. Requires its own CA token, a mesh pre-auth key, and (for local
-# dev) the same Headscale dev-only control-plane certificate every other
-# mesh-joined service trusts.
+# Entry-Hub. Requires its own CA token and a mesh pre-auth key for its
+# entry-hub-mesh sidecar (below).
 #
-# Unlike Security-Switch/Database-Vault/Network-Manager/Storage-Service,
-# Entry-Hub joins the mesh via pkg/mesh's in-process tsnet (see
-# services/entry-hub/cmd/entry-hub/main.go's package doc comment, "Mesh
-# membership") - no NET_ADMIN/NET_RAW capability, no /dev/net/tun device,
-# no real tailscaled daemon: tsnet runs entirely in userspace inside this
-# one Go process.
+# entry-hub-mesh (KI-27, docs/Known_Issues.md): Entry-Hub used to join the
+# mesh via pkg/mesh's in-process tsnet, but pkg/pki's very first CA-
+# bootstrap-token exchange has no interceptable dial path (pkg/pki/
+# dialer.go's own doc comment) and always goes out over this container's
+# ordinary default network route - fine in dev (ramusb-net reaches
+# Certificate-Authority, KI-05's dual-reachability), but with no address to
+# dial at all in production, where Certificate-Authority is mesh-only
+# reachable and Entry-Hub's default route is the public internet. The fix
+# is the same sidecar pattern already used for step-ca/Mosquitto/Grafana
+# (see .claude/agent-memory/code-agent/sidecar-mesh-pattern.md): a real
+# tailscale/tailscale container sharing entry-hub's own network namespace
+# (network_mode: "service:entry-hub") gives this container a genuine kernel
+# tailscale0 interface, so the OS itself routes every outbound call -
+# including the one bootstrap-token exchange pkg/pki gives no hook for -
+# through the mesh once Certificate-Authority's hostname resolves via
+# MagicDNS (TS_ACCEPT_DNS=true below, matching the effective behavior of
+# Database-Vault/Security-Switch/Storage-Service's own tailscale-up.sh -
+# NOT containerboot's own default, which is false regardless of the plain
+# `tailscale` CLI's true default, confirmed live this session - and NOT
+# Network-Manager's --accept-dns=false, which is an NM-F-16-specific
+# exception). TS_USERSPACE=false is required: EH-F-03's
+# login listener is a Go process (not tailscaled itself) accepting inbound
+# mesh traffic through this shared namespace, and userspace-networking mode
+# has no kernel-visible tailscale0 interface for a separate process to see
+# (see grafana.yml's own top comment for the live-verified reasoning this
+# mirrors). See services/entry-hub/cmd/entry-hub/main.go's package doc
+# comment, "Mesh membership", for how this process itself discovers its own
+# mesh IPv4 address (no shell inside this image to run `tailscale ip -4`)
+# and binds EH-F-03's login listener to it explicitly.
 #
-# ramusb-net is still required here (EH-F-01/EH-F-02's public listener
-# itself never uses it - see "ports:" below - but pkg/pki's very first
-# CA-bootstrap-token exchange has no interceptable dial path, per
-# pkg/pki/dialer.go's own doc comment, and always goes out over this
-# container's default network path).
+# ramusb-net stays attached to entry-hub itself (EH-F-01/EH-F-02's public
+# listener needs it for its own published port, and it remains this dev
+# stack's own KI-05/KI-26 convenience path to Certificate-Authority too) -
+# this sidecar is purely ADDITIVE, giving Entry-Hub a SECOND, real
+# mesh-routed path that production (no ramusb-net-equivalent, Certificate-
+# Authority mesh-only) actually depends on.
 name: ramusb-entry-hub
 services:
   entry-hub:
@@ -26,58 +49,93 @@ services:
       RAM_USB_ENTRY_HUB_LISTEN_ADDR: "0.0.0.0:8443"
       RAM_USB_ENTRY_HUB_TLS_CERT: "/certs/server.dev-only.crt"
       RAM_USB_ENTRY_HUB_TLS_KEY: "/certs/server.dev-only.key"
-      # EH-F-03: a bare tsnet listen address - reachable only from inside
-      # the mesh, never via ramusb-net or the public socket above.
+      # EH-F-03: a bare port - main.go's own meshIPv4 supplies the host
+      # part at runtime, once entry-hub-mesh's sidecar (below) has actually
+      # joined and this container's own tailscale0 interface has an
+      # address - reachable only from inside the mesh, never via
+      # ramusb-net or the public socket above.
       RAM_USB_ENTRY_HUB_LOGIN_LISTEN_ADDR: ":8446"
       # EH-F-07: Security-Switch's own MagicDNS short mesh hostname
       # (RAM_USB_SECURITY_SWITCH_MESH_HOSTNAME in
-      # deployments/compose/security-switch.yml), dialed over the mesh
-      # (meshNode.Dial) now that Security-Switch is mesh-only reachable -
-      # never ramusb-net, regardless of what this hostname string also
-      # happens to resolve to there.
+      # deployments/compose/security-switch.yml), reachable transparently
+      # through this container's own real tailscale0 interface now that
+      # Security-Switch is mesh-only reachable - never ramusb-net,
+      # regardless of what this hostname string also happens to resolve to
+      # there.
       RAM_USB_SECURITY_SWITCH_URL: "https://security-switch:8444"
       RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token EntryHub --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
       # EH-F-10/EH-F-11: metrics publish, reuses the same mTLS identity
       # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
-      # static MQTT certificate/key - routed through the mesh
-      # (meshNode.Dial) too, now that the MQTT broker's mesh identity is
-      # reachable that way.
+      # static MQTT certificate/key - reachable transparently through this
+      # container's own real tailscale0 interface too, now that the MQTT
+      # broker's mesh identity is reachable that way.
       RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
-      # Mesh membership (pkg/mesh, see this file's own package doc
-      # comment): this node's persistent tsnet identity directory,
-      # MagicDNS short name, shared Headscale coordination URL, and
-      # single-use pre-auth key - see services/network-manager/internal/
-      # headscale/policy.go for the tag:entry-hub ACL rules this key's
-      # --tags must match.
-      RAM_USB_ENTRY_HUB_MESH_DIR: "/var/lib/tsnet"
-      RAM_USB_ENTRY_HUB_MESH_HOSTNAME: "entry-hub"
-      RAM_USB_TAILSCALE_CONTROL_URL: "${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://headscale:8080}"
-      RAM_USB_ENTRY_HUB_TAILSCALE_AUTHKEY: >-
-        ${RAM_USB_ENTRY_HUB_TAILSCALE_AUTHKEY:?mint with:
-        docker exec headscale headscale users create entry-hub
-        && docker exec headscale headscale users list --name entry-hub -o json
-        && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:entry-hub}
-      # Dev-only (pkg/mesh.Config.ControlCAFile): this image is
-      # distroless (no shell, no update-ca-certificates, an immutable
-      # trust store), so trusting Headscale's self-signed dev
-      # certificate happens entirely in Go at runtime via SSL_CERT_FILE
-      # (see pkg/mesh's package doc comment, "Control-plane certificate
-      # trust in a distroless container") instead of the OS trust store.
-      # Leave unset once RAM_USB_TAILSCALE_CONTROL_URL's certificate
-      # chains to a real, publicly trusted root.
-      RAM_USB_TAILSCALE_CONTROL_CA_FILE: "/etc/mesh-control-ca/cert.dev-only.pem"
     volumes:
       - ../../third-party/entry-hub/config:/certs:ro
-      - ramusb-entry-hub-mesh-state:/var/lib/tsnet
-      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/etc/mesh-control-ca/cert.dev-only.pem:ro
     ports:
       - "8443:8443"
     networks:
       - ramusb-net
+
+  # See this file's own top comment ("entry-hub-mesh") for the full design.
+  # network_mode: "service:entry-hub" requires the entry-hub container to
+  # already exist (Compose creates the shared namespace from it), so this
+  # only needs the entry-hub container STARTED, not healthy - entry-hub
+  # defines no healthcheck, same "namespace exists" gate as grafana-mesh's
+  # own condition against grafana.
+  entry-hub-mesh:
+    image: tailscale/tailscale:latest
+    container_name: entry-hub-mesh
+    depends_on:
+      entry-hub:
+        condition: service_started
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ramusb-entry-hub-mesh-state:/var/lib/tailscale
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+    environment:
+      # tag:entry-hub (services/network-manager/internal/headscale/
+      # policy.go's TagEntryHub) - already grants reachability toward
+      # tag:certificate-authority (NM-F-04) and tag:mqtt-broker; no policy
+      # change was needed for this task (both rules already listed
+      # TagEntryHub as a Src before this sidecar existed).
+      TS_AUTHKEY: "${RAM_USB_ENTRY_HUB_TAILSCALE_AUTHKEY:?mint with: docker exec headscale headscale users create entry-hub && docker exec headscale headscale users list --name entry-hub -o json && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:entry-hub}"
+      TS_EXTRA_ARGS: "--login-server=${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://headscale:8080} --hostname=entry-hub"
+      # Required: EH-F-03's login listener is a separate Go process
+      # (entry-hub itself, sharing this namespace) that must ACCEPT
+      # inbound mesh connections, and must also see a real kernel
+      # tailscale0 interface to bind its own listener to (main.go's
+      # meshIPv4) - userspace-networking mode has no kernel-visible
+      # interface for either to use. See this file's own top comment.
+      TS_USERSPACE: "false"
+      # Required (confirmed live this session, KI-27): containerboot's own
+      # `tailscale up` invocation passes --accept-dns=false UNLESS this
+      # env var is set, regardless of the plain `tailscale` CLI's own
+      # true default (which is all Database-Vault/Security-Switch/
+      # Storage-Service's own tailscale-up.sh relies on, since none of
+      # them go through containerboot) - without it, this container's own
+      # `/etc/resolv.conf` stays on Docker's embedded resolver, and every
+      # outbound call this process makes by hostname (Certificate-
+      # Authority's own CA-bootstrap exchange included) keeps resolving
+      # via ramusb-net instead of MagicDNS, exactly the KI-27 gap this
+      # sidecar exists to close.
+      TS_ACCEPT_DNS: "true"
+    entrypoint: ["/bin/sh", "-c", "update-ca-certificates && exec /usr/local/bin/containerboot"]
+    # Shares entry-hub's network namespace instead of joining ramusb-net
+    # itself - see this file's own top comment for why `network_mode` and
+    # `networks` never appear on the same container.
+    network_mode: "service:entry-hub"
 
 networks:
   ramusb-net:
     external: true
 
 volumes:
+  # entry-hub-mesh's own persistent Tailscale identity/state - same "keep
+  # the same mesh node across container restarts" pattern as every other
+  # mesh sidecar's own named state volume.
   ramusb-entry-hub-mesh-state:

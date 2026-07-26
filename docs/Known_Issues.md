@@ -36,11 +36,11 @@ at-a-glance worklist; the full entries below are the detail/history.
 | KI-20 | NM-F-12..16 (Headscale coordination/DNS cluster) have zero test coverage | user decision |
 | KI-23 | Restarting a CA-F-04-bootstrapped service needs a manually-minted fresh token; only Certificate-Authority itself restarts with zero manual step | user decision |
 | KI-24 | `08-security-pki-hierarchy.puml` draws a `PrivateCA -> Metrics-Visualizer` signing edge that doesn't exist (Grafana has no mTLS identity) | diagram-agent re-assessment (KI-22 changed the premise) |
-| KI-26 | `ramusb-net`'s bootstrap-phase role, live-verified per service: Database-Vault/Security-Switch/Storage-Service/Network-Manager survive without it, Entry-Hub does not (tracked separately as KI-27) | FIXED for Network-Manager, 2026-07-26 (`--accept-dns=true`, see RISK-04); Entry-Hub's own gap remains open as KI-27 |
-| KI-27 | Entry-Hub's CA-bootstrap-token exchange has no viable path to a mesh-only Certificate-Authority in production | user decision (3 design options recorded) |
+| KI-29 | `deployments/compose/tailscale-test.yml`'s test client can't prove real TCP reachability (userspace-networking mode) | — |
+| KI-30 | `certificate-authority.sh`/`headscale.sh` have a circular startup dependency in a fully clean environment | — |
 
 Everything else in this file (KI-01, KI-03–KI-05, KI-09–KI-11, KI-13,
-KI-16–KI-18, KI-21, KI-22, KI-25) is `FIXED` — kept below for
+KI-16–KI-18, KI-21, KI-22, KI-25, KI-26, KI-27) is `FIXED` — kept below for
 history/traceability, not part of the active worklist.
 
 ---
@@ -1099,13 +1099,15 @@ history/traceability, not part of the active worklist.
   `network-manager.yml`/`storage-service.yml` needed no compose-file
   edits at all for their own verification (the `/etc/hosts` workaround was
   applied live inside the running container, never to the compose file).
-- **Status:** OPEN for Entry-Hub only (tracked separately as KI-27) - 4 of 5
-  services (Database-Vault, Security-Switch, Storage-Service,
-  Network-Manager) now confirmed to survive without `ramusb-net` for their
-  bootstrap-phase CA-token/MQTT calls (their own compose-file comments
-  claiming otherwise are stale and should be corrected next time either
-  file is touched). `ramusb-net` itself stays attached to every service's
-  compose file regardless (KI-05's resolution, unchanged).
+- **Status:** FIXED, 2026-07-26 - all 5 services (Database-Vault,
+  Security-Switch, Storage-Service, Network-Manager, Entry-Hub) now
+  confirmed to survive without `ramusb-net` for their bootstrap-phase
+  CA-token/MQTT calls: Network-Manager via `--accept-dns=true` (NM-F-16,
+  RISK-04), Entry-Hub via its own real `tailscaled` sidecar (see KI-27,
+  now FIXED). Their own compose-file comments claiming otherwise are stale
+  and should be corrected next time either file is touched. `ramusb-net`
+  itself stays attached to every service's compose file regardless (KI-05's
+  resolution, unchanged).
 
 ## KI-27 — Entry-Hub's CA-bootstrap-token exchange has no viable path to a mesh-only Certificate-Authority in production
 
@@ -1139,18 +1141,127 @@ history/traceability, not part of the active worklist.
   dial at all.** `deployments/vps/entry-hub.md`'s own "What a real
   (non-dev) deployment still needs, not yet decided here" section does not
   mention this gap.
-- **Status:** OPEN - needs a design decision, not a speculative fix. Real
-  options include: (a) give Certificate-Authority a narrow, mTLS-protected
-  public listener specifically for bootstrap-token exchange (reopens the
-  "not mesh-only" question KI-05 deliberately closed for production,
-  needs its own security review), (b) give Entry-Hub's VPS guest a real
-  `tailscaled` sidecar/interface just for this one call (same pattern
-  already used for step-ca/Mosquitto's own sidecars, see
-  `.claude/agent-memory/code-agent/sidecar-mesh-pattern.md`), or (c) a
-  different bootstrap-token distribution mechanism for Entry-Hub
-  specifically that does not require dialing Certificate-Authority
-  directly. Left to the user/orchestrator to pick a direction - out of
-  scope for this diagnostic pass to decide unilaterally.
+- **Status:** FIXED, 2026-07-26 - option (b) chosen: Entry-Hub now gets a
+  real `tailscaled` sidecar (`entry-hub-mesh`, `deployments/compose/
+  entry-hub.yml`), the same sidecar pattern already used for step-ca/
+  Mosquitto/Grafana (`.claude/agent-memory/code-agent/
+  sidecar-mesh-pattern.md`), rather than a narrow public CA listener
+  (option a, would have reopened KI-05's closed "not mesh-only" question)
+  or a separate bootstrap-token distribution mechanism (option c, no
+  simpler than the sidecar once built). `pkg/mesh` is now entirely unused
+  by any backend service (see `.claude/agent-memory/code-agent/
+  pkg-mesh.md`) - Entry-Hub was its last consumer.
+  - **Two real bugs found and fixed while building this, beyond the sidecar
+    itself:** (1) the CA-bootstrap call in `run()` originally happened
+    BEFORE waiting for the mesh interface, letting it race
+    `entry-hub-mesh`'s own join and silently win via `ramusb-net` in dev -
+    fixed by moving the `meshIPv4` wait to the very start of `run()`; (2)
+    containerboot's own `tailscale up` invocation defaults `--accept-dns`
+    to **false** regardless of the plain CLI's own true default, so
+    `TS_ACCEPT_DNS: "true"` had to be set explicitly on the sidecar - see
+    `pkg-mesh.md` for both, confirmed live via `Prefs{dns=false}` in
+    containerboot's own log before the fix.
+  - **Live-verified (2026-07-26), same methodology KI-26 already
+    established for Database-Vault/Security-Switch/Storage-Service** (read
+    the *receiving* container's own access log for the source IP, rather
+    than a literal `ramusb-net` removal - see below for why a literal
+    removal test cannot work for ANY mesh-joined service in this dev
+    topology): Certificate-Authority's own `access.log` shows
+    `"remote-address":"100.64.0.x"` (Entry-Hub's real mesh IP) for its
+    `/root`+`/sign` bootstrap calls, across multiple independent container
+    restarts, not `172.19.0.x` (`ramusb-net`) - confirming the exchange
+    now genuinely routes through the mesh rather than merely being able to
+    reach Certificate-Authority via dev's dual-reachable convenience.
+  - **Why a literal `networks: ramusb-net` removal (KI-26's own Database-
+    Vault/Security-Switch/Storage-Service methodology's alternate form,
+    used for THEIR bootstrap-phase calls after an already-persisted mesh
+    join) does not apply the same way to a FRESH Entry-Hub join**: in this
+    dev stack, Headscale itself is reachable only via `ramusb-net` (KI-05's
+    dev-only co-location) - removing it also cuts off `entry-hub-mesh`'s
+    own ability to reach Headscale and join the mesh in the first place,
+    which is a structural property of this dev topology shared by every
+    mesh-joined service's own FIRST join, not a KI-27-specific gap
+    (confirmed live: attempting it reproduces `meshIPv4`'s own 30s timeout,
+    correctly, since no interface ever forms without a path to Headscale).
+    Production has no such constraint (KI-05: Headscale runs on its own
+    public VPS, reachable over ordinary internet routing) - the access-log
+    source-IP proof above is what actually demonstrates KI-27's fix, the
+    same way it already did for the other three services.
+  - **EH-F-01/EH-F-02 (public listener) confirmed unaffected**: a real
+    `POST /api/health`/`/api/register` call against `https://localhost:8443`
+    still succeeds normally after `entry-hub-mesh` joins - a real
+    `tailscaled` only adds a kernel route for the tailnet's own CGNAT range
+    (`100.64.0.0/10`), it does not take over the container's default
+    route, directly confirming the theoretical concern raised in this
+    task's brief was unfounded.
+  - **Full UC-01/UC-02 confirmed against the real dev stack**: a real
+    `POST /api/register` (with a real SSH public key) returned
+    `201`/`posix_username`+`pre_auth_key`; a real `POST /api/login` against
+    EH-F-03's mesh-only listener (called from a genuinely separate,
+    real-kernel-TUN mesh client holding `tag:mesh-member`, reached via its
+    own returned `pre_auth_key` - not the dev-convenience `ramusb-net` path)
+    returned `200`.
+  - **New gaps found and logged separately, not fixed here** (both outside
+    this task's scope): `deployments/compose/tailscale-test.yml`'s own test
+    client cannot prove real TCP reachability without `TS_USERSPACE=false`
+    (KI-29); `certificate-authority.sh`/`headscale.sh` have a real
+    circular startup dependency in a fully clean environment (KI-30).
+
+## KI-29 — `deployments/compose/tailscale-test.yml`'s test client can't prove real TCP reachability
+
+- **Found:** 2026-07-26, while live-verifying KI-27's UC-02 login test -
+  `tailscale ping` against Entry-Hub's mesh IP succeeded, but every `nc`/
+  `wget` TCP connect attempt from the same container timed out silently,
+  indistinguishable by symptom alone from a genuine Headscale ACL denial.
+- **Area:** `deployments/compose/tailscale-test.yml`.
+- **Description:** This file never sets `TS_USERSPACE`, so containerboot
+  defaults it to userspace-networking (the same default gotcha already
+  documented in `.claude/agent-memory/code-agent/sidecar-mesh-pattern.md`
+  for `certificate-authority-mesh`/`mqtt-broker-mesh`/`grafana-mesh`) -
+  `tailscaled` itself has no kernel-visible `tailscale0` interface in this
+  mode, so `tailscale ping` (answered internally by `tailscaled` itself,
+  no kernel route needed) still works and gives a false impression of full
+  connectivity, but any OTHER process in the same container (`nc`, `wget`,
+  a real test client) has no route to the tailnet at all. Confirmed live:
+  adding `-e TS_USERSPACE=false` (this file already has the needed
+  `cap_add`/`devices`) made the same `nc`/`wget` calls succeed immediately
+  against the same target.
+- **Status:** OPEN - not fixed here since it wasn't this task's own file
+  to change; a real fix is one line (`TS_USERSPACE: "false"` added to this
+  file's own `environment:` block) whenever a future task next touches
+  this file or needs to prove real mesh TCP reachability from it.
+
+## KI-30 — `certificate-authority.sh`/`headscale.sh` have a circular startup dependency in a fully clean environment
+
+- **Found:** 2026-07-26, while bringing up a fully wiped dev stack
+  (`cleanup.sh --wipe`) to live-verify KI-27.
+- **Area:** `deployments/scripts/certificate-authority.sh`,
+  `deployments/scripts/headscale.sh`.
+- **Description:** `certificate-authority.sh`'s own top comment claims it
+  "runs first, standalone" and that only its own mesh SIDECAR needs
+  Headscale reachable, safe to simply re-run once Headscale is up - but
+  the script unconditionally computes `CA_ID`/
+  `RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY` via
+  `docker exec headscale ...` (no `|| true` guard) BEFORE its own
+  `docker compose up` line, so on a truly fresh environment (no `headscale`
+  container at all yet) this line hard-fails (`set -e`) with
+  "No such container: headscale" and the script exits before
+  `certificate-authority` itself ever starts - meanwhile `headscale.sh`
+  itself waits in a loop for `certificate-authority` to be reachable
+  first. Neither script can complete its first run alone in a fully clean
+  environment; only known live workaround (used to bring this task's own
+  test stack up): start `certificate-authority`'s own compose services
+  (excluding its mesh sidecar) with a placeholder
+  `RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY` value first, then
+  `headscale.sh`, then mint the sidecar's real key and
+  `docker compose up -d certificate-authority-mesh` separately.
+- **Status:** OPEN - not fixed here (out of this task's own scope); a real
+  fix likely needs `certificate-authority.sh`'s own `docker exec headscale`
+  lines guarded with `|| true` plus a retry/skip of the sidecar's own
+  authkey minting on first run (mirroring its own top comment's stated
+  intent, "simply re-run this script once shell 2 is up" - which the
+  script's actual body does not currently support since it never reaches
+  `docker compose up` on that first failing run at all).
 
 ---
 

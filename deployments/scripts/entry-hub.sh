@@ -1,6 +1,6 @@
 #!/bin/bash
-# Shell 9 - Entry-Hub (+ mesh, via pkg/mesh's in-process tsnet). Requires
-# shells 1, 2, 4.
+# Shell 9 - Entry-Hub (+ mesh, via entry-hub-mesh's real tailscaled
+# sidecar, KI-27). Requires shells 1, 2, 4.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 

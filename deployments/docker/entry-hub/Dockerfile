@@ -4,15 +4,17 @@
 # HTTPS listener (EH-F-01/EH-F-02), a mesh-only login listener (EH-F-03),
 # and an outbound mTLS client to Security-Switch (EH-F-07, via pkg/pki's
 # Certificate-Authority bootstrap-token flow, PKI-F-01/PKI-F-02, CA-F-04).
-# Unlike Storage-Service (deployments/docker/storage-service/Dockerfile), it
-# needs no OS-level capability: no sshd, no POSIX user creation, no
-# chroot, no real kernel TUN device - it embeds pkg/mesh's in-process
-# tsnet mesh node instead of a real OS tailscaled (see
+# This image itself needs no OS-level capability: no sshd, no POSIX user
+# creation, no chroot, no real kernel TUN device - real mesh membership
+# (KI-27) comes from a SEPARATE tailscale/tailscale sidecar container
+# sharing this container's network namespace (deployments/compose/
+# entry-hub.yml's entry-hub-mesh, network_mode: "service:entry-hub"), the
+# same sidecar pattern already used for step-ca/Mosquitto/Grafana - see
 # services/entry-hub/cmd/entry-hub/main.go's package doc comment, "Mesh
-# membership", for why this is the one mesh-joined service that stays on
-# pkg/mesh rather than converting to a real tailscaled) - so it gets a
-# different, more minimal base image, not a copy of Storage-Service's/
-# Network-Manager's/Database-Vault's/Security-Switch's s6-overlay pattern.
+# membership". That sidecar - not this image - carries NET_ADMIN/NET_RAW/
+# the /dev/net/tun device, so this image stays a minimal, more restrictive
+# base image, not a copy of Storage-Service's/Network-Manager's/Database-
+# Vault's/Security-Switch's s6-overlay-plus-in-container-tailscaled pattern.
 #
 # Base image decision: gcr.io/distroless/static-debian12:nonroot, not
 # debian:bookworm-slim. RNF-SEC-03 (defense-in-depth: every layer
@@ -89,20 +91,6 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/entry-hub \
     ./services/entry-hub/cmd/entry-hub
 
-# pkg/mesh's tsnet state directory (RAM_USB_ENTRY_HUB_MESH_DIR, mounted
-# onto /var/lib/tsnet below as the named volume
-# ramusb-entry-hub-mesh-state) needs to be owned by the distroless runtime
-# stage's unprivileged "nonroot" account (UID/GID 65532) BEFORE that
-# volume is ever created - Docker seeds a brand-new named volume's content
-# from whatever already exists at its mount path inside the image,
-# ownership included, and a volume first created empty (root-owned by
-# default) leaves tsnet, running as UID 65532, unable to write its own
-# state ("permission denied" at startup). This builder stage has a shell
-# to create+chown that seed directory; the distroless runtime stage below
-# does not - same pattern as deployments/docker/database-vault/Dockerfile
-# used for its own now-removed pkg/mesh identity directory.
-RUN mkdir -p /tsnet-seed && chown 65532:65532 /tsnet-seed
-
 # ---- runtime stage -------------------------------------------------------
 # distroless/static-debian12:nonroot: no shell, no package manager, only
 # the minimal runtime files a static Go binary needs (CA certificate
@@ -113,7 +101,6 @@ RUN mkdir -p /tsnet-seed && chown 65532:65532 /tsnet-seed
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=build /out/entry-hub /usr/local/bin/entry-hub
-COPY --from=build --chown=65532:65532 /tsnet-seed /var/lib/tsnet
 
 # Entry-Hub's own public listen port is operator/env configured
 # (RAM_USB_ENTRY_HUB_LISTEN_ADDR) and has no single SRS-fixed value to
@@ -122,9 +109,10 @@ COPY --from=build --chown=65532:65532 /tsnet-seed /var/lib/tsnet
 # already used by every other service's own Dockerfile/env var pair
 # (see e.g. storage-service's EXPOSE 2222 comment for the same idea). The
 # mesh-only login listener (RAM_USB_ENTRY_HUB_LOGIN_LISTEN_ADDR) is
-# reachable only via pkg/mesh's own userspace tsnet netstack - never a
-# real container network interface - so it has no EXPOSE entry: there is
-# nothing here for Docker's own port-publishing machinery to expose.
+# reachable only via this container's own real tailscale0 interface
+# (entry-hub-mesh's sidecar) - never a published Docker port - so it has
+# no EXPOSE entry: there is nothing here for Docker's own port-publishing
+# machinery to expose.
 EXPOSE 8443
 
 ENTRYPOINT ["/usr/local/bin/entry-hub"]
