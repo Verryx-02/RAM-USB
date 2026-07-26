@@ -35,13 +35,13 @@ at-a-glance worklist; the full entries below are the detail/history.
 | KI-19 | Entry-Hub/certificate-authority-metrics have no restart policy | user decision |
 | KI-20 | NM-F-12..16 (Headscale coordination/DNS cluster) have zero test coverage | user decision |
 | KI-21 | `TestStorageServiceSSHD_RealContainer_EnforcesHardening` fails/hangs in this dev sandbox | investigation |
-| KI-22 | Grafana -> TimescaleDB uses plaintext password auth, no mTLS (RNF-SEC-04 violation) | user decision |
 | KI-23 | Restarting a CA-F-04-bootstrapped service needs a manually-minted fresh token; only Certificate-Authority itself restarts with zero manual step | user decision |
-| KI-24 | `08-security-pki-hierarchy.puml` draws a `PrivateCA -> Metrics-Visualizer` signing edge that doesn't exist (Grafana has no mTLS identity) | — |
+| KI-24 | `08-security-pki-hierarchy.puml` draws a `PrivateCA -> Metrics-Visualizer` signing edge that doesn't exist (Grafana has no mTLS identity) | diagram-agent re-assessment (KI-22 changed the premise) |
+| KI-25 | `tag:grafana` has no Certificate-Authority reachability in Network-Manager's ACL policy | Grafana's own production mesh sidecar not yet built |
 
 Everything else in this file (KI-01, KI-03–KI-05, KI-09–KI-11, KI-13,
-KI-16–KI-18) is `FIXED` — kept below for history/traceability, not part
-of the active worklist.
+KI-16–KI-18, KI-22) is `FIXED` — kept below for history/traceability, not
+part of the active worklist.
 
 ---
 
@@ -696,10 +696,134 @@ of the active worklist.
   encodes this as a test DELIBERATELY LEFT FAILING until this is fixed -
   do not weaken that assertion to make the suite green; fix the
   connection instead.
-- **Status:** OPEN. Re-architecting this connection to require mTLS is a
-  real design change (its own CA-F-04 identity for TimescaleDB/Grafana, or
-  another mechanism) - out of scope for the test-writing task that found
-  it; logged here for a future task/user decision.
+- **Status:** FIXED, 2026-07-26, live-verified against the real running
+  dev stack (`deployments/scripts/{certificate-authority,headscale,
+  metrics-collector,grafana}.sh`). TimescaleDB (co-located inside
+  Metrics-Collector's container, KI-18) and Grafana each get a real mTLS
+  identity, the same "single-use CA-F-04 bootstrap token once, mTLS-
+  authenticated `step ca renew --daemon` forever after" lifecycle
+  Mosquitto's own KI-16 sidecars already established, adapted for two
+  endpoints:
+  - `third-party/timescaledb/pg_hba-mtls.sh` (run via the upstream
+    image's own `/docker-entrypoint-initdb.d` convention) REPLACES the
+    default, plaintext-permissive `pg_hba.conf` with a
+    `hostssl ... clientcert=verify-full` rule for every REMOTE caller,
+    keeping `scram-sha-256` alongside it (defense-in-depth,
+    RNF-SEC-02/03) rather than switching to auth-method `cert`.
+    Metrics-Collector's OWN same-container loopback connection
+    (`localhost:5432`, MT-F-03) is deliberately exempted via a
+    loopback-scoped rule requiring only the password - a principled
+    distinction (this traffic never leaves the container), not a
+    loophole, the same reasoning that already exempts Database-Vault's
+    own loopback Postgres from any mTLS requirement.
+  - `deployments/compose/metrics-collector.yml`'s
+    `metrics-collector-timescaledb-cert-issuer`/`-cert-renewer` mint and
+    renew TimescaleDB's own server certificate (CommonName
+    `MetricsCollectorTimescaleDB`). The renewer reloads by sending SIGHUP
+    directly to the real `postgres` process (PID read from the co-located
+    data volume's own `postmaster.pid`), sharing this container's PID
+    namespace (`pid: "service:metrics-collector"`) - adapted from
+    `mqtt-broker-cert-renewer`'s simpler `kill -HUP 1` because postgres is
+    not this container's own PID 1 (s6-overlay's supervisor is).
+  - `deployments/compose/grafana.yml`'s `grafana-cert-issuer`/
+    `grafana-cert-renewer` mint and renew Grafana's own CLIENT
+    certificate, CommonName `metrics_collector` - EXACTLY the Postgres
+    role Grafana connects as, because `clientcert=verify-full` requires
+    the two to match with no `pg_ident.conf` mapping layer added (YAGNI).
+    The renewer's reload hook calls Grafana's own documented
+    provisioning-reload admin API
+    (`POST /api/admin/provisioning/datasources/reload`) rather than
+    restarting the container.
+  - `third-party/grafana/provisioning/datasources/timescaledb.yaml` now
+    uses `sslmode: verify-full` + `tlsConfigurationMethod: file-path`
+    (Grafana's own documented mechanism) pointing at the three
+    issuer/renewer-managed files, and expands
+    `secureJsonData.password` from the real, randomly-generated
+    `RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD` (Grafana's own
+    provisioning-file environment-variable expansion) instead of a
+    hardcoded literal that never actually matched
+    `metrics-collector.sh`'s own randomly-generated password - **a
+    genuine pre-existing bug found and fixed as part of this task**,
+    distinct from the mTLS gap itself: Grafana's datasource would have
+    failed PASSWORD authentication even before TLS was ever considered.
+  - `test/nonfunctional/rnf_sec_04_test.go`'s
+    `TestGrafanaTimescaleDB_RealStack_RNF_SEC_04_PlaintextConnectionShouldBeRejected`
+    is renamed
+    `TestGrafanaTimescaleDB_RealStack_RNF_SEC_04_RemotePlaintextConnectionRejected`
+    and now asserts the plaintext, no-client-cert connection is REJECTED
+    (from a genuinely separate `docker run --rm --network ramusb-net`
+    container, not `docker exec metrics-collector`, which would hit the
+    loopback exemption above and is not what this test means to prove).
+  - **Design fork resolved, not fully SRS-dictated**: whether the
+    TimescaleDB-side renewer reloads via a direct process signal
+    (PID-namespace-sharing) or a `pg_reload_conf()` SQL call was not
+    obvious from any existing precedent - chosen: direct signal, to avoid
+    needing a second, purely-internal client identity/credential just for
+    the renewer's own reload call.
+  - **Live verification, all steps run against the real stack**:
+    - **Two pre-existing bugs found and fixed along the way** (neither is
+      this entry's own mTLS gap, both surfaced only because this task
+      actually ran the stack rather than reading config):
+      1. `metrics-collector.yml`'s own data volume was mounted at
+         `/var/lib/postgresql/data`, but this image's real `PGDATA` is
+         `/var/lib/postgresql/18/docker` (confirmed live via `docker exec
+         metrics-collector printenv PGDATA`) - TimescaleDB's actual data
+         was never landing on the named volume at all, so it did not
+         survive container recreation despite MT-F-03's 30-day retention
+         intent. Fixed (both the main mount and the renewer's own
+         `postmaster.pid`-reading mount).
+      2. Grafana's own `ramusb-grafana-data` volume, like TimescaleDB's,
+         only applies `GF_SECURITY_ADMIN_PASSWORD` on a genuinely first
+         boot - a leftover volume from before this task carried an old
+         admin password, causing `401 Invalid username or password`
+         against the freshly-generated one. Not a code bug (this is
+         documented, expected Grafana/Postgres behavior,
+         `MANUAL-DISTRIBUTED-RUN.md`'s own "sharp edge" note), but the dev
+         volume needed a manual wipe to test cleanly this session.
+    - `hostssl ... clientcert=verify-full` enforcement: confirmed live
+      that a plaintext `psql ...?sslmode=disable` connection to
+      `metrics-collector:5432` from a genuinely separate
+      `docker run --rm --network ramusb-net` container is rejected
+      (`FATAL: no pg_hba.conf entry for host ..., no encryption`), while
+      the SAME connection from `docker exec metrics-collector` (loopback)
+      still succeeds via the deliberate exemption.
+    - Real mTLS success: `curl -u admin:... -X POST
+      http://localhost:3000/api/datasources/uid/timescaledb/health`
+      returned `{"message":"Database Connection OK","status":"OK"}`, and
+      `SELECT ... FROM pg_stat_ssl JOIN pg_stat_activity USING (pid) WHERE
+      ssl` (run via `docker exec metrics-collector`) showed a real SSL
+      connection from Grafana's own container address with a client
+      certificate serial matching the minted `grafana.dev-only.crt`
+      exactly (hex serial from `openssl x509 -noout -serial` converted to
+      decimal, matched `client_serial` bit-for-bit).
+    - **The previously unverified question, now resolved**: forced a
+      manual `step ca renew --force` on Grafana's client cert (new
+      serial), called `POST /api/admin/provisioning/datasources/reload`
+      with NO Grafana restart, then re-queried `pg_stat_ssl` - the NEW
+      serial was in use immediately. Grafana's provisioning-reload API
+      DOES pick up a rotated certificate file live; a container restart is
+      NOT required. Confirmed the same for TimescaleDB's own server side
+      independently: forced a `step ca renew --force` on the server cert,
+      sent `kill -HUP <postmaster pid>` (no container restart), and
+      `openssl s_client -starttls postgres` against `metrics-collector:5432`
+      immediately served the new certificate's serial.
+    - One transient, unrelated infra hiccup during this verification: a
+      harness-level watchdog killed a stalled shell mid-command, which
+      also took down the `headscale`/`metrics-collector` containers'
+      foreground `docker compose up` processes (exit 137) - unrelated to
+      any of this task's own code (confirmed by inspecting each
+      container's own shutdown log, an ordered s6-rc stop sequence, not a
+      crash). Recovered with a plain `docker start` on each (not a fresh
+      token/key mint) since their own state persists past a stop/start,
+      and every check above was re-run and re-confirmed afterward.
+  - **New gap found, logged separately**: `tag:grafana` does not carry
+    Certificate-Authority reachability in
+    `services/network-manager/internal/headscale/policy.go` - harmless
+    today (this dev stack's `grafana-cert-issuer`/`-renewer` reach the CA
+    directly over `ramusb-net`, no mesh sidecar exists for Grafana in
+    Compose yet), but would block production's own already-documented
+    Grafana mesh sidecar (`deployments/proxmox/grafana.md`) from ever
+    renewing its certificate. See KI-25.
 
 ---
 
@@ -751,7 +875,43 @@ of the active worklist.
   Grafana→TimescaleDB connection itself; this one is about the diagram
   falsely depicting a certificate-issuance relationship that would only
   make sense if that connection *were* mTLS).
-- **Status:** OPEN.
+- **Status:** OPEN. **Note (2026-07-26):** KI-22's own fix now DOES issue
+  Grafana a real certificate from this CA (a client identity for its
+  TimescaleDB connection, `deployments/compose/grafana.yml`'s
+  `grafana-cert-issuer`) - the diagram's `PrivateCA ..> MetricsVisualizer`
+  edge may now be accurate rather than false, but this is a diagram
+  question (does the edge's own `<<signs>>` semantics still match what
+  actually happens) outside code-agent's scope to resolve - left for
+  diagram-agent/consistency-agent to re-assess against the fix described
+  in KI-22.
+
+## KI-25 — `tag:grafana` has no Certificate-Authority reachability in Network-Manager's ACL policy
+
+- **Found:** 2026-07-26, implementing KI-22's mTLS fix for Grafana's own
+  TimescaleDB connection.
+- **Area:** `services/network-manager/internal/headscale/policy.go`
+  (the NM-F-04 "every internal component can contact Certificate-
+  Authority" rule's `Src` list).
+- **Description:** That rule currently lists `TagEntryHub`,
+  `TagSecuritySwitch`, `TagDatabaseVault`, `TagStorageService`,
+  `TagNetworkManager`, and `TagMQTTBroker` (the last added for KI-16's own
+  cert-renewal sidecar) - `TagGrafana` is absent. Harmless in this dev
+  Compose stack: `grafana-cert-issuer`/`grafana-cert-renewer`
+  (`deployments/compose/grafana.yml`, KI-22) reach Certificate-Authority
+  directly over `ramusb-net`, since Grafana has no mesh sidecar in Compose
+  at all yet (`deployments/proxmox/grafana.md` documents one for
+  production, not yet built as a real Compose service - see that file's
+  own "What was genuinely undecided here" section, KI-17). Once that
+  production sidecar is actually built, its own cert-issuer/renewer would
+  need to reach Certificate-Authority over the mesh (Certificate-Authority
+  is mesh-only-reachable in production) the same way
+  `mqtt-broker-cert-renewer` already does - and would silently hang until
+  "context deadline exceeded" without this ACL rule, the exact same
+  failure mode NM-F-04's own rule comment already documents for a missing
+  Src entry.
+- **Status:** OPEN. Not added speculatively now (YAGNI - no Compose
+  service exists yet to need it); add `TagGrafana` to that rule's `Src`
+  list when Grafana's own production mesh sidecar is actually built.
 
 ---
 
