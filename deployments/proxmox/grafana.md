@@ -72,16 +72,30 @@ with the user, not inferred:**
    identity (`tag:metrics-collector`).
 
 Grafana's own guest therefore still needs a `tailscale/tailscale` sidecar
-container, but a simpler one than Certificate-Authority's/Mosquitto's:
-`TS_USERSPACE` can stay at its default (userspace-networking), **not**
-`"false"`, because Grafana never needs to *accept* an inbound mesh
-connection - only originate the outbound one to TimescaleDB. `TS_USERSPACE:
-"false"` (a real kernel `tailscale0` interface) is only required when a
-service must accept inbound mesh traffic, per NM-F-04's Certificate-
-Authority precedent - Grafana's own inbound consumer never touches the
-mesh at all (see point 1 above), so that requirement doesn't apply here.
-This is the same outbound-only shape `.claude/agent-memory/code-agent.md`
-already documents for a User's own `tailscale-test.yml` client.
+container (now a real Compose service, `deployments/compose/grafana.yml`'s
+`grafana-mesh`, sharing Grafana's own network namespace via
+`network_mode: "service:grafana"` - the same `certificate-authority-mesh`/
+`mqtt-broker-mesh` pattern those two docs already use).
+
+**Correction, live-verified (superseding this doc's own earlier reasoning
+below):** `TS_USERSPACE` must be `"false"` here too, exactly like
+Certificate-Authority's/Mosquitto's own sidecars - the original reasoning
+that it could stay at its default because "Grafana never needs to *accept*
+an inbound mesh connection" was wrong. Userspace-networking mode means
+`tailscaled` itself has no kernel-visible `tailscale0` interface at all -
+only `tailscaled`'s own process can reach the tailnet, through its
+internal netstack. Grafana's Postgres driver is a SEPARATE process merely
+sharing that network namespace; it has no way to route a real outbound TCP
+connection to a `100.64.0.0/10` address through a sidecar in that mode
+either, regardless of direction. Confirmed live this session: a `psql`
+connection from Grafana's own shared namespace to Metrics-Collector's real
+mesh IP got "Connection refused"/timed out with `TS_USERSPACE` at its
+default, and succeeded (real mTLS handshake, matching client-certificate
+serial visible in TimescaleDB's own `pg_stat_ssl`) once set to `"false"`.
+The general rule this revises: `TS_USERSPACE=false` is required whenever
+ANY process sharing a sidecar's network namespace (not `tailscaled`
+itself) needs to originate OR accept mesh traffic - not only the "accepts
+inbound" case this doc originally described.
 
 ### What was genuinely undecided here, now resolved
 
@@ -119,19 +133,22 @@ the same `RAM_USB_METRICS_COLLECTOR_POSTGRES_PASSWORD` value
 provisioning-file environment-variable expansion.
 
 In this dev Compose stack, `grafana-cert-issuer`/`grafana-cert-renewer`
-reach Certificate-Authority directly over `ramusb-net` (Grafana's own
-mesh sidecar below is not yet a real Compose service - see "What was
-genuinely undecided here" above). **Flagged, not yet closed**: once
-Grafana's own mesh sidecar is actually built for production, its
-cert-issuer/renewer would need to reach Certificate-Authority over the
-mesh the same way `mqtt-broker-cert-renewer` does - `tag:grafana` does
-NOT currently carry that reachability in
-`services/network-manager/internal/headscale/policy.go` (only
-`TagEntryHub`/`TagSecuritySwitch`/`TagDatabaseVault`/`TagStorageService`/
-`TagNetworkManager`/`TagMQTTBroker` do). Not added here: adding an ACL
-rule for a sidecar that has no Compose service yet would be speculative -
-see `docs/Known_Issues.md`'s KI-25 (a new entry, not this task's own
-KI-22) for the tracked gap.
+still reach Certificate-Authority directly over `ramusb-net`, unchanged
+(KI-05's own dev-convenience wiring, deliberately left as-is) - a real
+production deployment would instead route them over `grafana-mesh`, the
+same way `mqtt-broker-cert-renewer` shares `mqtt-broker-mesh`'s namespace.
+**Resolved (KI-25, this session)**: `grafana-mesh` is now a real Compose
+service, and `tag:grafana` now carries Certificate-Authority reachability
+in `services/network-manager/internal/headscale/policy.go`'s NM-F-04
+rule, alongside `TagEntryHub`/`TagSecuritySwitch`/`TagDatabaseVault`/
+`TagStorageService`/`TagNetworkManager`/`TagMQTTBroker` - confirmed live
+via `headscale policy get` after a fresh Network-Manager policy push. The
+`tag:grafana` -> `tag:metrics-collector` rule this section's "Dependencies
+that must exist first" already documented was live-verified this session
+too: a real mTLS `psql` query from inside Grafana's own shared network
+namespace to Metrics-Collector's real mesh IP (`100.64.0.14` in this dev
+run) succeeded, with `pg_stat_ssl.client_serial` matching Grafana's own
+minted certificate exactly.
 
 ## LXC vs KVM placement (RNF-ORG-04)
 
@@ -140,8 +157,8 @@ alongside Security-Switch/Certificate-Authority/Mosquitto - not the KVM
 group reserved for Storage-Service/Database-Vault/Network-Manager). Same
 reasoning class as those three docs: this guest needs nothing beyond what
 the Tailscale mesh sidecar itself requires
-(`NET_ADMIN`/`NET_RAW`/`/dev/net/tun` - `TS_USERSPACE` stays at its
-default here, see "Network placement" above) - Grafana itself does no
+(`NET_ADMIN`/`NET_RAW`/`/dev/net/tun`, `TS_USERSPACE=false` - see "Network
+placement" above) - Grafana itself does no
 POSIX-user provisioning, `chroot`, or raw-socket work of its own. Same
 unprivileged-LXC `/dev/net/tun` enablement caveat as the other three docs
 (not yet verified against a real Proxmox LXC guest).
