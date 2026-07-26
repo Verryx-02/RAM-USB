@@ -36,6 +36,8 @@ at-a-glance worklist; the full entries below are the detail/history.
 | KI-20 | NM-F-12..16 (Headscale coordination/DNS cluster) have zero test coverage | user decision |
 | KI-23 | Restarting a CA-F-04-bootstrapped service needs a manually-minted fresh token; only Certificate-Authority itself restarts with zero manual step | user decision |
 | KI-24 | `08-security-pki-hierarchy.puml` draws a `PrivateCA -> Metrics-Visualizer` signing edge that doesn't exist (Grafana has no mTLS identity) | diagram-agent re-assessment (KI-22 changed the premise) |
+| KI-26 | `ramusb-net`'s bootstrap-phase role, live-verified per service: Database-Vault/Security-Switch/Storage-Service survive without it, Network-Manager and Entry-Hub do not | user decision (Network-Manager needs a scoped DNS mechanism; Entry-Hub's own gap is tracked separately as KI-27) |
+| KI-27 | Entry-Hub's CA-bootstrap-token exchange has no viable path to a mesh-only Certificate-Authority in production | user decision (3 design options recorded) |
 
 Everything else in this file (KI-01, KI-03–KI-05, KI-09–KI-11, KI-13,
 KI-16–KI-18, KI-21, KI-22, KI-25) is `FIXED` — kept below for
