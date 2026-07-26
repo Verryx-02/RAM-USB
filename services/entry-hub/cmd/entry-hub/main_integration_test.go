@@ -169,7 +169,7 @@ func TestBuildSecuritySwitchClient_RealCA_EnforcesOrganization(t *testing.T) {
 		t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 		t.Setenv(envSecuritySwitchURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 
-		client, baseURL, _, err := buildSecuritySwitchClient(ctx, nil)
+		client, baseURL, _, err := buildSecuritySwitchClient(ctx)
 		if err != nil {
 			t.Fatalf("buildSecuritySwitchClient() error = %v, want nil", err)
 		}
@@ -201,7 +201,7 @@ func TestBuildSecuritySwitchClient_RealCA_EnforcesOrganization(t *testing.T) {
 		t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 		t.Setenv(envSecuritySwitchURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 
-		client, baseURL, _, err := buildSecuritySwitchClient(ctx, nil)
+		client, baseURL, _, err := buildSecuritySwitchClient(ctx)
 		if err != nil {
 			t.Fatalf("buildSecuritySwitchClient() error = %v, want nil", err)
 		}
@@ -271,7 +271,7 @@ func TestBuildSecuritySwitchClient_RealCA_RejectsTLS12(t *testing.T) {
 	t.Setenv(pki.BootstrapTokenEnvVar, clientToken)
 	t.Setenv(envSecuritySwitchURL, strings.Replace(stub.URL, "127.0.0.1", "localhost", 1))
 
-	client, baseURL, _, err := buildSecuritySwitchClient(ctx, nil)
+	client, baseURL, _, err := buildSecuritySwitchClient(ctx)
 	if err != nil {
 		t.Fatalf("buildSecuritySwitchClient() error = %v, want nil", err)
 	}

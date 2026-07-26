@@ -21,18 +21,19 @@
 // alongside Network-Manager's own Headscale coordination endpoint,
 // NM-F-14) - reachable by anyone, since unauthenticated registration must
 // be reachable before a client has ever joined the mesh. EH-F-03 (login)
-// is served on a SEPARATE, mesh-only listener instead (meshNode.Listen,
-// not envListenAddr at all) - an explicit architecture decision made
-// together with this task's requester, independent of NM-F-14/EH-F-12's
-// own (separate, later reverted) history: once a client can complete
-// UC-01 registration and its own mesh join (CL-F-04, against Network-
-// Manager's now-directly-public Headscale endpoint), there is no
-// remaining reason for login itself to be reachable from outside the
-// mesh, and keeping it mesh-only removes a whole class of unauthenticated-
-// login-endpoint exposure. Both listeners present the identical Let's
-// Encrypt-issued certificate (EH-F-03's own literal requirement) and
-// require no client certificate (authentication stays email+password, not
-// mTLS) - only which network they are reachable from differs.
+// is served on a SEPARATE, mesh-only listener instead (bound explicitly to
+// this node's own mesh IPv4 address, see meshIPv4 below - never
+// envListenAddr) - an explicit architecture decision made together with
+// this task's requester, independent of NM-F-14/EH-F-12's own (separate,
+// later reverted) history: once a client can complete UC-01 registration
+// and its own mesh join (CL-F-04, against Network-Manager's now-directly-
+// public Headscale endpoint), there is no remaining reason for login
+// itself to be reachable from outside the mesh, and keeping it mesh-only
+// removes a whole class of unauthenticated-login-endpoint exposure. Both
+// listeners present the identical Let's Encrypt-issued certificate
+// (EH-F-03's own literal requirement) and require no client certificate
+// (authentication stays email+password, not mTLS) - only which network
+// they are reachable from differs.
 //
 // (An earlier version of this file also served a third role - an EH-F-12
 // reverse proxy for Headscale coordination traffic toward Network-Manager,
@@ -42,28 +43,62 @@
 // the proxy redundant. See services/network-manager/cmd/network-manager/
 // main.go's own package doc comment for NM-F-14's current shape.)
 //
-// # Mesh membership (pkg/mesh, NOT a real OS tailscaled)
+// # Mesh membership (real OS tailscaled, via a sidecar - KI-27)
 //
-// This process embeds pkg/mesh's in-process tsnet mesh node, the same
-// mechanism Database-Vault/Security-Switch used before their own later
-// conversion to a real OS tailscaled (see .claude/agent-memory/
-// code-agent.md's "pkg/mesh" and "pkg/pki dialer routing" entries) - and
-// deliberately stays there rather than following that same later
-// conversion. The reason those two services converted was that pkg/pki's
-// CA-bootstrap/renewal traffic and pkg/metrics' MQTT traffic have no way to
-// route through an in-process-only tsnet netstack when either service also
-// holds a SERVER role (ca.BootstrapServer's returned *http.Server exposes
-// no interceptable dial path at all - a confirmed, version-pinned
-// smallstep/certificates library limitation, not a code gap). Entry-Hub
-// holds no server role at all: pkg/pki's ONLY use here is pki.NewClient
-// (via buildSecuritySwitchClient), and ca.BootstrapClient's returned
-// *http.Client.Transport IS directly interceptable (see pkg/pki/dialer.go's
-// RouteThroughDialer/NewClientWithDialer) - so this process's one CA-client
-// identity, its outbound Security-Switch mTLS calls, AND its MQTT metrics
-// connection can all be routed through pkg/mesh's meshNode.Dial with no
-// library limitation standing in the way. Converting to a real tailscaled
-// here would trade away tsnet's no-root/no-kernel-TUN footprint for
-// nothing this process actually needs.
+// This process no longer embeds pkg/mesh's in-process tsnet mesh node - it
+// was the one remaining backend service on it, and converted away for
+// exactly the reason Database-Vault/Security-Switch/Storage-Service/
+// Network-Manager already did (see .claude/agent-memory/code-agent/
+// pkg-mesh.md and pkg-pki-dialer-routing.md): pkg/pki's stepca.BootstrapClient
+// performs its FIRST bootstrap-token exchange internally, before either
+// pki.NewClient or pki.NewClientWithDialer ever returns anything to the
+// caller, with no hook to route that one call through any application-level
+// dialer at all - it always goes out over this process's ordinary default
+// network route. In dev, that route is ramusb-net, where Certificate-
+// Authority is deliberately dual-reachable (KI-05), so the call always
+// succeeded there regardless. In production, per deployments/vps/
+// entry-hub.md, Entry-Hub's default route is the public internet and
+// Certificate-Authority is mesh-only reachable - so that one call had no
+// address to dial at all (KI-27, docs/Known_Issues.md).
+//
+// The fix is deployments/compose/entry-hub.yml's entry-hub-mesh sidecar: a
+// real tailscale/tailscale container sharing this container's network
+// namespace (network_mode: "service:entry-hub", TS_USERSPACE=false, the
+// same sidecar pattern already used for step-ca/Mosquitto/Grafana - see
+// .claude/agent-memory/code-agent/sidecar-mesh-pattern.md). Once that
+// sidecar joins the mesh, this container's kernel gains a real tailscale0
+// interface and (via --accept-dns, left at its default true, matching
+// Database-Vault/Security-Switch/Storage-Service's own tailscale-up.sh) a
+// resolv.conf pointed at MagicDNS - so Certificate-Authority's hostname now
+// resolves to its real mesh IP, and the OS routes every call to it,
+// including the one bootstrap-token exchange pkg/pki gives no dial hook
+// for, through tailscale0 automatically. This closes KI-27 with zero
+// application-level dial-interception code, the same way Database-Vault's
+// own real-tailscaled conversion closed the equivalent gap for its own
+// CA-token/MQTT calls (see pkg-pki-dialer-routing.md's "why every
+// server-role service runs a real tailscaled" reasoning - it now extends to
+// Entry-Hub too, even though Entry-Hub itself holds no server role).
+//
+// pkg/mesh's meshNode.Dial/meshNode.Listen have no remaining purpose here:
+// the OS-level interface routes every outbound call (Security-Switch,
+// MQTT, the CA bootstrap exchange) transparently, with no dialer
+// injection needed - see buildSecuritySwitchClient/buildMetricsClient
+// below, both now built with pki.NewClient/a nil metrics dial, exactly
+// like Database-Vault's own post-conversion buildStorageServiceClient/
+// buildMetricsClient. The one piece that DOES still need explicit code is
+// EH-F-03's login listener: unlike Database-Vault/Security-Switch/
+// Storage-Service, which discover their own mesh IPv4 address via a shell
+// "tailscale ip -4" call inside their own container (real tailscaled runs
+// IN that same container, via s6-overlay), Entry-Hub's real tailscaled
+// runs in a SEPARATE sidecar container, and Entry-Hub's own distroless
+// runtime image has no shell to run that command even if it could. Instead
+// meshIPv4 (below) reads the shared network namespace's own tailscale0
+// interface directly via net.InterfaceByName - a syscall, not a shell
+// command, so it works identically in a distroless image - and run() binds
+// the login listener to that specific address rather than 0.0.0.0, so
+// login stays reachable only from the mesh even though this container's
+// own ramusb-net attachment (a dev-only convenience, KI-26) is still
+// present.
 //
 // mTLS to Security-Switch (EH-F-07, PKI-F-01/PKI-F-02, CA-F-04): Entry-Hub
 // has no inbound mTLS listener at all - its public/mesh-only endpoints
@@ -72,26 +107,18 @@
 // envServerKey below, untouched by this file's mesh changes). Entry-Hub
 // therefore needs exactly one identity role: an outbound mTLS client. It
 // obtains that identity from the Certificate-Authority via pkg/pki's
-// bootstrap-token flow (pki.LoadBootstrapToken + pki.NewClientWithDialer,
-// routed through meshNode.Dial), the same CA-F-04 mechanism Database-Vault
-// uses, but calling pki.NewClientWithDialer directly rather than reusing a
-// pki.NewServer-bootstrapped *tls.Config - see pkg/pki's package doc
-// comment and Database-Vault's own main.go doc comment: reusing a server
-// identity for an outbound call is only the right pattern when a
-// corresponding inbound listener already exists for that identity: none
-// does here. The resulting *http.Client's Transport is wrapped with
-// mtls.WrapRoundTripper for PKI-F-02's organization check
+// bootstrap-token flow (pki.LoadBootstrapToken + pki.NewClient), the same
+// CA-F-04 mechanism Database-Vault uses, but calling pki.NewClient
+// directly rather than reusing a pki.NewServer-bootstrapped *tls.Config -
+// see pkg/pki's package doc comment and Database-Vault's own main.go doc
+// comment: reusing a server identity for an outbound call is only the
+// right pattern when a corresponding inbound listener already exists for
+// that identity: none does here. The resulting *http.Client's Transport is
+// wrapped with mtls.WrapRoundTripper for PKI-F-02's organization check
 // (organization=securityswitch.OrganizationSecuritySwitch) at the
 // HTTP-response level, since pkg/pki's *tls.Config is not composable with
 // pkg/mtls.ClientConfig's handshake-level VerifyConnection check (see
-// pkg/pki's package doc comment). Note that pki.NewClientWithDialer's mesh
-// routing covers every outbound call THROUGH the returned *http.Client
-// (including its own background certificate renewal) but not the single
-// initial bootstrap-token exchange itself, which the vendored library
-// gives no hook to reach - that one call still goes out over this
-// container's default network path (ramusb-net), which is why Entry-Hub
-// still keeps a ramusb-net attachment for Certificate-Authority
-// reachability at startup (see deployments/compose/entry-hub.yml).
+// pkg/pki's package doc comment).
 //
 // EH-F-10/EH-F-11's MQTT metrics identity (buildMetricsClient) reuses this
 // SAME bootstrapped *http.Client's *tls.Config - pki.TLSConfig extracts it,
@@ -100,10 +127,10 @@
 // organization check on top (mtls.WithOrganization, the MQTT-connection
 // counterpart of WrapRoundTripper's HTTP-level check above) - instead of a
 // second, independent bootstrap-token exchange or the static cert/key
-// files this process used before. The MQTT connection itself is routed
-// through meshNode.Dial too (metrics.NewClient's dial parameter), now that
-// the MQTT broker's mesh identity is reachable that way (see policy.go's
-// TagMQTTBroker rule).
+// files this process used before. The MQTT connection itself needs no
+// dial injection either, now that the MQTT broker's mesh identity is
+// reachable transparently through this container's own real tailscale0
+// interface (see policy.go's TagMQTTBroker rule).
 //
 // See also deployments/compose/certificate-authority.yml's certificate-authority-init
 // service: the dev Certificate-Authority container needs a one-time,
@@ -131,7 +158,6 @@ import (
 
 	"github.com/Verryx-02/RAM-USB/pkg/env"
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
-	"github.com/Verryx-02/RAM-USB/pkg/mesh"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/pkg/mtls"
 	"github.com/Verryx-02/RAM-USB/pkg/pki"
@@ -160,54 +186,14 @@ const (
 	envServerCert = "RAM_USB_ENTRY_HUB_TLS_CERT"
 	envServerKey  = "RAM_USB_ENTRY_HUB_TLS_KEY"
 
-	// envLoginListenAddr is the bare ":port" (tsnet.Server.Listen only
-	// ever announces on this node's own mesh address, so a host part is
-	// meaningless here - same shape as Database-Vault's own pre-real-
-	// tailscaled envListenAddr) this server's mesh-only login listener
-	// (EH-F-03) binds. Distinct from envListenAddr's public socket - see
-	// this file's package doc comment, "Listener topology".
+	// envLoginListenAddr is the bare ":port" this server's mesh-only login
+	// listener (EH-F-03) binds - meshIPv4 (below) supplies the host part
+	// at runtime, once this container's own real tailscale0 interface
+	// (entry-hub-mesh's sidecar, see this file's package doc comment) has
+	// an address, since that address is not known until then. Distinct
+	// from envListenAddr's public socket - see this file's package doc
+	// comment, "Listener topology".
 	envLoginListenAddr = "RAM_USB_ENTRY_HUB_LOGIN_LISTEN_ADDR"
-
-	// envMeshDir is the persistent directory this node's tsnet mesh
-	// identity/state lives in (see pkg/mesh.Config.Dir) - backed by a
-	// dedicated Docker volume (deployments/compose/entry-hub.yml), so
-	// this node keeps the same mesh identity across container restarts
-	// instead of re-joining as a new machine every time.
-	envMeshDir = "RAM_USB_ENTRY_HUB_MESH_DIR"
-
-	// envMeshHostname is this node's MagicDNS short name within the
-	// tailnet (see pkg/mesh.Config.Hostname) - services/network-manager/
-	// internal/headscale/policy.go's TagEntryHub ACL rules apply to
-	// whichever pre-auth key's --tags this node's envMeshAuthKey was
-	// minted with, not to this hostname directly, but the hostname is
-	// still how a human operator (and this file's own doc comments)
-	// identify this node in `headscale nodes list`.
-	envMeshHostname = "RAM_USB_ENTRY_HUB_MESH_HOSTNAME"
-
-	// envMeshControlURL is the self-hosted Headscale server's
-	// coordination URL (see pkg/mesh.Config.ControlURL), shared by every
-	// service that joins the mesh - not service-specific, so this same
-	// env var name is reused verbatim by every other mesh-joined
-	// service's own main.go/rootfs scripts.
-	envMeshControlURL = "RAM_USB_TAILSCALE_CONTROL_URL"
-
-	// envMeshAuthKey is this node's single-use Headscale pre-auth key
-	// (see pkg/mesh.Config.AuthKey and pkg/mesh's package doc comment,
-	// "Key distribution"), minted manually by the operator with
-	// --tags tag:entry-hub (services/network-manager/internal/headscale/
-	// policy.go's TagEntryHub) - see deployments/compose/entry-hub.yml
-	// for the exact minting command.
-	envMeshAuthKey = "RAM_USB_ENTRY_HUB_TAILSCALE_AUTHKEY" //nolint:gosec // an env var *name*, not a credential value
-
-	// envMeshControlCAFile optionally names a PEM file this process
-	// should trust for envMeshControlURL's TLS certificate (see
-	// pkg/mesh.Config.ControlCAFile) - shared across services exactly
-	// like envMeshControlURL, since it exists solely to trust that same
-	// URL's certificate. Left unset in any deployment where ControlURL's
-	// certificate already chains to a real, publicly trusted root; only
-	// this project's dev-only self-signed Headscale certificate
-	// (third-party/headscale/dev-tls) needs it.
-	envMeshControlCAFile = "RAM_USB_TAILSCALE_CONTROL_CA_FILE"
 
 	// envSecuritySwitchURL is Security-Switch's base URL (EH-F-07), e.g.
 	// "https://security-switch:8444" - Security-Switch's own MagicDNS
@@ -231,8 +217,8 @@ const (
 	// consistent choice, not a collision risk. No separate
 	// RAM_USB_MQTT_CLIENT_CERT/RAM_USB_MQTT_CLIENT_KEY/RAM_USB_MQTT_CA env
 	// vars exist - this process's MQTT identity and root trust are both
-	// derived from the same pki.NewClientWithDialer bootstrap already
-	// performed for Security-Switch (see this file's package doc comment).
+	// derived from the same pki.NewClient bootstrap already performed for
+	// Security-Switch (see this file's package doc comment).
 	envMQTTBrokerURL = "RAM_USB_MQTT_BROKER_URL"
 )
 
@@ -256,6 +242,28 @@ const metricsPublishInterval = time.Minute
 // broker's connection handshake at startup.
 const connectTimeout = 10 * time.Second
 
+// meshInterfaceName is the network interface entry-hub-mesh's real
+// tailscaled sidecar creates inside this container's shared network
+// namespace (network_mode: "service:entry-hub", TS_USERSPACE=false - see
+// deployments/compose/entry-hub.yml and this file's package doc comment,
+// "Mesh membership") - the same real kernel tailscale0 interface every
+// other mesh-joined service's own in-container tailscaled creates, just
+// owned by a separate sidecar process here instead of a process inside
+// this same container.
+const meshInterfaceName = "tailscale0"
+
+// meshInterfacePollInterval/meshInterfaceTimeout bound how long run()
+// waits, at startup, for entry-hub-mesh's sidecar to actually create
+// meshInterfaceName inside the shared network namespace - Compose starts
+// this container before its sidecar can even attach to it (network_mode:
+// "service:entry-hub" requires this container to already exist), so this
+// process's own first few seconds normally race the sidecar's own
+// "tailscale up" join.
+const (
+	meshInterfacePollInterval = 500 * time.Millisecond
+	meshInterfaceTimeout      = 30 * time.Second
+)
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("entry-hub: fatal startup error", "error", logging.Sanitize(err.Error()))
@@ -275,27 +283,35 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
-	// meshNode is this process's own Headscale mesh identity (see this
-	// file's package doc comment, "Mesh membership") - reused below for
-	// the login listener, the outbound Security-Switch client, and the
-	// MQTT metrics connection, never a second node.
-	meshNode, err := buildMeshNode(ctx)
+	_, loginPort, err := net.SplitHostPort(loginListenAddr)
 	if err != nil {
-		return fmt.Errorf("join mesh: %w", err)
+		return fmt.Errorf("parse %s %q: %w", envLoginListenAddr, loginListenAddr, err)
 	}
-	defer func() {
-		if closeErr := meshNode.Close(); closeErr != nil {
-			slog.Warn("entry-hub: mesh node close error", "error", logging.Sanitize(closeErr.Error()))
-		}
-	}()
+
+	// meshIP is this container's own mesh IPv4 address (see meshIPv4's own
+	// doc comment). Discovered FIRST, before buildSecuritySwitchClient's
+	// own CA-bootstrap-token exchange below - that exchange has no
+	// interceptable dial path (see this file's package doc comment,
+	// "Mesh membership") and relies entirely on entry-hub-mesh's sidecar
+	// having already rewritten this container's own DNS resolution and
+	// kernel routing table by the time it runs. Confirmed live (KI-27):
+	// calling buildSecuritySwitchClient before this wait lets the
+	// bootstrap call race the sidecar's own join and silently fall back to
+	// this container's ordinary default route (ramusb-net in dev) instead
+	// of the mesh - harmless in dev (Certificate-Authority is
+	// dual-reachable, KI-05), but exactly the gap KI-27 exists to close in
+	// production, where no such fallback route exists at all.
+	meshIP, err := meshIPv4(ctx)
+	if err != nil {
+		return fmt.Errorf("discover mesh ipv4 address: %w", err)
+	}
 
 	serverTLSConfig, err := buildServerTLSConfig()
 	if err != nil {
 		return fmt.Errorf("build server tls config: %w", err)
 	}
 
-	securitySwitchClient, securitySwitchURL, mqttTLSBase, err := buildSecuritySwitchClient(ctx, meshNode.Dial)
+	securitySwitchClient, securitySwitchURL, mqttTLSBase, err := buildSecuritySwitchClient(ctx)
 	if err != nil {
 		return fmt.Errorf("build security-switch client: %w", err)
 	}
@@ -323,7 +339,7 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	metricsClient, err := buildMetricsClient(mqttTLSBase, meshNode.Dial)
+	metricsClient, err := buildMetricsClient(mqttTLSBase)
 	if err != nil {
 		return fmt.Errorf("build metrics client: %w", err)
 	}
@@ -340,11 +356,17 @@ func run() error {
 	}
 	tlsPublicListener := tls.NewListener(rawListener, serverTLSConfig)
 
-	meshListener, err := meshNode.Listen("tcp", loginListenAddr)
+	// EH-F-03's login listener binds to meshIP explicitly (discovered
+	// above, before buildSecuritySwitchClient), never 0.0.0.0, so login
+	// stays reachable only from the mesh even though this container's own
+	// ramusb-net attachment is still present (see this file's package doc
+	// comment, "Mesh membership").
+	meshLoginAddr := net.JoinHostPort(meshIP.String(), loginPort)
+	rawLoginListener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", meshLoginAddr)
 	if err != nil {
-		return fmt.Errorf("mesh listen on %s: %w", loginListenAddr, err)
+		return fmt.Errorf("mesh listen on %s: %w", meshLoginAddr, err)
 	}
-	tlsLoginListener := tls.NewListener(meshListener, serverTLSConfig)
+	tlsLoginListener := tls.NewListener(rawLoginListener, serverTLSConfig)
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -358,7 +380,7 @@ func run() error {
 	go func() {
 		// codeql[go/log-injection] logging.Sanitize maps every unicode.IsControl rune (including CR/LF/NUL/tab)
 		// to a space, so no forged newline can reach the log sink - a custom sanitizer CodeQL doesn't recognize.
-		slog.Info("entry-hub: listening on the mesh for login", "addr", logging.Sanitize(loginListenAddr))
+		slog.Info("entry-hub: listening on the mesh for login", "addr", logging.Sanitize(meshLoginAddr))
 		loginServeErr <- loginServer.Serve(tlsLoginListener)
 	}()
 
@@ -384,41 +406,58 @@ func run() error {
 	}
 }
 
-// buildMeshNode joins this process to the private Headscale mesh (see this
-// file's package doc comment, "Mesh membership") using envMeshDir/
-// envMeshHostname/envMeshControlURL/envMeshAuthKey, failing closed (RD-04)
-// if any is unset. ctx bounds only the join itself; the returned node
-// lives for this process's whole lifetime (closed via a deferred call in
-// run).
-func buildMeshNode(ctx context.Context) (*mesh.Server, error) {
-	dir, err := env.Require(envMeshDir)
-	if err != nil {
-		return nil, err
+// meshIPv4 blocks until entry-hub-mesh's sidecar (see this file's package
+// doc comment, "Mesh membership") creates meshInterfaceName inside this
+// container's shared network namespace and assigns it an IPv4 address,
+// returning that address. Unlike Database-Vault/Security-Switch/
+// Storage-Service, which discover their own mesh IPv4 address via a shell
+// "tailscale ip -4" call inside their own container's tailscale-up.sh
+// (real tailscaled runs IN that same container), Entry-Hub's distroless
+// runtime image has no shell and its real tailscaled runs in a SEPARATE
+// sidecar container - so this process discovers the address itself, via
+// net.InterfaceByName (a syscall, not a shell command - works identically
+// in a distroless image), reading the same shared-namespace interface
+// that shell command would have read.
+func meshIPv4(ctx context.Context) (net.IP, error) {
+	deadline := time.Now().Add(meshInterfaceTimeout)
+	for {
+		if ip := lookupMeshIPv4(); ip != nil {
+			return ip, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("interface %s has no IPv4 address after %s", meshInterfaceName, meshInterfaceTimeout)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(meshInterfacePollInterval):
+		}
 	}
-	hostname, err := env.Require(envMeshHostname)
-	if err != nil {
-		return nil, err
-	}
-	controlURL, err := env.Require(envMeshControlURL)
-	if err != nil {
-		return nil, err
-	}
-	authKey, err := env.Require(envMeshAuthKey)
-	if err != nil {
-		return nil, err
-	}
-	// Optional (empty in any deployment where ControlURL's certificate
-	// already chains to a real, publicly trusted root) - see
-	// envMeshControlCAFile's own doc comment.
-	controlCAFile := os.Getenv(envMeshControlCAFile)
+}
 
-	return mesh.Up(ctx, mesh.Config{
-		Dir:           dir,
-		Hostname:      hostname,
-		ControlURL:    controlURL,
-		AuthKey:       authKey,
-		ControlCAFile: controlCAFile,
-	})
+// lookupMeshIPv4 returns meshInterfaceName's first IPv4 address, or nil if
+// the interface does not exist yet or has none - a nil return means "poll
+// again," never an error, since both are expected transiently at startup
+// (see meshIPv4).
+func lookupMeshIPv4() net.IP {
+	iface, err := net.InterfaceByName(meshInterfaceName)
+	if err != nil {
+		return nil
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return nil
+	}
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		if v4 := ipNet.IP.To4(); v4 != nil {
+			return v4
+		}
+	}
+	return nil
 }
 
 // buildServerTLSConfig assembles EH-F-01/EH-F-02/EH-F-03's public TLS
@@ -462,16 +501,14 @@ func buildServerTLSConfig() (*tls.Config, error) {
 //
 // This is Entry-Hub's one and only mTLS identity (see this file's package
 // doc comment: Entry-Hub has no inbound mTLS listener to reuse an
-// identity from), so it bootstraps it directly via pki.NewClientWithDialer
-// rather than deriving it from a pki.NewServer call the way Database-
-// Vault's buildStorageServiceClient does. dial is set to meshNode.Dial by
-// run() (nil in tests exercising only PKI-F-02's organization enforcement,
-// e.g. main_integration_test.go, which behaves identically to a direct
-// pki.NewClient call - see NewClientWithDialer's own doc comment) so every
-// call this client makes, including its own background certificate
-// renewal, is routed through the mesh (see this file's package doc
-// comment, "Mesh membership").
-func buildSecuritySwitchClient(ctx context.Context, dial mesh.DialFunc) (client *http.Client, baseURL string, mqttTLSBase *tls.Config, err error) {
+// identity from), so it bootstraps it directly via pki.NewClient rather
+// than deriving it from a pki.NewServer call the way Database-Vault's
+// buildStorageServiceClient does. No dial injection is used (see this
+// file's package doc comment, "Mesh membership") - this container's own
+// real tailscale0 interface (entry-hub-mesh's sidecar) already routes
+// every call this client makes, including its own background certificate
+// renewal, through the mesh.
+func buildSecuritySwitchClient(ctx context.Context) (client *http.Client, baseURL string, mqttTLSBase *tls.Config, err error) {
 	baseURL, err = env.Require(envSecuritySwitchURL)
 	if err != nil {
 		return nil, "", nil, err
@@ -482,7 +519,7 @@ func buildSecuritySwitchClient(ctx context.Context, dial mesh.DialFunc) (client 
 		return nil, "", nil, fmt.Errorf("load ca bootstrap token: %w", err)
 	}
 
-	client, err = pki.NewClientWithDialer(ctx, token, dial)
+	client, err = pki.NewClient(ctx, token)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("bootstrap security-switch client identity from certificate-authority: %w", err)
 	}
@@ -516,13 +553,13 @@ func buildSecuritySwitchClient(ctx context.Context, dial mesh.DialFunc) (client 
 // that client's Transport was wrapped (see buildSecuritySwitchClient's own
 // doc comment for why one bootstrap token, reused, is correct here rather
 // than a second independent bootstrap exchange) - as the source of this
-// connection's client certificate. dial routes the connection itself
-// through the mesh (metrics.WithDial), same reasoning as
-// buildSecuritySwitchClient's own dial parameter. A nil, nil return (no
-// error) means metrics publishing is not configured (envMQTTBrokerURL
-// unset) - this process still relays registration/login traffic without
-// it.
-func buildMetricsClient(mqttTLSBase *tls.Config, dial mesh.DialFunc) (mqtt.Client, error) {
+// connection's client certificate. No dial injection is used (see this
+// file's package doc comment, "Mesh membership") - this container's own
+// real tailscale0 interface already routes this connection through the
+// mesh. A nil, nil return (no error) means metrics publishing is not
+// configured (envMQTTBrokerURL unset) - this process still relays
+// registration/login traffic without it.
+func buildMetricsClient(mqttTLSBase *tls.Config) (mqtt.Client, error) {
 	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
 	if !ok || brokerURL == "" {
 		slog.Warn("entry-hub: metrics publishing disabled, " + envMQTTBrokerURL + " is not set")
@@ -531,7 +568,7 @@ func buildMetricsClient(mqttTLSBase *tls.Config, dial mesh.DialFunc) (mqtt.Clien
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(mqttTLSBase, metrics.OrganizationMQTTBroker))
 
-	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, dial)
+	client, err := metrics.NewClient(brokerURL, tlsConfig, metricsClientID, connectTimeout, nil)
 	if err != nil {
 		return nil, err
 	}
