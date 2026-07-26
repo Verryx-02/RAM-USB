@@ -36,6 +36,37 @@
 # the live verification this needed (whether that API call alone is
 # sufficient to pick up the new cert files, vs. still requiring a
 # container restart).
+#
+# grafana-mesh (KI-25, `deployments/proxmox/grafana.md`'s own "Network
+# placement" section): Grafana is a third-party Go-adjacent binary (not
+# pkg/mesh-integrated), so on a real, separate Proxmox guest it has no way
+# to reach Metrics-Collector's own mesh-only TimescaleDB (RNF-ORG-04, one
+# guest per service) without a real Tailscale identity of its own - same
+# sidecar pattern as certificate-authority.yml's certificate-authority-mesh/
+# mqtt-broker.yml's mqtt-broker-mesh (network_mode: "service:grafana",
+# mutually exclusive with `networks:` on the same container - see those
+# files' own top comments for the exact mechanics), INCLUDING
+# TS_USERSPACE=false. grafana.md's own original reasoning ("Grafana only
+# originates traffic, never accepts it, so the real-kernel-tun requirement
+# doesn't apply") was WRONG and corrected live this session: userspace-
+# networking mode means tailscaled itself has no kernel-visible tailscale0
+# interface at all - only tailscaled's own process can reach the tailnet
+# (via its internal netstack), not a SEPARATE process sharing the same
+# network namespace. Grafana's own Postgres driver knows nothing about
+# that internal netstack, so it can never route to a 100.64.0.0/10 address
+# through a userspace-networking sidecar, confirmed live: a real `psql`/
+# `nc` from inside this shared namespace got "Connection refused"/timed
+# out against Metrics-Collector's real, reachable mesh IP until this was
+# set to "false". This applies to ANY sidecar a co-located process other
+# than tailscaled itself needs to route real TCP traffic through -
+# TS_USERSPACE=false is required whenever a shared-namespace peer process
+# (not tailscaled itself) originates OR accepts mesh traffic, not only for
+# the "accepts inbound" case certificate-authority-mesh/mqtt-broker-mesh's
+# own comments describe. This is purely ADDITIVE: grafana/grafana-cert-issuer/
+# grafana-cert-renewer above keep their existing `networks: ramusb-net`
+# dev-convenience wiring unchanged (KI-05) - this sidecar gives Grafana a
+# SECOND, real mesh-routed path to Metrics-Collector for production, where
+# no ramusb-net-equivalent shortcut exists at all.
 name: ramusb-grafana
 services:
   grafana:
@@ -142,12 +173,60 @@ services:
     networks:
       - ramusb-net
 
+  # See this file's own top comment ("grafana-mesh") for the full design.
+  # network_mode: "service:grafana" requires the grafana container to
+  # already exist (Compose creates the shared namespace from it), so this
+  # only needs the grafana container STARTED, not healthy - mirrors
+  # certificate-authority-mesh's own condition: service_healthy only
+  # because certificate-authority happens to define a healthcheck; grafana
+  # does not, so service_started is this container's own equivalent
+  # "namespace exists" gate.
+  grafana-mesh:
+    image: tailscale/tailscale:latest
+    container_name: grafana-mesh
+    depends_on:
+      grafana:
+        condition: service_started
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ramusb-grafana-mesh-state:/var/lib/tailscale
+      - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+    environment:
+      # tag:grafana (services/network-manager/internal/headscale/
+      # policy.go's TagGrafana) - grants reachability toward
+      # tag:metrics-collector (TimescaleDB) and, since this task's own
+      # policy.go fix (KI-25), toward tag:certificate-authority too, for a
+      # future production cert-issuer/renewer migration off ramusb-net.
+      TS_AUTHKEY: "${RAM_USB_GRAFANA_TAILSCALE_AUTHKEY:?mint with: docker exec headscale headscale users create grafana && docker exec headscale headscale users list --name grafana -o json && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:grafana}"
+      TS_EXTRA_ARGS: "--login-server=${RAM_USB_TAILSCALE_CONTROL_URL:?set to the Headscale coordination URL, e.g. https://headscale:8080} --hostname=grafana"
+      # Required even though Grafana only ORIGINATES traffic (never accepts
+      # inbound) - see this file's own top comment for the live-verified
+      # correction: userspace-networking mode has no kernel-visible
+      # tailscale0 interface at all, so Grafana's own Postgres driver
+      # (a separate process sharing this namespace, not tailscaled itself)
+      # has no route to the tailnet through it either.
+      TS_USERSPACE: "false"
+    entrypoint: ["/bin/sh", "-c", "update-ca-certificates && exec /usr/local/bin/containerboot"]
+    # Shares grafana's network namespace instead of joining ramusb-net
+    # itself - see this file's own top comment for why `network_mode` and
+    # `networks` never appear on the same container.
+    network_mode: "service:grafana"
+
 networks:
   ramusb-net:
     external: true
 
 volumes:
   ramusb-grafana-data:
+  # grafana-mesh's own persistent Tailscale identity/state - same "keep the
+  # same mesh node across container restarts" pattern as every other mesh
+  # sidecar's own named state volume (mqtt-broker-mesh-state,
+  # certificate-authority-mesh-state).
+  ramusb-grafana-mesh-state:
   # Written by grafana-cert-issuer, kept current by grafana-cert-renewer,
   # mounted read-only into grafana itself.
   ramusb-grafana-certs:

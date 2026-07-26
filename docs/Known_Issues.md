@@ -36,11 +36,10 @@ at-a-glance worklist; the full entries below are the detail/history.
 | KI-20 | NM-F-12..16 (Headscale coordination/DNS cluster) have zero test coverage | user decision |
 | KI-23 | Restarting a CA-F-04-bootstrapped service needs a manually-minted fresh token; only Certificate-Authority itself restarts with zero manual step | user decision |
 | KI-24 | `08-security-pki-hierarchy.puml` draws a `PrivateCA -> Metrics-Visualizer` signing edge that doesn't exist (Grafana has no mTLS identity) | diagram-agent re-assessment (KI-22 changed the premise) |
-| KI-25 | `tag:grafana` has no Certificate-Authority reachability in Network-Manager's ACL policy | Grafana's own production mesh sidecar not yet built |
 
 Everything else in this file (KI-01, KI-03–KI-05, KI-09–KI-11, KI-13,
-KI-16–KI-18, KI-21, KI-22) is `FIXED` — kept below for history/traceability, not
-part of the active worklist.
+KI-16–KI-18, KI-21, KI-22, KI-25) is `FIXED` — kept below for
+history/traceability, not part of the active worklist.
 
 ---
 
@@ -946,9 +945,27 @@ part of the active worklist.
   "context deadline exceeded" without this ACL rule, the exact same
   failure mode NM-F-04's own rule comment already documents for a missing
   Src entry.
-- **Status:** OPEN. Not added speculatively now (YAGNI - no Compose
-  service exists yet to need it); add `TagGrafana` to that rule's `Src`
-  list when Grafana's own production mesh sidecar is actually built.
+- **Status:** FIXED, 2026-07-26. Grafana's own production mesh sidecar
+  (`grafana-mesh`, `deployments/compose/grafana.yml`) is now a real
+  Compose service - the speculative-YAGNI reason for deferring this rule
+  no longer applies. `TagGrafana` is added to the NM-F-04 rule's `Src`
+  list (`services/network-manager/internal/headscale/policy.go`), covered
+  by `TestPolicyDocument_Content`'s existing table-driven case for that
+  rule, and confirmed live: `headscale policy get` on a real Headscale
+  container shows `"src":[...,"tag:grafana"]` on the
+  `"dst":["tag:certificate-authority:*"]` rule after a fresh Network-Manager
+  policy push. `grafana-cert-issuer`/`grafana-cert-renewer` themselves
+  still reach Certificate-Authority over `ramusb-net` in THIS dev Compose
+  stack (KI-05's own dev-convenience wiring, deliberately unchanged) - this
+  fix is what makes a future production migration of those two onto
+  `grafana-mesh` actually work once someone makes that migration, rather
+  than silently hanging on a missing ACL rule. Building `grafana-mesh`
+  itself also surfaced and fixed a related, more serious finding: its
+  `TS_USERSPACE` needed to be `"false"`, not containerboot's own default -
+  see `deployments/proxmox/grafana.md`'s "Network placement" section and
+  this session's live verification (a real mTLS `psql` query from
+  Grafana's own shared network namespace to Metrics-Collector's mesh IP,
+  `pg_stat_ssl.client_serial` matching Grafana's own certificate exactly).
 
 ---
 
