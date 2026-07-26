@@ -967,6 +967,181 @@ history/traceability, not part of the active worklist.
   Grafana's own shared network namespace to Metrics-Collector's mesh IP,
   `pg_stat_ssl.client_serial` matching Grafana's own certificate exactly).
 
+## KI-26 — `ramusb-net`'s remaining bootstrap-phase role in mesh-joined services, live-verified per service
+
+- **Found:** 2026-07-26, user question during this session ("are mesh
+  communications actually tested, or masked by `ramusb-net`?"); this
+  entry records the live verification that question triggered.
+- **Area:** `deployments/compose/{database-vault,security-switch,
+  entry-hub,network-manager,storage-service}.yml`.
+- **Method:** for each service, brought up the real dev stack (own
+  `deployments/scripts/*.sh`), then distinguished "mesh IP" vs "`ramusb-net`
+  IP" for the two outbound calls each service's bootstrap sequence makes
+  (Certificate-Authority CA-token exchange, MQTT-Broker connect) by reading
+  the source IP the *receiving* container logs (`certificate-authority`'s
+  own access log `remote-address` field, `mqtt-broker`'s own `New client
+  connected from <ip>` line) - a direct, unambiguous signal, since a
+  service's mesh IP (`100.64.0.x`) and its `ramusb-net` IP (`172.19.0.x`)
+  are never confusable. For the three real-`tailscaled` services that
+  needed it, also confirmed the mechanism with a temporary, live-reverted
+  `docker exec ... >> /etc/hosts` override, not a permanent compose change
+  (see "Testing obstacle" below for why).
+- **Testing obstacle found and worked around, not a KI-26 bug itself**: the
+  live Headscale had a stale, offline duplicate node registration under the
+  bare hostname `certificate-authority` (id 10, superseded by the live
+  node's own auto-suffixed `certificate-authority-1`, id 28) - MagicDNS
+  consistently resolved the short hostname to the OLD, offline node's IP
+  first, hanging every real service's first CA-bootstrap dial for a full
+  `i/o timeout`. This is `pkg/mesh`'s already-documented rule 6 (stale
+  duplicate node collision, see `.claude/agent-memory/code-agent/pkg-mesh.md`),
+  not new - the normal fix (`headscale nodes delete`) was blocked by this
+  session's own sandbox permission classifier as a destructive-looking
+  command, so verification instead used a temporary, container-local
+  `/etc/hosts` override pointing `certificate-authority`/
+  `certificate-authority.ramusb-mesh.internal` at the live node's real mesh
+  IP - proves the same thing (does the call succeed once addressed at the
+  correct mesh peer?) without touching shared Headscale state. An operator
+  should still run the real cleanup (`headscale nodes delete --identifier
+  10 --force`) since this stale-node problem will keep costing every future
+  live-verification session the same detour.
+- **Per-service verdict:**
+  - **Database-Vault: survives without `ramusb-net`** for the two calls
+    this entry's original comment flagged (CA-token bootstrap, MQTT
+    reachability) - confirmed live end-to-end: a full clean boot's
+    `certificate-authority` access log showed `remote-address` = the mesh
+    IP `100.64.0.3` for the bootstrap `/root`+`/sign` calls, and
+    `mqtt-broker`'s own log showed `New client connected from 100.64.0.2`
+    (Database-Vault's mesh IP, not its `172.19.0.10` `ramusb-net` IP).
+    Mechanism: `tailscale-up.sh` deliberately leaves `--accept-dns` at its
+    default (`true`, comment: "Database-Vault's node has no
+    circular-reference reason to refuse it") - once mesh-joined, real
+    `tailscaled` rewrites *this container's own* `/etc/resolv.conf` to
+    point solely at MagicDNS, so every later hostname resolution
+    (including these two calls, which happen only after the `tailscale-up`
+    s6-rc dependency completes) goes through the mesh, not Docker's
+    embedded DNS. The compose file's own comment ("still requires
+    `ramusb-net`... for the CA-token minting/MQTT reachability") is now
+    **stale** - written before this real-`tailscaled` conversion
+    completed. The one genuine remaining `ramusb-net` dependency is
+    reaching the co-located dev-only Headscale itself
+    (`RAM_USB_TAILSCALE_CONTROL_URL=https://headscale:8080`) to join the
+    mesh in the first place - already covered by KI-05's own resolution
+    (production's Headscale runs on its own public VPS, no
+    `ramusb-net`-equivalent needed there at all), not a new finding.
+  - **Security-Switch: survives without `ramusb-net`**, same mechanism and
+    same live confirmation (`mqtt-broker` log: `New client connected from
+    100.64.0.10`, Security-Switch's mesh IP; CA-token bootstrap succeeded
+    via the mesh IP after the same stale-node workaround). Its own
+    `tailscale-up.sh` also leaves `--accept-dns` at its default.
+  - **Storage-Service: survives without `ramusb-net`**, same mechanism,
+    same live confirmation (`mqtt-broker` log: `New client connected from
+    100.64.0.4`, Storage-Service's mesh IP).
+  - **Network-Manager: does NOT survive without `ramusb-net`** - a real,
+    live-confirmed gap, distinct from Database-Vault/Security-Switch/
+    Storage-Service. `network-manager`'s own `tailscale-up.sh` sets
+    `--accept-dns=false` (NM-F-16, required as literally worded in the SRS
+    to avoid Headscale-pushed-DNS circularity, even though the specific
+    scenario that originally motivated it no longer applies now that
+    Headscale is deployed separately). Consequence: this container's
+    `/etc/resolv.conf` stays on Docker's embedded resolver, so its own
+    outbound CA-token bootstrap and MQTT-publish calls resolve
+    `certificate-authority`/`mqtt-broker` via `ramusb-net`, not MagicDNS -
+    confirmed live: `certificate-authority`'s access log shows
+    `remote-address: 172.19.0.8` (Network-Manager's own `ramusb-net` IP,
+    confirmed via `docker inspect`) for its real `/root`+`/sign` bootstrap
+    calls, and `mqtt-broker`'s log shows `New client connected from
+    172.19.0.8`. **Not small/fixable within this task** - NM-F-16 fixes
+    `--accept-dns=false` as a requirement, so simply flipping it would
+    violate that requirement; a real fix needs a design decision (e.g. a
+    scoped resolver/hosts mechanism that answers only the specific
+    mesh-peer hostnames Network-Manager itself needs - Certificate-
+    Authority, MQTT-Broker - while still refusing Headscale's own pushed
+    DNS wholesale). This also means Network-Manager, alone among the four
+    real-`tailscaled` services, has **no working production path** to
+    Certificate-Authority/MQTT-Broker as currently built, since production
+    has no `ramusb-net`-equivalent at all and Certificate-Authority is
+    mesh-only reachable there (KI-05) - this is a genuine production-
+    readiness gap, not just a dev-convenience question.
+  - **Entry-Hub: does NOT survive without `ramusb-net`**, confirmed live -
+    with `networks: ramusb-net` temporarily removed from a worktree-local
+    copy of `entry-hub.yml` (reverted before this session ended, see below)
+    and a fresh CA token/mesh pre-auth key minted, the container's `pkg/mesh`
+    in-process `tsnet` never even reached the "AuthLoop" step it reaches
+    within ~2s normally - it hung silently past its whole startup window
+    with no further log line, because `RAM_USB_TAILSCALE_CONTROL_URL=
+    https://headscale:8080` is a `ramusb-net`-only hostname and pkg/mesh
+    has no OS-level route to fall back on. Already expected/documented
+    (KI-05's own dev-topology limitation - production's Headscale runs on
+    its own public VPS, reachable over ordinary internet routing, so this
+    specific dependency does not exist there) - not a new finding by
+    itself. What IS new: this live test surfaced a second, more serious,
+    previously-undocumented gap, split out as **KI-27** below since it is
+    a real production-readiness question, not a dev/`ramusb-net`
+    convenience one.
+- **Compose-file testing edits, confirmed reverted**: `entry-hub.yml`'s
+  `networks: ramusb-net` line was temporarily removed for the live test
+  above and restored immediately after (`git status`/`git diff` in this
+  worktree show no uncommitted changes to any compose file at the end of
+  this session). `database-vault.yml`/`security-switch.yml`/
+  `network-manager.yml`/`storage-service.yml` needed no compose-file
+  edits at all for their own verification (the `/etc/hosts` workaround was
+  applied live inside the running container, never to the compose file).
+- **Status:** OPEN - 3 of 5 services (Database-Vault, Security-Switch,
+  Storage-Service) confirmed to survive without `ramusb-net` for their
+  bootstrap-phase CA-token/MQTT calls (their own compose-file comments
+  claiming otherwise are stale and should be corrected next time either
+  file is touched). Network-Manager and Entry-Hub do **not** survive
+  without `ramusb-net` today, for two structurally different reasons (see
+  verdicts above) - real, `ramusb-net`-permanent-removal-blocking gaps,
+  left open pending a design decision rather than a speculative fix.
+  `ramusb-net` itself stays attached to every service's compose file
+  regardless (KI-05's resolution, unchanged).
+
+## KI-27 — Entry-Hub's CA-bootstrap-token exchange has no viable path to a mesh-only Certificate-Authority in production
+
+- **Found:** 2026-07-26, live KI-26 verification (see that entry) - a
+  side effect of testing whether Entry-Hub survives without `ramusb-net`.
+- **Area:** `services/entry-hub/cmd/entry-hub/main.go` (`pkg/pki`'s
+  CA-bootstrap call), `deployments/vps/entry-hub.md`.
+- **Description:** Entry-Hub is the one mesh-joined service that stays on
+  `pkg/mesh`'s in-process `tsnet` rather than a real OS-level `tailscaled`
+  (see `.claude/agent-memory/code-agent/pkg-mesh.md`), specifically because
+  its CA-bootstrap-token exchange has "no interceptable dial path" (`pkg/pki/
+  dialer.go`'s own doc comment, `deployments/vps/entry-hub.md`'s own
+  "Network placement" section) and so always goes out over the container's
+  *ordinary default route*, never through `meshNode.Dial`. In the dev
+  Compose stack that ordinary default route is `ramusb-net`, where
+  Certificate-Authority is deliberately dual-reachable (KI-05) - so the
+  call succeeds today, silently relying on that dev-only convenience. In
+  production, per `deployments/vps/entry-hub.md`, Entry-Hub's "ordinary
+  default route" is the public internet (it runs on its own public VPS) -
+  but per KI-05's own production resolution, Certificate-Authority is
+  reachable **only** via the Tailscale mesh in production (no published
+  port, no shared network) - and Entry-Hub has no real `tailscaled`
+  interface to transparently route that one un-interceptable call through
+  the mesh the way Database-Vault/Security-Switch/Storage-Service/
+  Network-Manager's own CA-bootstrap calls already do (see
+  `.claude/agent-memory/code-agent/pkg-pki-dialer-routing.md`'s "why every
+  server-role service runs a real tailscaled" reasoning - that reasoning
+  does not extend to Entry-Hub, which is client-role but still has this
+  one non-`meshNode.Dial`-routable call). **In production as currently
+  designed, Entry-Hub's own CA-bootstrap-token exchange has no address to
+  dial at all.** `deployments/vps/entry-hub.md`'s own "What a real
+  (non-dev) deployment still needs, not yet decided here" section does not
+  mention this gap.
+- **Status:** OPEN - needs a design decision, not a speculative fix. Real
+  options include: (a) give Certificate-Authority a narrow, mTLS-protected
+  public listener specifically for bootstrap-token exchange (reopens the
+  "not mesh-only" question KI-05 deliberately closed for production,
+  needs its own security review), (b) give Entry-Hub's VPS guest a real
+  `tailscaled` sidecar/interface just for this one call (same pattern
+  already used for step-ca/Mosquitto's own sidecars, see
+  `.claude/agent-memory/code-agent/sidecar-mesh-pattern.md`), or (c) a
+  different bootstrap-token distribution mechanism for Entry-Hub
+  specifically that does not require dialing Certificate-Authority
+  directly. Left to the user/orchestrator to pick a direction - out of
+  scope for this diagnostic pass to decide unilaterally.
+
 ---
 
 **Not logged, considered and rejected**: `01-architecture-container.puml`
