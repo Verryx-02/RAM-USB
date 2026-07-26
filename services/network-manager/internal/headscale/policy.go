@@ -236,9 +236,14 @@ func buildACLs() []policyACL {
 			// "context deadline exceeded" with no other error, the same
 			// silent-deny-at-the-receiving-node behavior this function's
 			// own NM-F-05 rule comment already documents for a missing
-			// rule.
+			// rule. TagGrafana is included for the exact same reason
+			// (KI-25, PKI-F-03): grafana-cert-issuer/grafana-cert-renewer
+			// now run as a real mesh sidecar (deployments/compose/
+			// grafana.yml's grafana-mesh) sharing Grafana's own mesh
+			// identity, and need this same mesh-routed reachability to
+			// mint/renew Grafana's TimescaleDB client certificate.
 			Action: "accept",
-			Src:    []string{TagEntryHub, TagSecuritySwitch, TagDatabaseVault, TagStorageService, TagNetworkManager, TagMQTTBroker},
+			Src:    []string{TagEntryHub, TagSecuritySwitch, TagDatabaseVault, TagStorageService, TagNetworkManager, TagMQTTBroker, TagGrafana},
 			Dst:    []string{dstAny(TagCertificateAuthority)},
 		},
 		{ // NM-F-04, direction two: Certificate-Authority can contact

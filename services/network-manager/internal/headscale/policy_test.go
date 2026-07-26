@@ -118,9 +118,9 @@ func TestPolicyDocument_Content(t *testing.T) {
 			wantSrc: []string{hs.TagSecuritySwitch, hs.TagCertificateAuthority},
 		},
 		{
-			name:    "NM-F-04 direction one: every internal component (plus the MQTT broker's own cert-renewal sidecar, KI-16) can contact Certificate-Authority",
+			name:    "NM-F-04 direction one: every internal component (plus the MQTT broker's and Grafana's own cert-renewal sidecars, KI-16/KI-25) can contact Certificate-Authority",
 			dst:     []string{hs.TagCertificateAuthority + ":*"},
-			wantSrc: []string{hs.TagEntryHub, hs.TagSecuritySwitch, hs.TagDatabaseVault, hs.TagStorageService, hs.TagNetworkManager, hs.TagMQTTBroker},
+			wantSrc: []string{hs.TagEntryHub, hs.TagSecuritySwitch, hs.TagDatabaseVault, hs.TagStorageService, hs.TagNetworkManager, hs.TagMQTTBroker, hs.TagGrafana},
 		},
 		{
 			name: "NM-F-04 direction two: Certificate-Authority can contact every internal component",
