@@ -65,6 +65,36 @@ production figure)
 No host-published TimescaleDB port either way (`ports:` is absent from
 `deployments/compose/metrics-collector.yml`).
 
+## TimescaleDB's own mTLS server identity (KI-22, RNF-SEC-04, PKI-F-03)
+
+TimescaleDB's own `pg_hba.conf` (`third-party/timescaledb/pg_hba-mtls.sh`,
+applied via the upstream image's `docker-entrypoint-initdb.d` convention)
+requires `hostssl ... clientcert=verify-full` for every REMOTE
+(non-loopback) connection - Grafana's own (`deployments/proxmox/
+grafana.md`'s "mTLS to TimescaleDB"), the only one that exists today.
+Metrics-Collector's OWN Go binary, connecting over TCP to
+`localhost:5432` (MT-F-03), is exempted from the client-certificate
+requirement via a loopback-scoped rule (still requiring the real
+`POSTGRES_PASSWORD`) - a principled distinction, not a gap: that
+connection never leaves this guest, the same reasoning that already
+leaves Database-Vault's own loopback-only Postgres with no mTLS
+requirement at all.
+
+TimescaleDB's own server certificate (CommonName
+`MetricsCollectorTimescaleDB`) is minted and kept renewed by
+`metrics-collector-timescaledb-cert-issuer`/
+`metrics-collector-timescaledb-cert-renewer`
+(`deployments/compose/metrics-collector.yml`) - the same CA-F-04
+bootstrap-token-then-mTLS-renewal lifecycle every pkg/pki-integrated Go
+service gets, adapted for a co-located third-party process that cannot
+call pkg/pki itself (same shape as Mosquitto's own KI-16 sidecars). The
+renewer reloads the new certificate by signaling the real `postgres`
+process directly (its PID read from the co-located data volume's own
+`postmaster.pid`), sharing this container's PID namespace to make that
+signal land on the real process rather than mqtt-broker-cert-renewer's
+simpler `kill -HUP 1` (postgres is not this container's own PID 1;
+s6-overlay's supervisor is).
+
 ## Dependencies that must exist first
 
 - The MQTT broker (Mosquitto), reachable at the address

@@ -30,12 +30,41 @@
 # is also reachable from any other ramusb-net container in dev, the same
 # deferred, dev-only, cosmetic dual-reachability limitation already
 # accepted for Certificate-Authority/MQTT-broker (docs/Known_Issues.md's
-# KI-05) - authentication still requires the real POSTGRES_PASSWORD either
-# way (the upstream image's own docker-entrypoint.sh generates a
-# password-required pg_hba.conf host rule regardless of listen_addresses).
+# KI-05) - authentication still requires BOTH the real POSTGRES_PASSWORD
+# AND a valid mTLS client certificate for the connecting role either way
+# (KI-22, RNF-SEC-04): third-party/timescaledb/pg_hba-mtls.sh REPLACES the
+# upstream image's own default, plaintext-permissive pg_hba.conf rule with
+# a `hostssl ... clientcert=verify-full` one before TimescaleDB ever
+# accepts its first network connection.
+#
+# ssl_cert_file/ssl_key_file/ssl_ca_file (KI-22, RNF-SEC-04): TimescaleDB's
+# own server identity, minted/kept renewed by
+# metrics-collector-timescaledb-cert-issuer/-renewer
+# (deployments/compose/metrics-collector.yml) onto the
+# ramusb-metrics-collector-timescaledb-certs named volume, mounted
+# read-only here at /run/timescaledb-certs - same "sidecar mints onto a
+# shared volume, this longrun only ever reads from it" shape as
+# Mosquitto's own KI-16 design, adapted for a co-located rather than
+# standalone third-party process. The renewer
+# (metrics-collector-timescaledb-cert-renewer,
+# deployments/compose/metrics-collector.yml) shares this container's PID
+# namespace (`pid: "service:metrics-collector"`) and sends a direct
+# SIGHUP to the real postmaster PID once new certs land on the shared
+# volume - the same reload mechanism `pg_ctl reload`/`SELECT
+# pg_reload_conf()` trigger internally, just invoked directly since the
+# renewer is an external sidecar, not a same-process SQL client.
+# ssl_ca_file is REQUIRED for
+# clientcert=verify-full (pg_hba-mtls.conf, see
+# third-party/timescaledb/pg_hba-mtls.sh) to have a root to verify
+# Grafana's own client certificate against - without it Postgres refuses
+# to start with SSL client-cert verification requested at all.
 #
 # exec replaces this shell so docker-entrypoint.sh's own re-exec chain
 # (gosu to the "postgres" system user, then finally the real postgres
 # binary) becomes the directly supervised process tree and receives s6's
 # signals itself.
-exec /usr/local/bin/docker-entrypoint.sh postgres -c listen_addresses=*
+exec /usr/local/bin/docker-entrypoint.sh postgres -c listen_addresses=* \
+	-c ssl=on \
+	-c ssl_cert_file=/run/timescaledb-certs/timescaledb.dev-only.crt \
+	-c ssl_key_file=/run/timescaledb-certs/timescaledb.dev-only.key \
+	-c ssl_ca_file=/run/timescaledb-certs/timescaledb-dev-ca.dev-only.crt
