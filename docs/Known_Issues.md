@@ -32,15 +32,15 @@ at-a-glance worklist; the full entries below are the detail/history.
 | KI-12 | MT-F-02/CA-F-03/ST-F-12/13 broken or missing `[Code]` links | — |
 | KI-14 | Headscale missing from 2 security diagrams; certificate-authority-metrics missing from the deployment diagram | — |
 | KI-15 | §5.1 non-functional requirements have no `[Code]`/test link at all | user decision |
-| KI-19 | Entry-Hub/certificate-authority-metrics have no restart policy | user decision |
+| KI-19 | Entry-Hub has no restart policy (certificate-authority-metrics' own half fixed by KI-28's consolidation) | user decision |
 | KI-20 | NM-F-12..16 (Headscale coordination/DNS cluster) have zero test coverage | user decision |
 | KI-23 | Restarting a CA-F-04-bootstrapped service needs a manually-minted fresh token; only Certificate-Authority itself restarts with zero manual step | user decision |
 | KI-24 | `08-security-pki-hierarchy.puml` draws a `PrivateCA -> Metrics-Visualizer` signing edge that doesn't exist (Grafana has no mTLS identity) | diagram-agent re-assessment (KI-22 changed the premise) |
 | KI-26 | `ramusb-net`'s bootstrap-phase role, live-verified per service: Database-Vault/Security-Switch/Storage-Service survive without it, Network-Manager and Entry-Hub do not | user decision (Network-Manager needs a scoped DNS mechanism; Entry-Hub's own gap is tracked separately as KI-27) |
-| KI-27 | Entry-Hub's CA-bootstrap-token exchange has no viable path to a mesh-only Certificate-Authority in production | user decision (3 design options recorded) |
+| KI-27 | Entry-Hub's CA-bootstrap-token exchange has no viable path to a mesh-only Certificate-Authority in production | fix in progress (option b chosen) |
 
 Everything else in this file (KI-01, KI-03–KI-05, KI-09–KI-11, KI-13,
-KI-16–KI-18, KI-21, KI-22, KI-25) is `FIXED` — kept below for
+KI-16–KI-18, KI-21, KI-22, KI-25, KI-28) is `FIXED` — kept below for
 history/traceability, not part of the active worklist.
 
 ---
@@ -604,29 +604,35 @@ history/traceability, not part of the active worklist.
   table/mesh-membership paragraph are updated (shells 6 and 11 collapse
   into one shell 6, shells 12-14 renumber to 11-13).
 
-## KI-19 — Entry-Hub and certificate-authority-metrics have no restart policy, so a fatal startup error stops them silently instead of retrying
+## KI-19 — Entry-Hub has no restart policy, so a fatal startup error stops it silently instead of retrying
 
 - **Found:** 2026-07-25, while explaining why KI-10's `finish`-script fix
   didn't extend to every service that consumes a CA-F-04 bootstrap token.
-- **Area:** `deployments/compose/entry-hub.yml`,
-  `deployments/compose/certificate-authority-metrics.yml`.
-- **Description:** Both `main.go`s call `os.Exit(1)` after a fatal startup
+  **Narrowed 2026-07-26**: originally covered `certificate-authority-metrics`
+  too, but KI-28's consolidation folded that process into the
+  `certificate-authority` container as a second `s6`-supervised longrun,
+  which gets the exact same `finish`-script crash-loop-backoff KI-10
+  already established for every other s6-supervised service — that half
+  of this finding is resolved. Entry-Hub itself is unaffected by KI-28 and
+  remains as described below.
+- **Area:** `deployments/compose/entry-hub.yml`.
+- **Description:** `main.go` calls `os.Exit(1)` after a fatal startup
   error (e.g. an already-consumed bootstrap token), same as every other
-  service — but neither container runs under s6-overlay (Entry-Hub uses
-  `pkg/mesh` in-process, needing only one process; `certificate-authority-metrics`
-  execs its binary directly as PID 1), so KI-10's `finish`-script fix
-  doesn't apply — that mechanism only exists within s6-rc's supervision
-  model. Neither compose file sets a `restart:` policy, so Docker uses its
-  own default, `restart: "no"`. Net effect: a fatal startup error doesn't
-  crash-loop (no equivalent of KI-10), but it also doesn't recover on its
-  own — the container exits and stays stopped until an operator notices
-  and manually restarts it, even for an otherwise-transient failure that
-  would have succeeded on retry.
+  service — but the container doesn't run under s6-overlay (Entry-Hub uses
+  `pkg/mesh` in-process — now a real `tailscaled` sidecar per KI-27, but
+  still a single process in its own distroless image), so KI-10's
+  `finish`-script fix doesn't apply — that mechanism only exists within
+  s6-rc's supervision model. The compose file sets no `restart:` policy,
+  so Docker uses its own default, `restart: "no"`. Net effect: a fatal
+  startup error doesn't crash-loop (no equivalent of KI-10), but it also
+  doesn't recover on its own — the container exits and stays stopped
+  until an operator notices and manually restarts it, even for an
+  otherwise-transient failure that would have succeeded on retry.
 - **Status:** OPEN. Needs a decision, not obviously "correct as-is": a
   Docker-level `restart: on-failure` (with Docker's own built-in backoff,
   not a bespoke s6 `finish` script — there's no s6 here to hook) would
-  give these two the same "recover automatically from a transient error,
-  don't silently stay dead" property every s6-supervised service now has,
+  give it the same "recover automatically from a transient error, don't
+  silently stay dead" property every s6-supervised service now has,
   without needing to introduce s6-overlay just for a single process.
 
 ## KI-20 — NM-F-12 through NM-F-16 (Headscale coordination/DNS cluster) have zero test coverage
@@ -1142,7 +1148,119 @@ history/traceability, not part of the active worklist.
   different bootstrap-token distribution mechanism for Entry-Hub
   specifically that does not require dialing Certificate-Authority
   directly. Left to the user/orchestrator to pick a direction - out of
-  scope for this diagnostic pass to decide unilaterally.
+  scope for this diagnostic pass to decide unilaterally. **Chosen
+  direction (2026-07-26): option (b)**, a real `tailscaled` sidecar for
+  Entry-Hub - see the in-progress fix for this entry.
+
+## KI-28 — Certificate-Authority's own metrics-sidecar may have the identical KI-27 gap, not yet checked
+
+- **Found:** 2026-07-26, while correcting a stale claim in
+  `.claude/agent-memory/code-agent/pkg-mesh.md` (it said Entry-Hub was
+  "the only" backend `pkg/mesh` consumer - false, confirmed live via
+  `grep -rl "RAM-USB/pkg/mesh" services/`).
+- **Area:** `services/certificate-authority/cmd/metrics-sidecar/main.go`
+  (CA-F-03) - a separate client-role-only process from the main
+  `certificate-authority` container (which already has its own real
+  `tailscaled` sidecar, `certificate-authority-mesh` - do not confuse the
+  two).
+- **Description:** This binary also uses `pkg/mesh` rather than a real
+  `tailscaled`, per its own compose comment
+  (`deployments/compose/certificate-authority-metrics.yml:21`). It also
+  calls `pkg/pki`'s CA-bootstrap-token flow, which has the identical
+  non-interceptable `stepca.BootstrapClient` internal call KI-27 found for
+  Entry-Hub. Whether this is actually a live production gap the same way
+  KI-27 is - or whether something about running alongside
+  `certificate-authority` itself (same host? same guest? read-access to
+  its access log via a shared volume, per KI-3's own resolution) sidesteps
+  the network-reachability problem entirely - has not been checked.
+- **Fix chosen and implemented (2026-07-26), live verification pending**:
+  rather than giving this process its own `tailscaled` route (KI-27's
+  option (b) for Entry-Hub), it is consolidated INTO
+  Certificate-Authority's own container as a second s6-supervised
+  process, alongside step-ca itself - the same "absorb a third-party
+  daemon into the Go service's own container" pattern already used for
+  Database-Vault+Postgres/Metrics-Collector+TimescaleDB (`.claude/agent-
+  memory/code-agent/compose-convention.md`). This removes the gap at its
+  root: the CA-bootstrap-token exchange becomes a purely local call
+  (`https://localhost:9000`, no network hop), and the only remaining
+  outbound call (MQTT publish) rides the SAME real `tailscaled` sidecar
+  (`certificate-authority-mesh`) step-ca's own inbound mesh reachability
+  already depends on - no separate `pkg/mesh` identity, no separate
+  Tailscale pre-auth key, for this process anymore.
+  `services/certificate-authority/cmd/metrics-sidecar/main.go` no longer
+  imports `pkg/mesh` (calls `pki.NewClient`/`metrics.NewClient(..., nil)`
+  directly, mirroring Metrics-Collector's own client-role-only shape).
+  `deployments/compose/certificate-authority-metrics.yml` and
+  `deployments/docker/certificate-authority-metrics/` are removed;
+  `deployments/docker/certificate-authority/` (new) builds FROM
+  `smallstep/step-ca:latest` with s6-overlay, a `mint-metrics-token`
+  oneshot (mints this process's own CA-F-04 bootstrap token locally, once
+  step-ca reports healthy - no more `docker exec`/operator-minted token
+  for this process) and an `mqtt-broker-ready` oneshot (gates the metrics
+  longrun's own start on the broker being reachable, since a crash after a
+  successful - and therefore consumed - bootstrap can never retry that
+  exchange). `deployments/proxmox/certificate-authority.md` and
+  `MANUAL-DISTRIBUTED-RUN.md` updated to match.
+- **Live verification (2026-07-26, real stack, after KI-27's own
+  concurrent verification cleared)**:
+  - `docker compose -f deployments/compose/certificate-authority.yml up
+    --build` rebuilt and recreated `certificate-authority` cleanly;
+    `certificate-authority-mesh` rejoined the mesh against it
+    (`depends_on: condition: service_healthy`).
+  - **CA-bootstrap-token exchange confirmed purely local**: step-ca's own
+    access log shows the metrics sidecar's `/sign` call with
+    `"remote-address":"::1"` (loopback, zero network hop) and
+    `"subject":"CertificateAuthority"`/`"sans":{"dns":["CertificateAuthority"]}`
+    - exactly the identity `third-party/mosquitto/acl.conf`'s ACL grant
+    authorizes.
+  - **A second, genuine gap found and fixed live, beyond the original
+    design**: the metrics sidecar's own MQTT publish, dialed at
+    `mqtt-broker`'s Docker-DNS short name, was still connecting via
+    `ramusb-net` (confirmed: `mqtt-broker`'s own connection log showed the
+    source as `certificate-authority`'s `ramusb-net` IP, not a mesh IP) -
+    because the mesh sidecar is a SEPARATE container from
+    `certificate-authority` (network namespace shared, filesystem/mount
+    namespace not), it cannot rewrite `certificate-authority`'s own
+    `/etc/resolv.conf` the way a real `tailscaled` running IN the same
+    container does for every other real-`tailscaled` service in this
+    project. Fixed by adding `dns: [100.100.100.100]` (the mesh's
+    MagicDNS stub, reachable because it's bound in the SAME shared
+    network namespace, confirmed live: `nc -z 100.100.100.100 53`
+    succeeds from `certificate-authority` itself) to the
+    `certificate-authority` Compose service, and changing
+    `RAM_USB_MQTT_BROKER_URL` to the FQDN form
+    (`tls://mqtt-broker.ramusb-mesh.internal:8883` - confirmed live that
+    the plain short name SERVFAILs against the MagicDNS stub directly,
+    while the FQDN under Headscale's own `base_domain` resolves
+    correctly). After this fix, `mqtt-broker`'s own connection log shows
+    the metrics sidecar arriving from `certificate-authority-mesh`'s own
+    mesh IP (`100.64.0.18` at verification time), not `ramusb-net`.
+  - **Real MQTT publish confirmed** with the correct ACL identity: a
+    throwaway `MetricsCollector`-subject client (minted the same way any
+    dev-only diagnostic client is, per this file's own established
+    method) subscribed to `metrics/#` and received
+    `metrics/Certificate-Authority {"service":"Certificate-Authority",...}`
+    with incrementing `request_count`, both before and after the DNS fix.
+  - **`ramusb-net`-removed diagnostic (KI-26/27's own method) - partially
+    applicable, not run to full removal**: removing `networks:
+    ramusb-net` from `certificate-authority` forces `certificate-
+    authority-mesh` to rejoin fresh, which immediately hits the ALREADY-
+    DOCUMENTED KI-05 dev-topology limitation (the dev-only Headscale
+    control-plane is itself only reachable via `ramusb-net` in this
+    stack) - a different, out-of-scope problem, not a KI-28 regression.
+    The connection-log evidence above (source IP is the mesh IP, not
+    `ramusb-net`, once mesh-joined) is the same class of proof KI-26 used
+    to confirm Database-Vault/Security-Switch/Storage-Service's own calls
+    already prefer the mesh without needing an actual `ramusb-net`
+    removal for those three - applied here identically.
+  - Compose-file diagnostic edit was reverted (`networks: ramusb-net`
+    restored) before this session ended; `git diff`/`git status` on
+    `deployments/compose/certificate-authority.yml` show only the
+    intentional KI-28 changes (the merge itself, plus the new `dns:`/FQDN
+    fix), no leftover diagnostic edits.
+- **Status:** FIXED - live-verified end to end, including a real gap
+  (mesh DNS resolution for a sidecar-pattern container) found and fixed
+  during verification, not just the originally-designed consolidation.
 
 ---
 

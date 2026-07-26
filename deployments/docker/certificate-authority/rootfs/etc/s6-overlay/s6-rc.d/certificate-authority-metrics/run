@@ -1,0 +1,20 @@
+#!/command/with-contenv sh
+# with-contenv: this longrun needs RAM_USB_CERTIFICATE_AUTHORITY_ACCESS_LOG_PATH
+# and RAM_USB_MQTT_BROKER_URL (set in deployments/compose/
+# certificate-authority.yml) PLUS RAM_USB_CA_BOOTSTRAP_TOKEN, written into
+# s6-overlay's own container-environment directory by
+# ../mint-metrics-token/mint-metrics-token.sh (a Compose-level env var
+# would deadlock env-var interpolation, see that script's own doc comment)
+# - S6_KEEP_ENV stays at its default (0), so a plain #!/bin/sh shebang here
+# would start this binary with none of them set.
+#
+# Runs as the same unprivileged "step" user step-ca itself runs as (see
+# ../step-ca/run's own comment) - this process only needs read access to
+# the access-log file step-ca's own tee writes (owned 1000:1000, see the
+# Dockerfile's own RUN chown) and outbound network access, neither of
+# which needs root.
+#
+# No cross-container shared volume anymore (KI-28): the access log this
+# process tails is a plain local path in this same container/filesystem,
+# written by ../step-ca/run's own tee'd command.
+exec s6-setuidgid step /usr/local/bin/certificate-authority-metrics

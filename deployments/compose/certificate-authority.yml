@@ -1,8 +1,17 @@
 # Certificate-Authority + automatic application of the organization
 # template (PKI-F-02) + CA-F-03's metrics sidecar. Requires
 # RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY (certificate-authority-mesh's
-# sidecar), RAM_USB_CERTIFICATE_AUTHORITY_METRICS_TAILSCALE_AUTHKEY, and
-# RAM_USB_CA_BOOTSTRAP_TOKEN (certificate-authority-metrics itself).
+# sidecar) only - CA-F-03's metrics sidecar no longer needs its own
+# Tailscale pre-auth key or CA-F-04 bootstrap-token env var: since
+# docs/Known_Issues.md's KI-28, it is s6-supervised INSIDE this same
+# "certificate-authority" container/image
+# (deployments/docker/certificate-authority/), not a separate Compose
+# project/container - its own bootstrap token is minted locally, once
+# step-ca itself is healthy, by that image's own mint-metrics-token
+# oneshot (see that Dockerfile/rootfs for the full mechanism), and its own
+# MQTT publish rides the same real tailscaled sidecar (certificate-
+# authority-mesh, below) step-ca's own inbound mesh reachability already
+# depends on.
 #
 # certificate-authority-init is included here (not a separate file/shell):
 # it waits for the CA to be healthy, applies organization.x509.tpl to the
@@ -10,18 +19,23 @@
 # covers both, unlike the earlier bash procedure which required a separate
 # `docker run --rm` command for the init step.
 #
-# certificate-authority-config-init/certificate-authority-logs-init (CA-F-03):
-# two one-shot steps that must complete BEFORE certificate-authority's own
-# first start, not after (unlike certificate-authority-init above) - see
-# third-party/certificate-authority/enable-json-logger.sh's own doc comment
-# for why step-ca's ca.json can only be patched before its first exec, and
+# certificate-authority-config-init (CA-F-03): a one-shot step that must
+# complete BEFORE certificate-authority's own first start, not after
+# (unlike certificate-authority-init above) - see third-party/
+# certificate-authority/enable-json-logger.sh's own doc comment for why
+# step-ca's ca.json can only be patched before its first exec, and
 # .claude/agent-memory/code-agent.md's "step-ca JSON access logging" entry
-# for the live verification behind both steps. certificate-authority's own
-# `command:` override (replacing its default CMD, not its ENTRYPOINT - see
-# that same memory entry) tees step-ca's stderr, where its own JSON access
-# log always writes, into a shared volume certificate-authority-metrics
-# reads from - CA-F-03's actual metrics source, since step-ca has no
-# native /metrics endpoint.
+# for the live verification behind it. certificate-authority's own image
+# (deployments/docker/certificate-authority/Dockerfile) tees step-ca's
+# stderr, where its own JSON access log always writes, into a plain local
+# path its own co-supervised metrics-sidecar process reads from directly -
+# CA-F-03's actual metrics source, since step-ca has no native /metrics
+# endpoint. Unlike before KI-28, this is no longer a cross-container
+# shared Docker volume: both the writer (step-ca) and the reader (the
+# metrics sidecar) are processes inside this ONE container now, so the
+# access-log directory is created and chowned once, at image-build time
+# (see that Dockerfile), with no separate certificate-authority-logs-init
+# compose step needed anymore.
 #
 # certificate-authority-mesh (NM-F-04, "all internal components... can
 # contact, and be contacted by, the Certificate-Authority over the mesh
@@ -42,15 +56,20 @@
 # session: the sidecar creates its own tailscale0 interface inside the
 # shared namespace it joins, independent of which container declared the
 # capabilities. certificate-authority itself is left completely
-# unmodified (still `networks: ramusb-net`, per this task's own
-# constraint) - it becomes reachable on the sidecar's tailscale IP/
-# MagicDNS hostname "certificate-authority" (TS_EXTRA_ARGS --hostname
-# below) for free, with zero code or image change, since both containers
-# share one network stack once the sidecar is up. Because that MagicDNS
-# short hostname is chosen to equal the existing Docker DNS name, every
+# unmodified in this respect (still `networks: ramusb-net`) - it becomes
+# reachable on the sidecar's tailscale IP/MagicDNS hostname
+# "certificate-authority" (TS_EXTRA_ARGS --hostname below) for free, with
+# zero code or image change, since both containers share one network
+# stack once the sidecar is up. Because that MagicDNS short hostname is
+# chosen to equal the existing Docker DNS name, every other service's own
 # RAM_USB_CA_BOOTSTRAP_TOKEN's `--ca-url https://certificate-authority:9000`
 # (see e.g. entry-hub.yml/security-switch.yml) keeps working unchanged for
 # every service, whether or not that service is itself a mesh member yet.
+# The metrics sidecar co-supervised inside THIS container also reaches
+# that same shared tailscale0 interface for its own outbound MQTT publish
+# once certificate-authority-mesh is up (KI-28) - see this container's own
+# mqtt-broker-ready oneshot for how its metrics longrun's own start is
+# gated on that (and the broker itself) being reachable.
 name: ramusb-certificate-authority
 services:
   # CA-F-03, phase 1: pre-seed ca.json with "logger": {"format": "json"}
@@ -60,6 +79,9 @@ services:
   # exactly as certificate-authority's own first start otherwise would;
   # `command` (not `entrypoint`) is overridden so entrypoint.sh's final
   # `exec "${@}"` runs enable-json-logger.sh instead of step-ca itself.
+  # Uses the plain upstream image, not the certificate-authority image
+  # below - this step never runs step-ca or the metrics sidecar, only
+  # patches ca.json.
   certificate-authority-config-init:
     image: smallstep/step-ca:latest
     command: ["/bin/sh", "/scripts/enable-json-logger.sh"]
@@ -76,48 +98,42 @@ services:
     networks:
       - ramusb-net
 
-  # CA-F-03, phase 2: the shared access-log volume mounts root-owned by
-  # default (a brand-new named volume, no prior image content at that
-  # path) - chown it to step-ca's own runtime uid/gid (1000:1000,
-  # confirmed live) before certificate-authority's own tee'd `command:`
-  # tries to write into it. Runs as root (the one deliberate exception -
-  # certificate-authority itself never does) purely to perform this one
-  # chown; it never runs step-ca itself.
-  certificate-authority-logs-init:
-    image: smallstep/step-ca:latest
-    user: root
-    entrypoint: ["/bin/sh", "-c", "chown 1000:1000 /var/log/certificate-authority && chmod 0755 /var/log/certificate-authority"]
-    volumes:
-      - ramusb-certificate-authority-logs:/var/log/certificate-authority
-    restart: "no"
-
   certificate-authority:
-    image: smallstep/step-ca:latest
+    build:
+      context: ../..
+      dockerfile: deployments/docker/certificate-authority/Dockerfile
     container_name: certificate-authority
     depends_on:
       certificate-authority-config-init:
         condition: service_completed_successfully
-      certificate-authority-logs-init:
-        condition: service_completed_successfully
-    # Overrides step-ca's own default CMD only - entrypoint.sh's own
-    # init logic still runs first via the image's unmodified ENTRYPOINT,
-    # but finds ca.json already present (certificate-authority-config-init
-    # above) and skips its own init_if_possible. `exec` replaces this
-    # bash instance with step-ca itself (confirmed live: `docker exec
-    # certificate-authority ps aux` shows step-ca as PID 1), so `docker
-    # stop` still delivers SIGTERM directly to it - the process
-    # substitution's `tee` is a separate, non-PID-1 child that exits on
-    # its own once step-ca closes its end of the pipe. See this file's
-    # own top comment for why `/bin/bash`, not the image's default
-    # `/bin/sh` (busybox ash, no process-substitution support).
-    command: >-
-      /bin/bash -c 'exec step-ca --password-file /home/step/secrets/password
-      /home/step/config/ca.json 2> >(tee -a /var/log/certificate-authority/access.log >&2)'
     environment:
       DOCKER_STEPCA_INIT_NAME: "RAM-USB Dev CA"
       DOCKER_STEPCA_INIT_DNS_NAMES: "localhost,certificate-authority"
       DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/ca-password.dev-only
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
+      # CA-F-03's metrics sidecar (co-supervised inside this same
+      # container, see this file's own top comment) - its own
+      # RAM_USB_CA_BOOTSTRAP_TOKEN is minted locally by the image's own
+      # mint-metrics-token oneshot, not set here (see that Dockerfile's
+      # rootfs for why a Compose-level `${VAR:?}` requirement would
+      # deadlock env-var interpolation for a token this container can only
+      # mint against itself, once already running).
+      RAM_USB_CERTIFICATE_AUTHORITY_ACCESS_LOG_PATH: "/var/log/certificate-authority/access.log"
+      # FQDN, not the short Docker-DNS name "mqtt-broker": this container's
+      # own resolver (dns: below) is the mesh's MagicDNS stub, which - like
+      # every real `tailscaled` client in this project - only answers
+      # short-name-like queries reliably as a fully-qualified name under
+      # Headscale's own base_domain (confirmed live this session: a plain
+      # "mqtt-broker" query against 100.100.100.100 SERVFAILs, the FQDN
+      # form resolves correctly to the mesh IP). See this file's own top
+      # comment and docs/Known_Issues.md's KI-28 for why this container
+      # needs its own resolver pointed at the mesh at all (unlike a
+      # service running a real `tailscaled` directly, which rewrites its
+      # OWN /etc/resolv.conf automatically - this container's mesh
+      # identity lives in a SEPARATE sidecar container, which cannot
+      # rewrite a file in a different container's filesystem even though
+      # both share one network namespace).
+      RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker.ramusb-mesh.internal:8883"
     ports:
       - "9000:9000"
     volumes:
@@ -132,6 +148,22 @@ services:
       retries: 10
     networks:
       - ramusb-net
+    # KI-28: this container's own outbound DNS resolver is the mesh's
+    # MagicDNS stub (100.100.100.100), reachable because it shares
+    # certificate-authority-mesh's network namespace (network_mode: below,
+    # on that sidecar) even though the two are separate containers with
+    # separate filesystems - the ONLY hostname this container's own
+    # processes ever need to resolve is the metrics sidecar's own MQTT
+    # broker address (step-ca itself makes no outbound DNS-dependent
+    # call, and the metrics sidecar's own CA-bootstrap is now a plain
+    # https://localhost:9000 call, no DNS needed there either). Without
+    # this, the metrics sidecar's own MQTT publish would default to
+    # Docker's embedded DNS/ramusb-net - which happens to still work in
+    # THIS dev stack (KI-05's dual-reachability) but would not exist at
+    # all in production, where mqtt-broker is mesh-only reachable -
+    # confirmed live this session (see docs/Known_Issues.md's KI-28).
+    dns:
+      - 100.100.100.100
 
   certificate-authority-init:
     image: smallstep/step-ca:latest
@@ -201,13 +233,10 @@ networks:
 volumes:
   ramusb-ca-data:
   ramusb-certificate-authority-mesh-state:
-  # Written by certificate-authority's own tee'd `command:` above, read by
-  # certificate-authority-metrics (CA-F-03, a SEPARATE compose project -
-  # see deployments/compose/certificate-authority-metrics.yml, which
-  # references this exact volume via `external: true`, following this
-  # project's one-compose-file-per-container convention rather than
-  # bundling a second mesh identity's own RAM_USB_CA_BOOTSTRAP_TOKEN
-  # requirement into this file - minting that token needs
-  # certificate-authority already running, which this file's own env
-  # interpolation would otherwise deadlock on before ever starting it).
+  # Written by step-ca's own tee'd command (deployments/docker/
+  # certificate-authority/rootfs's own step-ca longrun) and read by the
+  # metrics sidecar co-supervised in the SAME container (KI-28) - no
+  # longer shared across Compose projects/containers, just kept as a named
+  # volume (rather than an ephemeral in-image path) so the access log
+  # survives a container recreate, same as before.
   ramusb-certificate-authority-logs:

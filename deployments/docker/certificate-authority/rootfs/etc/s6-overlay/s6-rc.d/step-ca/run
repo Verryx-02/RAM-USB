@@ -1,0 +1,29 @@
+#!/command/with-contenv sh
+# with-contenv: DOCKER_STEPCA_INIT_* (set in deployments/compose/
+# certificate-authority.yml) must reach /entrypoint.sh's own environment -
+# S6_KEEP_ENV is left at its default (0), same convention as every other
+# s6-overlay longrun in this project.
+#
+# This container runs as root under s6-overlay (see the Dockerfile's own
+# `USER root` override), but step-ca itself must run as the "step" user
+# (uid 1000, matching /home/step's ownership) - s6-setuidgid drops
+# privilege explicitly here since step-ca's own /entrypoint.sh has no
+# built-in privilege-drop step (unlike Database-Vault's postgres:17 base,
+# whose docker-entrypoint.sh internally execs gosu itself).
+#
+# /entrypoint.sh is this image's own unmodified default ENTRYPOINT script
+# (confirmed live: /bin/bash /entrypoint.sh, running as user "step") - its
+# init_if_possible finds ca.json already present (written by the
+# certificate-authority-config-init Compose service, which still runs
+# BEFORE this container per deployments/compose/certificate-authority.yml)
+# and skips its own init, then `exec "$@"` runs the nested command below
+# exactly like this container's own previous `command:` override did
+# before this task's s6-overlay conversion - only the supervision
+# mechanism changed, not step-ca's own startup sequence.
+#
+# The tee below writes step-ca's own JSON access log (CA-F-03) to a plain
+# local path this same container's certificate-authority-metrics longrun
+# tails - no cross-container shared volume anymore (KI-28, see
+# ../certificate-authority-metrics/run's own comment).
+exec s6-setuidgid step /bin/bash /entrypoint.sh /bin/bash -c \
+  'exec step-ca --password-file /home/step/secrets/password /home/step/config/ca.json 2> >(tee -a /var/log/certificate-authority/access.log >&2)'
