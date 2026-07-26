@@ -23,12 +23,26 @@
 # "https://localhost:8080" login-server this script used is gone: there is
 # no longer a co-located Headscale to reach over loopback at all.
 #
-# --accept-dns=false (NM-F-16, kept as literally worded in the SRS even
-# though the specific circular-DNS-dependency scenario that originally
-# motivated it - Headscale's own MagicDNS nameserver answers being served
-# by this very container - no longer applies once Headscale runs on a
-# separate host/container): unlike Storage-Service's/Security-Switch's own
-# nodes, which accept Headscale-pushed DNS at its default.
+# --accept-dns=true (NM-F-16, changed 2026-07-26): the original
+# --accept-dns=false existed solely to avoid a circular DNS dependency from
+# Headscale's own MagicDNS nameserver answers being served by this very
+# container, back when Headscale was co-located inside it - that scenario no
+# longer exists now that Headscale is a separate, standalone service. Without
+# MagicDNS, this node could not resolve certificate-authority/mqtt-broker by
+# hostname at all in production (KI-26, docs/Known_Issues.md), falling back
+# to ramusb-net, a dev-only convenience with no production equivalent. Fix:
+# accept Headscale-pushed DNS like every other real-tailscaled service
+# (Storage-Service, Security-Switch, Database-Vault) already does at its
+# default.
+#
+# Residual risk, accepted explicitly by the user this session rather than
+# built around: this node also PUSHES the ACL policy to Headscale
+# (policy.go), so its own DNS resolution now depends on that same policy
+# having already been pushed correctly. A misconfigured policy could leave
+# this node unable to resolve mesh hostnames, including Headscale's own admin
+# endpoint, blocking self-recovery. No automated safety net is built for
+# this - see RISK-04 (SRS §8) - an operator resolves it manually (e.g. direct
+# Headscale access to fix the policy) if it ever occurs.
 #
 # with-contenv (see the up file, not this file's own shebang, which is
 # never invoked by the kernel): this is the one oneshot that needs
@@ -68,7 +82,7 @@ tailscale up \
 	--login-server="${RAM_USB_TAILSCALE_CONTROL_URL:?RAM_USB_TAILSCALE_CONTROL_URL is not set}" \
 	--authkey="${RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY:?RAM_USB_NETWORK_MANAGER_TAILSCALE_AUTHKEY is not set}" \
 	--hostname="${RAM_USB_NETWORK_MANAGER_MESH_HOSTNAME:-network-manager}" \
-	--accept-dns=false \
+	--accept-dns=true \
 	--reset
 
 TS_IP="$(tailscale ip -4)"
