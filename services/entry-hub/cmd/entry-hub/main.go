@@ -348,12 +348,16 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
+		// codeql[go/log-injection] logging.Sanitize maps every unicode.IsControl rune (including CR/LF/NUL/tab)
+		// to a space, so no forged newline can reach the log sink - a custom sanitizer CodeQL doesn't recognize.
 		slog.Info("entry-hub: listening", "addr", logging.Sanitize(listenAddr))
 		serveErr <- publicServer.Serve(tlsPublicListener)
 	}()
 
 	loginServeErr := make(chan error, 1)
 	go func() {
+		// codeql[go/log-injection] logging.Sanitize maps every unicode.IsControl rune (including CR/LF/NUL/tab)
+		// to a space, so no forged newline can reach the log sink - a custom sanitizer CodeQL doesn't recognize.
 		slog.Info("entry-hub: listening on the mesh for login", "addr", logging.Sanitize(loginListenAddr))
 		loginServeErr <- loginServer.Serve(tlsLoginListener)
 	}()

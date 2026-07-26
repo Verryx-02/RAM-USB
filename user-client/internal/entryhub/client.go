@@ -164,6 +164,9 @@ func (c *Client) post(ctx context.Context, path string, body any) ([]byte, int, 
 		return nil, 0, fmt.Errorf("entryhub: encode request: %w", err)
 	}
 
+	// codeql[go/request-forgery] path is always one of this package's own RegisterPath/LoginPath compile-time
+	// constants (every c.post call site is internal to this file); c.BaseURL is operator-supplied via
+	// user-client's own config (see cmd/user-client/main.go's envEntryHubURL), never attacker/network input.
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return nil, 0, fmt.Errorf("entryhub: build request: %w", err)

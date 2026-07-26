@@ -270,6 +270,8 @@ func Up(ctx context.Context, cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("mesh: AuthKey must not be empty")
 	}
 
+	// codeql[go/path-injection] cfg.Dir traces to every caller's own deployment env var (envMeshDir), never
+	// request/network input - confirmed for every mesh.Config constructor in the codebase.
 	if err := os.MkdirAll(cfg.Dir, 0o700); err != nil {
 		return nil, fmt.Errorf("mesh: create state directory %s: %w", cfg.Dir, err)
 	}
@@ -306,6 +308,8 @@ func Up(ctx context.Context, cfg Config) (*Server, error) {
 // container", for the full mechanism and why this process-wide env var
 // mutation is safe here specifically.
 func trustControlCA(path string) error {
+	// codeql[go/path-injection] path is Config.ControlCAFile, traced to every caller's own envMeshControlCAFile
+	// deployment env var, never attacker input - re-verified against every mesh.Config constructor.
 	pemBytes, err := os.ReadFile(path) //nolint:gosec // path is Config.ControlCAFile, an operator-supplied deployment setting, not attacker input
 	if err != nil {
 		return fmt.Errorf("mesh: read ControlCAFile %s: %w", path, err)
