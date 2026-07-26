@@ -145,48 +145,49 @@ func TestMosquitto_RealStack_RejectsNoClientCert(t *testing.T) {
 }
 
 // Requirement: RNF-SEC-04
+// Requirement: PKI-F-01
 //
-// This test documents a REAL, CONFIRMED violation of RNF-SEC-04 found
-// during this task, not a false positive to be papered over: Grafana's
-// connection to TimescaleDB (third-party/grafana/provisioning/
-// datasources - "sslmode: disable", a plaintext password in
-// secureJsonData) uses plain Postgres-wire-protocol password
-// authentication over the mesh, with NO mTLS and no CA-F-04 bootstrap
-// token at all. This is genuinely inter-service traffic (Grafana querying
-// Metrics-Collector's embedded TimescaleDB for MT-F-04's dashboards), so
-// RNF-SEC-04's "no exceptions" clause DOES apply here, unlike the CA's
-// bootstrap surface or Entry-Hub's user-facing login listener (see the
-// sibling tests in this file/package for those, both legitimate,
-// documented exceptions).
+// KI-22 (docs/Known_Issues.md, now FIXED): Grafana's connection to
+// TimescaleDB (MT-F-04, UC-05) used to be plain Postgres-wire-protocol
+// password authentication with no mTLS at all - a genuine RNF-SEC-04
+// violation, since this is real inter-service, cross-guest traffic (unlike
+// the CA's bootstrap surface or Entry-Hub's user-facing login listener,
+// see the sibling tests in this file/package for those, both legitimate,
+// documented exceptions). TimescaleDB's own pg_hba.conf now requires
+// `hostssl ... clientcert=verify-full` for every REMOTE (non-loopback)
+// connection (third-party/timescaledb/pg_hba-mtls.sh) - this test proves
+// that enforcement is real by presenting exactly the plaintext,
+// no-client-certificate connection Grafana's OLD provisioning used, from
+// a genuinely separate container on ramusb-net (not `docker exec
+// metrics-collector`, which would hit the loopback-only exemption
+// pg_hba-mtls.sh's own doc comment documents for Metrics-Collector's own
+// same-container Go binary - that exemption is deliberate and out of this
+// test's scope) and asserts it is rejected.
 //
-// This test connects to the real running Metrics-Collector container's
-// embedded TimescaleDB (docs/Known_Issues.md's KI-18: TimescaleDB now
-// lives inside that container, not a separate one) using the exact
-// plaintext connection string Grafana's own datasource provisioning uses,
-// and asserts it is REJECTED. As of this task, it is NOT rejected - the
-// query succeeds - so this test is EXPECTED TO FAIL until Grafana's
-// connection to TimescaleDB is re-architected to require mTLS (a real
-// architectural change, out of scope for a test-writing task - see this
-// task's own report for the full explanation). Do not "fix" this test by
-// weakening its assertion; the failure is the accurate, current state of
-// RNF-SEC-04 on this path.
-func TestGrafanaTimescaleDB_RealStack_RNF_SEC_04_PlaintextConnectionShouldBeRejected(t *testing.T) {
+// Run `deployments/scripts/metrics-collector.sh` (or
+// `docker compose -f deployments/compose/metrics-collector.yml up`)
+// first; this test skips cleanly if the container isn't running.
+func TestGrafanaTimescaleDB_RealStack_RNF_SEC_04_RemotePlaintextConnectionRejected(t *testing.T) {
 	const container = "metrics-collector"
 	skipUnlessContainerRunning(t, container)
 
-	// Exactly the connection Grafana's own datasource provisioning
-	// (third-party/grafana/provisioning/datasources) uses: plaintext,
-	// password-only, no client certificate, no mTLS.
-	out, err := exec.CommandContext(t.Context(), "docker", "exec", container, "psql", //nolint:gosec // fixed container/args, not untrusted input
-		"postgres://metrics_collector:metrics_collector_dev_only@localhost:5432/metrics_collector?sslmode=disable",
+	// A throwaway container on the same ramusb-net Grafana itself uses,
+	// presenting the exact plaintext, password-only, no-client-certificate
+	// connection Grafana's pre-KI-22 datasource provisioning used against
+	// the "metrics-collector" hostname (not "localhost" - a genuinely
+	// separate, non-loopback caller, the same path Grafana's own
+	// connection takes).
+	out, err := exec.CommandContext(t.Context(), "docker", "run", "--rm", "--network", "ramusb-net", //nolint:gosec // fixed image/args, not untrusted input
+		"postgres:18-alpine", "psql",
+		"postgres://metrics_collector:metrics_collector_dev_only@metrics-collector:5432/metrics_collector?sslmode=disable",
 		"-c", "SELECT 1;").CombinedOutput()
 
 	if err == nil {
-		t.Fatalf("RNF-SEC-04 VIOLATION (confirmed, not a test bug): a plaintext, no-mTLS, password-only "+
-			"connection to Metrics-Collector's TimescaleDB (Grafana's own real connection method, "+
-			"third-party/grafana/provisioning/datasources) succeeded:\n%s\n"+
-			"RNF-SEC-04 requires mTLS for ALL inter-service communication, with no exceptions. "+
-			"This is a genuine, currently-unresolved architectural gap - see this task's report, "+
-			"not a flaw in this test.", out)
+		t.Fatalf("RNF-SEC-04 VIOLATION: a plaintext, no-mTLS, no-client-certificate connection to "+
+			"Metrics-Collector's TimescaleDB from a separate container succeeded:\n%s\n"+
+			"RNF-SEC-04 requires mTLS for ALL inter-service communication, with no exceptions - "+
+			"TimescaleDB's own pg_hba.conf (third-party/timescaledb/pg_hba-mtls.sh) should have "+
+			"rejected this connection outright (no matching hostssl/clientcert rule for a plaintext, "+
+			"non-loopback caller).", out)
 	}
 }
