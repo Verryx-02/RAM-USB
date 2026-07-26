@@ -86,7 +86,14 @@ part of the active worklist.
   `/api/register` stays public, `/api/login` becomes mesh-only). Neither
   the SRS's EH-F-03 requirement text nor either diagram currently shows
   this split — both still describe/depict a single Entry-Hub listener.
-- **Status:** OPEN.
+- **Status:** PARTIALLY FIXED, 2026-07-26 — EH-F-03's SRS text now
+  describes the two-listener split explicitly (separate mesh-only
+  listener, same Let's Encrypt certificate as EH-F-01/EH-F-02, not mTLS —
+  verified directly against `services/entry-hub/cmd/entry-hub/main.go`'s
+  own "Listener topology" doc comment, lines 16-35, before writing the
+  new text). The two diagrams (`01-architecture-container.puml`,
+  `02-architecture-deployment.puml`) still depict a single Entry-Hub
+  listener — that part is `diagram-agent`'s work, not done here.
 
 ## KI-03 — CA-F-03's metrics sidecar has a design but zero code
 
