@@ -1,5 +1,5 @@
 name: Known Issue
-description: A gap between what the SRS/design says and what the code actually does, found as a side effect of other work — not a deliberately-deferred SRS-level decision (those live in the SRS's own §8 and follow its approval process instead).
+description: A gap between what the SRS/design says and what the code actually does — not a deliberately-deferred SRS-level decision (those go in the SRS's own §8 instead).
 title: "[KI] "
 labels: ["known-issue"]
 assignees:
