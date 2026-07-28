@@ -1,0 +1,64 @@
+name: Known Issue
+description: A gap between what the SRS/design says and what the code actually does, found as a side effect of other work — not a deliberately-deferred SRS-level decision (those live in the SRS's own §8 and follow its approval process instead).
+title: "[KI] "
+labels: ["known-issue"]
+assignees:
+  - Verryx-02
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for something that should already work per the SRS/design but doesn't yet — discovered while working on something else. If this is instead a deliberately-deferred requirement-level decision, it belongs in the SRS's §8 "Known risks and open issues" instead, not here.
+
+  - type: input
+    id: area
+    attributes:
+      label: Area
+      description: The service, package, or document this issue is about.
+      placeholder: "e.g. services/network-manager, pkg/pki, docs/Software_Requirements_Specification.md"
+    validations:
+      required: true
+
+  - type: textarea
+    id: found
+    attributes:
+      label: Found
+      description: What you were doing when you found this, and when.
+      placeholder: "e.g. While live-verifying KI-27, running the full dev stack with a clean environment."
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What's wrong, precisely. Include file paths, line numbers, or log output where relevant.
+    validations:
+      required: true
+
+  - type: input
+    id: requirement-ids
+    attributes:
+      label: Affected requirement IDs
+      description: Any SRS requirement IDs this touches, if applicable.
+      placeholder: "e.g. NM-F-16, RNF-SEC-04"
+    validations:
+      required: false
+
+  - type: textarea
+    id: fix-direction
+    attributes:
+      label: Suggested fix direction
+      description: If you already have a sense of what the real fix looks like. Leave blank if it needs a design decision first.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirm
+      options:
+        - label: This is not already covered by a RISK-* entry in the SRS's own §8
+          required: true
+        - label: I checked there isn't already an open issue for this
+          required: true
