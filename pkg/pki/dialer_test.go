@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Verryx-02/RAM-USB/pkg/mesh"
+	"github.com/Verryx-02/RAM-USB/pkg/dial"
 )
 
 // Requirement: NET-F-01, NM-F-04
@@ -33,7 +33,7 @@ func TestRouteThroughDialer_InstallsDialer(t *testing.T) {
 
 	var dialCalled int32
 	wantErr := errors.New("fake dialer invoked")
-	fakeDial := mesh.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+	fakeDial := dial.DialFunc(func(context.Context, string, string) (net.Conn, error) {
 		atomic.AddInt32(&dialCalled, 1)
 		return nil, wantErr
 	})
@@ -72,7 +72,7 @@ func TestRouteThroughDialer_NoExistingDialTLSContext(t *testing.T) {
 	client := &http.Client{Transport: transport}
 
 	var dialCalled int32
-	fakeDial := mesh.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+	fakeDial := dial.DialFunc(func(context.Context, string, string) (net.Conn, error) {
 		atomic.AddInt32(&dialCalled, 1)
 		return nil, errors.New("fake dialer invoked")
 	})

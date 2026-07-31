@@ -10,7 +10,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
-	"github.com/Verryx-02/RAM-USB/pkg/mesh"
+	"github.com/Verryx-02/RAM-USB/pkg/dial"
 )
 
 // meshOpenConnectionFn adapts dial into a paho mqtt.OpenConnectionFunc for
@@ -36,12 +36,12 @@ import (
 // context.Background(), timeout) - timeout is connectTimeout, the same
 // value NewClient's default path already uses for SetConnectTimeout,
 // keeping the two paths' connection-establishment budget identical.
-func meshOpenConnectionFn(dial mesh.DialFunc, tlsConfig *tls.Config, timeout time.Duration) mqtt.OpenConnectionFunc {
+func meshOpenConnectionFn(dialFn dial.DialFunc, tlsConfig *tls.Config, timeout time.Duration) mqtt.OpenConnectionFunc {
 	return func(uri *url.URL, _ mqtt.ClientOptions) (net.Conn, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout) //nolint:contextcheck // paho's OpenConnectionFunc signature carries no context.Context to thread through (see doc comment above)
 		defer cancel()
 
-		conn, err := dial(ctx, "tcp", uri.Host)
+		conn, err := dialFn(ctx, "tcp", uri.Host)
 		if err != nil {
 			return nil, fmt.Errorf("metrics: mesh dial %s: %w", uri.Host, err)
 		}

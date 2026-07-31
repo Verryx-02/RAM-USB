@@ -47,7 +47,8 @@ func TestNewClient_DefaultDial_ConnectsWithoutAnyOption(t *testing.T) {
 // Requirement: NET-F-02
 // Requirement: RD-04
 //
-// A dialer supplied to NewClient (standing in for pkg/mesh.Server.Dial)
+// A dialer supplied to NewClient (standing in for a mesh-joined service's
+// own dialer)
 // must actually be invoked, and the connection must still complete -
 // proving the mesh-dial path is real, not merely accepted and ignored.
 func TestNewClient_WithDial_InvokesCustomDialerAndConnects(t *testing.T) {

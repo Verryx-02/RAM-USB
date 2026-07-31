@@ -25,8 +25,7 @@ production placement.
 
 Headscale is deployed on its **own separate VPS from Entry-Hub**, even
 though both are "public, non-Proxmox" components: Entry-Hub is a real mesh
-member (`pkg/mesh`), and the limitation above forbids sharing a host with
-one.
+member, and the limitation above forbids sharing a host with one.
 
 ## What this process is
 

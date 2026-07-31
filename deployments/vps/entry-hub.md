@@ -72,7 +72,9 @@ Unlike every other RAM-USB service, Entry-Hub is not grouped by RNF-ORG-04's
 Proxmox KVM/LXC split at all - it runs on its own dedicated,
 publicly-addressable VPS, outside the private Proxmox cluster entirely,
 alongside Headscale (`deployments/vps/headscale.md`) but on a **separate**
-VPS from it: Entry-Hub is a real mesh member (`pkg/mesh`), and Headscale's
+VPS from it: Entry-Hub is a real mesh member (a real OS-level `tailscaled`,
+not `pkg/mesh`'s in-process `tsnet` - see the "Mesh membership" section
+above), and Headscale's
 own documented limitation forbids it from ever sharing a host/network
 identity with a member of the mesh it coordinates (see
 `deployments/vps/headscale.md`'s own placement reasoning).
