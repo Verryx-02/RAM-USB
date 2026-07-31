@@ -42,7 +42,7 @@ password.
 | 6     | `./deployments/scripts/database-vault.sh`                                         | shells 1, 2                                         |
 | 7     | `./deployments/scripts/storage-service.sh`                                        | shells 1, 2                                         |
 | 8     | `./deployments/scripts/security-switch.sh`                                        | shells 1, 2                                         |
-| 9     | `./deployments/scripts/entry-hub.sh`                                              | shells 1, 2, 4 — mesh node (pkg/mesh)               |
+| 9     | `./deployments/scripts/entry-hub.sh`                                              | shells 1, 2, 4 — mesh node (real `tailscaled` sidecar `entry-hub-mesh`) |
 | 10    | `./deployments/scripts/grafana.sh`                                                | shell 5                                             |
 | 11    | `./deployments/scripts/e2e-test.sh`                                               | shells 1-10 all up                                  |
 | 12    | `./deployments/scripts/cleanup.sh` (`--wipe` to also drop volumes/mesh identities)| —                                                   |
@@ -53,12 +53,13 @@ member of the mesh it coordinates (headscale.net's own documented
 limitation), so it is NOT a mesh node itself and, unlike every other
 service, is reached by Network-Manager over the PUBLIC network, not the
 mesh (see services/network-manager/cmd/network-manager/main.go's own
-package doc comment). Seven services join the real Headscale mesh via a
+package doc comment). Eight services join the real Headscale mesh via a
 real OS-level `tailscaled` client (Security-Switch, Database-Vault,
-Network-Manager, Storage-Service, Metrics-Collector, and
-Certificate-Authority, MQTT-broker — the latter two as a Tailscale sidecar
-container sharing the main container's network namespace): `pkg/mesh`'s
-earlier in-process `tsnet` was replaced for Security-Switch/Database-Vault/
+Network-Manager, Storage-Service, Metrics-Collector, Entry-Hub, and
+Certificate-Authority, MQTT-broker — the latter three as a Tailscale sidecar
+container sharing the main container's network namespace): an earlier
+in-process `tsnet` package (`pkg/mesh`, since deleted — see
+docs/Known_Issues.md's KI-31) was replaced for Security-Switch/Database-Vault/
 Network-Manager/Storage-Service because two libraries they depend on (CA
 bootstrap/renewal, MQTT publish) cannot route through an in-process-only
 netstack when the service also holds a server role — a confirmed library
@@ -69,14 +70,17 @@ newly co-located TimescaleDB (MT-F-03) must be reachable by Grafana from a
 separate Proxmox guest in production, which needs a genuine kernel network
 interface only a real `tailscaled` provides — see
 deployments/docker/metrics-collector/Dockerfile's own package doc comment.
-Entry-Hub is one further mesh node that stays on `pkg/mesh`'s in-process
-`tsnet` instead of converting to a real `tailscaled`: it holds no server
-role at all (its only `pkg/pki` use is an outbound client, whose transport
-IS interceptable, unlike a bootstrapped server's), so no library
-limitation forces the conversion — see `services/entry-hub/cmd/entry-hub/
-main.go`'s package doc comment, "Mesh membership", for the full reasoning.
+Entry-Hub converted last (KI-27, docs/Known_Issues.md), to a real
+`tailscaled` sidecar (`entry-hub-mesh`, sharing its network namespace) rather
+than an in-container one, since Entry-Hub's own runtime image is distroless
+(no shell, no s6-overlay to add a `tailscaled` longrun to) — it holds no
+server role at all, but even a pure client's very first CA-bootstrap-token
+exchange happens before any application-level dialer can intercept it, so no
+role/dialer combination sidesteps the same underlying library limitation —
+see `services/entry-hub/cmd/entry-hub/main.go`'s package doc comment, "Mesh
+membership", for the full reasoning.
 Certificate-Authority's own metrics sidecar (CA-F-03) previously followed
-the same `pkg/mesh` reasoning as Entry-Hub, but KI-28 (docs/Known_Issues.md)
+the same real-`tailscaled` reasoning as Entry-Hub, but KI-28 (docs/Known_Issues.md)
 found it did not actually hold for this process in production - it is no
 longer a separate mesh node at all: since that fix, it is s6-supervised
 INSIDE the certificate-authority container itself
@@ -171,8 +175,9 @@ it was already up from before — that's fine, skip waiting for the line.
    Simply re-run `./deployments/scripts/certificate-authority.sh` once
    shell 2 is up; it is safe to re-run.
 10. ~~Entry-Hub cannot reach Security-Switch.~~ Resolved: Entry-Hub joins
-    the mesh itself (`pkg/mesh`) and dials Security-Switch over it
-    (`RouteThroughDialer`), same as every other mesh-joined caller.
+    the mesh itself (a real `tailscaled` sidecar, `entry-hub-mesh`) and
+    dials Security-Switch over it (`RouteThroughDialer`), same as every
+    other mesh-joined caller.
 11. **Headscale's own coordination endpoint (port 8080) is published
     straight to the Docker host** (`deployments/compose/headscale.yml`'s
     `ports:`), per NM-F-14's wording — a real end-user Tailscale client can

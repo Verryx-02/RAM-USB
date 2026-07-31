@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Verryx-02/RAM-USB/pkg/mesh"
+	"github.com/Verryx-02/RAM-USB/pkg/dial"
 )
 
 // caURLEnvVar names the environment variable that points this test at a
@@ -204,7 +204,7 @@ func TestNewServer_RealCA(t *testing.T) {
 // consulted for a real outbound request through a real bootstrapped
 // client - not merely installed and silently ignored. A fake dialer that
 // returns a distinguishable, never-otherwise-produced error stands in for
-// pkg/mesh.Server.Dial: if the real network were reached instead (the
+// a mesh-joined service's own dialer: if the real network were reached instead (the
 // dialer routing silently doing nothing), client.Do would instead return a
 // real TLS/connection-refused/timeout error, never this one.
 func TestNewClientWithDialer_DialerIsInvoked(t *testing.T) {
@@ -216,7 +216,7 @@ func TestNewClientWithDialer_DialerIsInvoked(t *testing.T) {
 
 	errFakeDialerInvoked := errors.New("fake dialer invoked: real network never reached")
 	var dialCount int32
-	fakeDial := mesh.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+	fakeDial := dial.DialFunc(func(context.Context, string, string) (net.Conn, error) {
 		atomic.AddInt32(&dialCount, 1)
 		return nil, errFakeDialerInvoked
 	})

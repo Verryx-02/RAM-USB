@@ -10,7 +10,7 @@ import (
 
 	stepca "github.com/smallstep/certificates/ca"
 
-	"github.com/Verryx-02/RAM-USB/pkg/mesh"
+	"github.com/Verryx-02/RAM-USB/pkg/dial"
 )
 
 // ErrUnexpectedTransportType is returned when the *http.Client this
@@ -45,15 +45,15 @@ var ErrUnexpectedTransportType = errors.New("pki: client.Transport is not a *htt
 //
 // See RouteThroughDialer's doc comment for the mechanism and the specific
 // undocumented library behavior it relies on.
-func NewClientWithDialer(ctx context.Context, token string, dial mesh.DialFunc) (*http.Client, error) {
+func NewClientWithDialer(ctx context.Context, token string, dialFn dial.DialFunc) (*http.Client, error) {
 	client, err := stepca.BootstrapClient(ctx, token, forceTLS13)
 	if err != nil {
 		return nil, err
 	}
-	if dial == nil {
+	if dialFn == nil {
 		return client, nil
 	}
-	if err := RouteThroughDialer(client, dial); err != nil {
+	if err := RouteThroughDialer(client, dialFn); err != nil {
 		return nil, err
 	}
 	return client, nil
@@ -87,13 +87,13 @@ func NewClientWithDialer(ctx context.Context, token string, dial mesh.DialFunc) 
 //
 // This mechanism is not a documented contract of the vendored library and
 // could break on a future version - see ErrUnexpectedTransportType.
-func RouteThroughDialer(client *http.Client, dial mesh.DialFunc) error {
+func RouteThroughDialer(client *http.Client, dialFn dial.DialFunc) error {
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok {
 		return fmt.Errorf("%w: got %T", ErrUnexpectedTransportType, client.Transport)
 	}
 
-	transport.DialContext = dial
+	transport.DialContext = dialFn
 
 	// Only replace DialTLSContext if the SDK set one in the first place
 	// (it always does today, for every HTTPS request client's callers
@@ -104,7 +104,7 @@ func RouteThroughDialer(client *http.Client, dial mesh.DialFunc) error {
 	if transport.DialTLSContext != nil {
 		tlsConfig := transport.TLSClientConfig
 		transport.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			raw, err := dial(ctx, network, addr)
+			raw, err := dialFn(ctx, network, addr)
 			if err != nil {
 				return nil, err
 			}
