@@ -152,10 +152,16 @@ it was already up from before — that's fine, skip waiting for the line.
    every startup — disabled via `GF_PLUGINS_PREINSTALL_ASYNC: "false"` in
    `deployments/compose/grafana.yml` (this was observed to OOM-kill the
    container on a memory-constrained dev machine before the fix).
-7. `authorized-keys-command` (ST-F-11) has no provisioning mechanism yet
-   for its own mTLS identity — `sshd` fails secure (RD-04) on any real
-   SFTP attempt until this exists. Registration/login/POSIX-user-creation
-   all work regardless.
+7. ~~`authorized-keys-command` (ST-F-11) has no provisioning mechanism for
+   its own mTLS identity.~~ Resolved (KI-01):
+   `services/storage-service/cmd/identity-provisioner/`, an s6-supervised
+   longrun in the storage-service container, bootstraps its own CA-F-04
+   identity (`RAM_USB_STORAGE_SERVICE_AKC_BOOTSTRAP_TOKEN`, set in
+   `deployments/compose/storage-service.yml`), writes
+   `/var/lib/storage-service-identity/authorized-keys-command.conf` plus its
+   certificate/key/CA bundle, and re-encodes the renewed certificate every
+   five minutes. `sshd` starts only after that first write lands
+   (`s6-rc.d/sshd/dependencies.d/identity-provisioner-ready`).
 8. **Every mesh-joined service's dev-only mesh-control-plane TLS cert must
    carry `headscale` in its SAN** (this session's architectural change:
    Headscale is its own standalone deployment again, no longer
