@@ -10,7 +10,8 @@ import (
 // meshUsersSchema is applied once, idempotently, alongside the grants
 // table's own schema (see store.go's package doc comment for why this
 // table lives in the same Store/connection despite being conceptually
-// unrelated to a grant). email is the primary key: NM-F-08 creates exactly
+// unrelated to a grant). email_hash (emailKey: SHA-256 of the lowercased
+// address, never the address itself) is the primary key: NM-F-08 creates exactly
 // one Headscale user, and therefore exactly one pre-auth key, per
 // registered email - a repeat NM-F-08 call for the same email (should one
 // ever happen) replaces the prior row rather than accumulating a second
@@ -18,7 +19,7 @@ import (
 // establishes for the underlying Headscale calls.
 const meshUsersSchema = `
 CREATE TABLE IF NOT EXISTS mesh_users (
-	email            TEXT PRIMARY KEY,
+	email_hash       TEXT PRIMARY KEY,
 	pre_auth_key_id  INTEGER NOT NULL
 );
 `
@@ -30,9 +31,9 @@ CREATE TABLE IF NOT EXISTS mesh_users (
 // client.go's "Bug fix" section for why. Satisfies httpapi.MeshUserStore.
 func (s *Store) RecordPreAuthKeyID(ctx context.Context, email string, preAuthKeyID uint64) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO mesh_users (email, pre_auth_key_id) VALUES (?, ?)
-		 ON CONFLICT(email) DO UPDATE SET pre_auth_key_id = excluded.pre_auth_key_id`,
-		email, preAuthKeyID,
+		`INSERT INTO mesh_users (email_hash, pre_auth_key_id) VALUES (?, ?)
+		 ON CONFLICT(email_hash) DO UPDATE SET pre_auth_key_id = excluded.pre_auth_key_id`,
+		emailKey(email), preAuthKeyID,
 	)
 	if err != nil {
 		// RD-01/DV-F-03's "credentials stay out of logs" discipline
@@ -56,8 +57,8 @@ func (s *Store) RecordPreAuthKeyID(ctx context.Context, email string, preAuthKey
 func (s *Store) PreAuthKeyIDForEmail(ctx context.Context, email string) (uint64, bool, error) {
 	var preAuthKeyID uint64
 	err := s.db.QueryRowContext(ctx,
-		`SELECT pre_auth_key_id FROM mesh_users WHERE email = ?`,
-		email,
+		`SELECT pre_auth_key_id FROM mesh_users WHERE email_hash = ?`,
+		emailKey(email),
 	).Scan(&preAuthKeyID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil

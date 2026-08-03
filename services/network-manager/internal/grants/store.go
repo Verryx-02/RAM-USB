@@ -48,12 +48,26 @@ package grants
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
 )
+
+// emailKey is the only form of a user's email this package ever writes to
+// disk: the hex-encoded SHA-256 of the lowercased address, the same
+// normalize-then-hash rule Database-Vault applies for its own index
+// (DV-F-03) and internal/headscale.meshUsername applies before handing an
+// identifier to Headscale. Network-Manager only ever needs a lookup key,
+// never the plaintext, so nothing is lost by never storing it.
+func emailKey(email string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(email)))
+	return hex.EncodeToString(sum[:])
+}
 
 // schema is applied once, idempotently, every time Open runs (CREATE
 // TABLE IF NOT EXISTS - no golang-migrate/versioned-migration machinery
@@ -63,14 +77,16 @@ import (
 // timestamp type, and an integer sorts/compares correctly for
 // ExpiredGrants' "less than now" query without any timezone ambiguity.
 //
-// email is the primary key: NM-F-09's grant is one-per-user (Handler.Grant
-// is idempotent - granting an already-granted user just extends their
-// existing node's tag set, see internal/headscale.unionTag), so a repeat
-// grant for the same email should replace the prior row's expiry, not
-// accumulate a second one.
+// email_hash (emailKey: SHA-256 of the lowercased address) is the primary
+// key: NM-F-09's grant is one-per-user (Handler.Grant is idempotent -
+// granting an already-granted user just extends their existing node's tag
+// set, see internal/headscale.unionTag), so a repeat grant for the same
+// email should replace the prior row's expiry, not accumulate a second
+// one. The address itself is never stored: a lookup key is all this
+// package needs (see emailKey).
 const schema = `
 CREATE TABLE IF NOT EXISTS grants (
-	email      TEXT PRIMARY KEY,
+	email_hash TEXT PRIMARY KEY,
 	node_id    INTEGER NOT NULL,
 	tag        TEXT NOT NULL,
 	expires_at INTEGER NOT NULL
@@ -109,6 +125,23 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	// registration for mesh_users).
 	db.SetMaxOpenConns(1)
 
+	// Migration, such as it is: a database file written before emails were
+	// hashed still has a plaintext "email" column, which every statement
+	// below would fail against. There is no versioned-migration machinery
+	// for these two tiny tables (see schema's own comment), and the rows
+	// are cheap to regenerate - a grants row is re-created at the user's
+	// next login, a mesh_users row at re-registration - so the legacy
+	// form is dropped rather than converted, which also means no
+	// plaintext address survives in the file.
+	if err := dropLegacyPlaintextTable(ctx, db, `PRAGMA table_info(grants)`, `DROP TABLE grants`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := dropLegacyPlaintextTable(ctx, db, `PRAGMA table_info(mesh_users)`, `DROP TABLE mesh_users`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("grants: apply schema: %w", err)
@@ -121,6 +154,48 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+// dropLegacyPlaintextTable runs dropStmt if the table described by
+// infoStmt (a "PRAGMA table_info(...)" query) still has a plaintext
+// "email" column. Both statements are caller-supplied literals, never
+// built from external input. A table that does not exist yet reports no
+// columns, so this is a no-op on a fresh file.
+func dropLegacyPlaintextTable(ctx context.Context, db *sql.DB, infoStmt, dropStmt string) error {
+	rows, err := db.QueryContext(ctx, infoStmt)
+	if err != nil {
+		return fmt.Errorf("grants: inspect legacy schema: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	legacy := false
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			declType   string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &declType, &notNull, &defaultVal, &pk); err != nil {
+			return fmt.Errorf("grants: inspect legacy schema: %w", err)
+		}
+		if name == "email" {
+			legacy = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("grants: inspect legacy schema: %w", err)
+	}
+	if !legacy {
+		return nil
+	}
+
+	if _, err := db.ExecContext(ctx, dropStmt); err != nil {
+		return fmt.Errorf("grants: drop legacy plaintext table: %w", err)
+	}
+	return nil
+}
+
 // Close releases the underlying database handle.
 func (s *Store) Close() error {
 	return s.db.Close()
@@ -130,10 +205,22 @@ func (s *Store) Close() error {
 // grant's node, tag, and expiry (NM-F-11). Satisfies
 // httpapi.GrantRecorder.
 func (s *Store) RecordGrant(ctx context.Context, email string, nodeID uint64, tag string, expiresAt time.Time) error {
+	return s.recordGrant(ctx, emailKey(email), nodeID, tag, expiresAt)
+}
+
+// RestoreGrant re-inserts a row SweepOnce deleted before a revoke that
+// then failed, so the next sweep tick retries it instead of forgetting an
+// ACL tag that is still applied (RD-04, fail-secure). Takes an already-
+// hashed key, since that is all a swept Grant carries.
+func (s *Store) RestoreGrant(ctx context.Context, g Grant) error {
+	return s.recordGrant(ctx, g.EmailHash, g.NodeID, g.Tag, g.ExpiresAt)
+}
+
+func (s *Store) recordGrant(ctx context.Context, emailHash string, nodeID uint64, tag string, expiresAt time.Time) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO grants (email, node_id, tag, expires_at) VALUES (?, ?, ?, ?)
-		 ON CONFLICT(email) DO UPDATE SET node_id = excluded.node_id, tag = excluded.tag, expires_at = excluded.expires_at`,
-		email, nodeID, tag, expiresAt.UTC().Unix(),
+		`INSERT INTO grants (email_hash, node_id, tag, expires_at) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(email_hash) DO UPDATE SET node_id = excluded.node_id, tag = excluded.tag, expires_at = excluded.expires_at`,
+		emailHash, nodeID, tag, expiresAt.UTC().Unix(),
 	)
 	if err != nil {
 		// RD-01/DV-F-03's "credentials stay out of logs" discipline
@@ -146,8 +233,10 @@ func (s *Store) RecordGrant(ctx context.Context, email string, nodeID uint64, ta
 }
 
 // Grant is one persisted row: which node holds which ACL tag, until when.
+// EmailHash is emailKey's hash, never the address itself - nothing in this
+// package or its callers needs the plaintext.
 type Grant struct {
-	Email     string
+	EmailHash string
 	NodeID    uint64
 	Tag       string
 	ExpiresAt time.Time
@@ -158,7 +247,7 @@ type Grant struct {
 // interface.
 func (s *Store) ExpiredGrants(ctx context.Context, now time.Time) ([]Grant, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT email, node_id, tag, expires_at FROM grants WHERE expires_at <= ?`,
+		`SELECT email_hash, node_id, tag, expires_at FROM grants WHERE expires_at <= ?`,
 		now.UTC().Unix(),
 	)
 	if err != nil {
@@ -172,7 +261,7 @@ func (s *Store) ExpiredGrants(ctx context.Context, now time.Time) ([]Grant, erro
 			g            Grant
 			expiresAtUTC int64
 		)
-		if err := rows.Scan(&g.Email, &g.NodeID, &g.Tag, &expiresAtUTC); err != nil {
+		if err := rows.Scan(&g.EmailHash, &g.NodeID, &g.Tag, &expiresAtUTC); err != nil {
 			return nil, fmt.Errorf("grants: scan expired grant: %w", err)
 		}
 		g.ExpiresAt = time.Unix(expiresAtUTC, 0).UTC()
@@ -185,13 +274,24 @@ func (s *Store) ExpiredGrants(ctx context.Context, now time.Time) ([]Grant, erro
 	return result, nil
 }
 
-// DeleteGrant removes email's persisted grant row, once NM-F-10's sweep
-// has revoked the corresponding ACL tag. A zero-row delete (already
-// absent) is not itself an error - same convention as Database-Vault's
-// storage.DeleteUser (DV-F-10).
-func (s *Store) DeleteGrant(ctx context.Context, email string) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM grants WHERE email = ?`, email); err != nil {
-		return fmt.Errorf("grants: delete grant: %w", err)
+// DeleteGrant removes one persisted grant row, identified by its hashed
+// email key AND the exact expiry the caller read - NM-F-10's sweep claims
+// a row this way before revoking it, so a login that renewed the grant in
+// between (new expires_at) is not deleted out from under the user by a
+// sweep still holding the old value. Returns whether a row was actually
+// removed: false means somebody else already renewed or deleted it, and
+// the caller must not revoke.
+func (s *Store) DeleteGrant(ctx context.Context, emailHash string, expiresAt time.Time) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM grants WHERE email_hash = ? AND expires_at = ?`,
+		emailHash, expiresAt.UTC().Unix(),
+	)
+	if err != nil {
+		return false, fmt.Errorf("grants: delete grant: %w", err)
 	}
-	return nil
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("grants: delete grant: rows affected: %w", err)
+	}
+	return affected > 0, nil
 }

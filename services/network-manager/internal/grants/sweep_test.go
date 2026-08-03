@@ -15,11 +15,17 @@ import (
 // access (including the test's own reads) must go through the accessor
 // methods below, never the raw fields directly.
 type fakeSweepStore struct {
-	mu               sync.Mutex
-	expired          []Grant
-	expiredErr       error
-	deleteErr        error
-	deletedEmails    []string
+	mu         sync.Mutex
+	expired    []Grant
+	expiredErr error
+	deleteErr  error
+	// renewedHashes simulates a login that renewed the grant between
+	// ExpiredGrants and DeleteGrant: the conditional delete finds no row
+	// matching the expiry the sweep read, so it claims nothing.
+	renewedHashes    map[string]bool
+	deletedHashes    []string
+	restored         []Grant
+	restoreErr       error
 	expiredCallCount int
 }
 
@@ -33,20 +39,33 @@ func (f *fakeSweepStore) ExpiredGrants(_ context.Context, _ time.Time) ([]Grant,
 	return f.expired, nil
 }
 
-func (f *fakeSweepStore) DeleteGrant(_ context.Context, email string) error {
+func (f *fakeSweepStore) DeleteGrant(_ context.Context, emailHash string, _ time.Time) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.deletedEmails = append(f.deletedEmails, email)
-	return f.deleteErr
+	if f.deleteErr != nil {
+		return false, f.deleteErr
+	}
+	if f.renewedHashes[emailHash] {
+		return false, nil
+	}
+	f.deletedHashes = append(f.deletedHashes, emailHash)
+	return true, nil
 }
 
-// deletedEmailsSnapshot returns a copy of the deleted-email list so far,
-// safe to call concurrently with ExpiredGrants/DeleteGrant.
-func (f *fakeSweepStore) deletedEmailsSnapshot() []string {
+func (f *fakeSweepStore) RestoreGrant(_ context.Context, g Grant) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	out := make([]string, len(f.deletedEmails))
-	copy(out, f.deletedEmails)
+	f.restored = append(f.restored, g)
+	return f.restoreErr
+}
+
+// deletedHashesSnapshot returns a copy of the claimed-row list so far,
+// safe to call concurrently with ExpiredGrants/DeleteGrant.
+func (f *fakeSweepStore) deletedHashesSnapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.deletedHashes))
+	copy(out, f.deletedHashes)
 	return out
 }
 
@@ -79,10 +98,10 @@ func (f *fakeRevoker) Revoke(_ context.Context, nodeID uint64, tag string) error
 func TestSweepOnce(t *testing.T) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	t.Run("revokes and deletes every expired grant", func(t *testing.T) {
+	t.Run("claims and revokes every expired grant", func(t *testing.T) {
 		store := &fakeSweepStore{expired: []Grant{
-			{Email: "a@example.com", NodeID: 1, Tag: "tag:storage-access", ExpiresAt: now.Add(-time.Hour)},
-			{Email: "b@example.com", NodeID: 2, Tag: "tag:storage-access", ExpiresAt: now.Add(-time.Minute)},
+			{EmailHash: "hash-a", NodeID: 1, Tag: "tag:storage-access", ExpiresAt: now.Add(-time.Hour)},
+			{EmailHash: "hash-b", NodeID: 2, Tag: "tag:storage-access", ExpiresAt: now.Add(-time.Minute)},
 		}}
 		revoker := &fakeRevoker{}
 
@@ -92,15 +111,43 @@ func TestSweepOnce(t *testing.T) {
 		if len(revoker.revoked) != 2 || revoker.revoked[0] != 1 || revoker.revoked[1] != 2 {
 			t.Fatalf("revoked = %v, want [1 2]", revoker.revoked)
 		}
-		if len(store.deletedEmails) != 2 {
-			t.Fatalf("deletedEmails = %v, want 2 entries", store.deletedEmails)
+		if len(store.deletedHashes) != 2 {
+			t.Fatalf("deletedHashes = %v, want 2 entries", store.deletedHashes)
+		}
+		if len(store.restored) != 0 {
+			t.Fatalf("restored = %v, want none (every revoke succeeded)", store.restored)
 		}
 	})
 
-	t.Run("a revoke failure for one grant does not stop the sweep, and its row is kept for retry", func(t *testing.T) {
+	t.Run("a grant renewed by a concurrent login is neither claimed nor revoked", func(t *testing.T) {
+		// KI-36: the sweep read this grant as expired at T0, but a login
+		// landing in the meantime re-applied the tag and wrote a fresh
+		// expiry. Revoking now would silently strip access the user was
+		// just told they had.
+		store := &fakeSweepStore{
+			expired: []Grant{
+				{EmailHash: "hash-a", NodeID: 1, Tag: "tag:storage-access", ExpiresAt: now.Add(-time.Hour)},
+				{EmailHash: "hash-b", NodeID: 2, Tag: "tag:storage-access", ExpiresAt: now.Add(-time.Minute)},
+			},
+			renewedHashes: map[string]bool{"hash-a": true},
+		}
+		revoker := &fakeRevoker{}
+
+		if err := SweepOnce(context.Background(), store, revoker, now); err != nil {
+			t.Fatalf("SweepOnce() error = %v", err)
+		}
+		if len(revoker.revoked) != 1 || revoker.revoked[0] != 2 {
+			t.Fatalf("revoked = %v, want only [2] - node 1's grant was renewed", revoker.revoked)
+		}
+		if len(store.deletedHashes) != 1 || store.deletedHashes[0] != "hash-b" {
+			t.Fatalf("deletedHashes = %v, want only [hash-b]", store.deletedHashes)
+		}
+	})
+
+	t.Run("a revoke failure restores the claimed row for the next tick", func(t *testing.T) {
 		store := &fakeSweepStore{expired: []Grant{
-			{Email: "a@example.com", NodeID: 1, Tag: "tag:storage-access"},
-			{Email: "b@example.com", NodeID: 2, Tag: "tag:storage-access"},
+			{EmailHash: "hash-a", NodeID: 1, Tag: "tag:storage-access"},
+			{EmailHash: "hash-b", NodeID: 2, Tag: "tag:storage-access"},
 		}}
 		revoker := &fakeRevoker{failFor: map[uint64]bool{1: true}}
 
@@ -110,16 +157,19 @@ func TestSweepOnce(t *testing.T) {
 		if len(revoker.revoked) != 2 {
 			t.Fatalf("revoked = %v, want both attempted", revoker.revoked)
 		}
-		if len(store.deletedEmails) != 1 || store.deletedEmails[0] != "b@example.com" {
-			t.Fatalf("deletedEmails = %v, want only [b@example.com] (a's row must survive for retry)", store.deletedEmails)
+		if len(store.restored) != 1 || store.restored[0].NodeID != 1 {
+			t.Fatalf("restored = %+v, want node 1's row back for retry", store.restored)
 		}
 	})
 
-	t.Run("a DeleteGrant failure does not abort the rest of the sweep", func(t *testing.T) {
+	t.Run("a DeleteGrant failure skips that grant's revoke and does not abort the sweep", func(t *testing.T) {
+		// The row could not be claimed, so its tag must stay applied:
+		// revoking without a claim would reopen the race the claim
+		// closes, and the row is still there to retry next tick.
 		store := &fakeSweepStore{
 			expired: []Grant{
-				{Email: "a@example.com", NodeID: 1, Tag: "tag:storage-access"},
-				{Email: "b@example.com", NodeID: 2, Tag: "tag:storage-access"},
+				{EmailHash: "hash-a", NodeID: 1, Tag: "tag:storage-access"},
+				{EmailHash: "hash-b", NodeID: 2, Tag: "tag:storage-access"},
 			},
 			deleteErr: errors.New("disk full"),
 		}
@@ -128,8 +178,8 @@ func TestSweepOnce(t *testing.T) {
 		if err := SweepOnce(context.Background(), store, revoker, now); err != nil {
 			t.Fatalf("SweepOnce() error = %v", err)
 		}
-		if len(revoker.revoked) != 2 {
-			t.Fatalf("revoked = %v, want both attempted despite delete failures", revoker.revoked)
+		if len(revoker.revoked) != 0 {
+			t.Fatalf("revoked = %v, want none (no row could be claimed)", revoker.revoked)
 		}
 	})
 
@@ -161,7 +211,7 @@ func TestSweepOnce(t *testing.T) {
 
 // Requirement: NM-F-10
 func TestRun_TicksAndSweeps(t *testing.T) {
-	store := &fakeSweepStore{expired: []Grant{{Email: "a@example.com", NodeID: 1, Tag: "tag:storage-access"}}}
+	store := &fakeSweepStore{expired: []Grant{{EmailHash: "hash-a", NodeID: 1, Tag: "tag:storage-access"}}}
 	revoker := &fakeRevoker{}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -172,7 +222,7 @@ func TestRun_TicksAndSweeps(t *testing.T) {
 	// changed" (pkg/metrics's own schedule_test.go uses the identical
 	// pattern for Run).
 	deadline := time.Now().Add(500 * time.Millisecond)
-	for len(store.deletedEmailsSnapshot()) == 0 && time.Now().Before(deadline) {
+	for len(store.deletedHashesSnapshot()) == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	cancel()
@@ -180,7 +230,7 @@ func TestRun_TicksAndSweeps(t *testing.T) {
 	if store.expiredCalls() == 0 {
 		t.Fatal("Run() never called ExpiredGrants")
 	}
-	if len(store.deletedEmailsSnapshot()) == 0 {
+	if len(store.deletedHashesSnapshot()) == 0 {
 		t.Fatal("Run() never swept the expired grant through to DeleteGrant")
 	}
 }
