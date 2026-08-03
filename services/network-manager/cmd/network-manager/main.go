@@ -133,6 +133,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -340,23 +341,46 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// background owns every long-lived goroutine this function starts, so
+	// each one is known to have returned before the resources it uses are
+	// released. Canceling backgroundCtx only *asks* them to stop: without
+	// the Wait, an in-flight grants.SweepOnce would still be querying the
+	// SQLite handle while the deferred grantStore.Close ran, and an
+	// in-flight metrics publish would still hold the MQTT client while
+	// Disconnect ran.
+	backgroundCtx, stopBackground := context.WithCancel(ctx)
+	var background sync.WaitGroup
+
 	// NM-F-10's sweep: periodically revoke every expired grant
 	// (grantStore.ExpiredGrants) via Headscale (headscaleRevoker) and
 	// delete its persisted row.
-	sweepCtx, stopSweep := context.WithCancel(ctx)
-	defer stopSweep()
-	go grants.Run(sweepCtx, sweepInterval, grantStore, headscaleRevoker{svc: headscaleClient})
+	background.Go(func() {
+		grants.Run(backgroundCtx, sweepInterval, grantStore, headscaleRevoker{svc: headscaleClient})
+	})
 
 	metricsClient, err := buildMetricsClient(serverTLSConfig)
 	if err != nil {
+		stopBackground()
+		background.Wait()
 		return fmt.Errorf("build metrics client: %w", err)
 	}
 	if metricsClient != nil {
 		defer metricsClient.Disconnect(250)
-		go metrics.Run(ctx, metricsPublishInterval, func(publishCtx context.Context) error {
-			return metrics.PublishOnce(publishCtx, metricsClient, serviceName, counters.Snapshot())
+		background.Go(func() {
+			metrics.Run(backgroundCtx, metricsPublishInterval, func(publishCtx context.Context) error {
+				return metrics.PublishOnce(publishCtx, metricsClient, serviceName, counters.Snapshot())
+			})
 		})
 	}
+
+	// Registered last of the three (grantStore.Close, metricsClient.
+	// Disconnect, this): defers run LIFO, so the goroutines are stopped
+	// and joined first, then the MQTT client disconnects, then the store
+	// closes.
+	defer func() {
+		stopBackground()
+		background.Wait()
+	}()
 
 	serveErr := make(chan error, 1)
 	go func() {
