@@ -1,6 +1,46 @@
 package counters
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
+
+// Requirement: CA-F-03
+//
+// Snapshot's average divides the duration total by the request count, so
+// both must come from the same instant: a Snapshot concurrent with Record
+// must never report an average outside the fixed per-request duration every
+// Record here contributes.
+func TestCounters_SnapshotIsConsistentUnderConcurrentRecord(t *testing.T) {
+	const perRequestMs = 10
+
+	c := &Counters{}
+	stop := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				c.Record(200, perRequestMs*1_000_000)
+			}
+		}
+	}()
+
+	for range 1000 {
+		got := c.Snapshot()
+		if got.RequestCount > 0 && got.AverageResponseTimeMs != perRequestMs {
+			t.Fatalf("AverageResponseTimeMs = %v, want %v (torn read of count vs total)", got.AverageResponseTimeMs, float64(perRequestMs))
+		}
+	}
+
+	close(stop)
+	wg.Wait()
+}
 
 // Requirement: CA-F-03
 func TestCounters_SnapshotReflectsRecordedRequests(t *testing.T) {

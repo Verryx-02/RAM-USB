@@ -7,7 +7,7 @@
 package counters
 
 import (
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
@@ -23,25 +23,35 @@ const errorStatusThreshold = 400
 
 // Counters is a minimal thread-safe in-process accumulator, fed by
 // accesslog.Follow's callback in cmd/metrics-sidecar/main.go and read once
-// a minute by CA-F-03's metrics.Run publish loop. Every field is a
-// sync/atomic value: Record may be called concurrently with Snapshot
-// (the once-a-minute publish goroutine), though in this sidecar's actual
-// wiring Record is only ever called from the single accesslog.Follow
-// goroutine.
+// a minute by CA-F-03's metrics.Run publish loop. Record may be called
+// concurrently with Snapshot (the once-a-minute publish goroutine), though
+// in this sidecar's actual wiring Record is only ever called from the single
+// accesslog.Follow goroutine.
+//
+// One mutex guards all three fields together, rather than three independent
+// sync/atomic values: Snapshot divides the duration total by the request
+// count, and per-field atomics let those two loads straddle a concurrent
+// Record, publishing an AverageResponseTimeMs computed from a total and a
+// count that never coexisted. The lock costs one uncontended acquire per
+// step-ca log line, against a once-a-minute reader.
 type Counters struct {
-	requestCount    atomic.Int64
-	errorCount      atomic.Int64
-	totalDurationMs atomic.Int64
+	mu              sync.Mutex
+	requestCount    int64
+	errorCount      int64
+	totalDurationMs int64
 }
 
 // Record adds one step-ca access-log entry's status/duration to this
 // accumulator's running totals.
 func (c *Counters) Record(status int, durationNs int64) {
-	c.requestCount.Add(1)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.requestCount++
 	if status >= errorStatusThreshold {
-		c.errorCount.Add(1)
+		c.errorCount++
 	}
-	c.totalDurationMs.Add(durationNs / int64(time.Millisecond))
+	c.totalDurationMs += durationNs / int64(time.Millisecond)
 }
 
 // Snapshot converts the accumulated totals into metrics.Counters (CA-F-03's
@@ -53,16 +63,17 @@ func (c *Counters) Record(status int, durationNs int64) {
 // completed request, so this sidecar has no point-in-time "currently
 // open connection" concept to report.
 func (c *Counters) Snapshot() metrics.Counters {
-	requestCount := c.requestCount.Load()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	var average float64
-	if requestCount > 0 {
-		average = float64(c.totalDurationMs.Load()) / float64(requestCount)
+	if c.requestCount > 0 {
+		average = float64(c.totalDurationMs) / float64(c.requestCount)
 	}
 
 	return metrics.Counters{
-		RequestCount:          requestCount,
-		ErrorCount:            c.errorCount.Load(),
+		RequestCount:          c.requestCount,
+		ErrorCount:            c.errorCount,
 		AverageResponseTimeMs: average,
 		ActiveConnections:     0,
 	}
