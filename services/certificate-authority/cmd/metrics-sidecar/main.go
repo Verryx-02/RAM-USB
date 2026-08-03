@@ -175,12 +175,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("build metrics client: %w", err)
 	}
-	if metricsClient != nil {
-		defer metricsClient.Disconnect(250)
-		go metrics.Run(ctx, metricsPublishInterval, func(publishCtx context.Context) error {
-			return metrics.PublishOnce(publishCtx, metricsClient, serviceName, acc.Snapshot())
-		})
-	}
+	defer metricsClient.Disconnect(250)
+	go metrics.Run(ctx, metricsPublishInterval, func(publishCtx context.Context) error {
+		return metrics.PublishOnce(publishCtx, metricsClient, serviceName, acc.Snapshot())
+	})
 
 	// codeql[go/path-injection] accessLogPath comes from env.Require(envAccessLogPath), an operator-supplied
 	// deployment setting, not attacker input.
@@ -249,14 +247,18 @@ func buildMQTTIdentity(ctx context.Context) (*tls.Config, error) {
 // certificate. A nil mesh.DialFunc (see metrics.NewClient's own doc
 // comment) means this connection goes out over this process's ordinary
 // default route - the shared real tailscale0 interface, per this file's
-// own "Identity and mesh membership" package doc comment. A nil, nil
-// return (no error) means metrics publishing is not configured
-// (envMQTTBrokerURL unset).
+// own "Identity and mesh membership" package doc comment.
+//
+// An unset envMQTTBrokerURL is a startup error, not a degraded mode
+// (RD-04): publishing CA-F-03's metrics is the only thing this process
+// exists to do, so a misconfigured broker URL must fail loudly at startup
+// instead of leaving a process that tails the log forever and publishes
+// nothing. Metrics-Collector reads the same variable the same way
+// (services/metrics-collector/cmd/metrics-collector/main.go).
 func buildMetricsClient(mqttTLSBase *tls.Config) (mqtt.Client, error) {
-	brokerURL, ok := os.LookupEnv(envMQTTBrokerURL)
-	if !ok || brokerURL == "" {
-		slog.Warn("certificate-authority-metrics: metrics publishing disabled, " + envMQTTBrokerURL + " is not set")
-		return nil, nil
+	brokerURL, err := env.Require(envMQTTBrokerURL)
+	if err != nil {
+		return nil, err
 	}
 
 	tlsConfig := metrics.TLSConfig(pki.ClientTLSConfig(mqttTLSBase, metrics.OrganizationMQTTBroker))
