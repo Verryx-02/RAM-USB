@@ -1,0 +1,127 @@
+# Continuous integration and image publication (KI-54, KI-72).
+#
+# Two jobs. `verify` runs CONTRIBUTING §7's verification pipeline — the nine
+# checks that until now had to be remembered by hand, and that nothing
+# confirmed had actually run. `publish` builds every service image and pushes
+# it to GHCR, but only after `verify` passes.
+#
+# Publishing here also removes the `--platform linux/amd64` trap (KI-72):
+# GitHub's runners are amd64, so images are built natively and an Apple
+# Silicon workstation can never again produce an arm64 image that loads
+# without error and then refuses to run on a Proxmox guest.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  verify:
+    name: Verification pipeline (CONTRIBUTING §7)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks scans history, not just the tip
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt
+        run: |
+          out=$(gofmt -l . | grep -v '^graphify-out/' || true)
+          if [ -n "$out" ]; then echo "$out"; exit 1; fi
+
+      - name: go test
+        run: go test ./...
+
+      - name: go test -race
+        run: go test -race ./...
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=10m
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      # Advisory, not blocking. Six findings already exist in history: five are
+      # false positives (a test password in the e2e script and its
+      # documentation, one example curl command) and one is real — the
+      # dev-only Headscale key tracked in issue #88, already public and
+      # awaiting regeneration rather than history rewriting. Failing the build
+      # on them would make CI red from its first run, which teaches everyone
+      # to ignore it. Flip to blocking once #88 is closed.
+      - name: gitleaks (advisory)
+        continue-on-error: true
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_linux_x64.tar.gz \
+            | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks detect --redact --no-banner
+
+  publish:
+    name: Build and publish images
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - certificate-authority
+          - database-vault
+          - entry-hub
+          - headscale
+          - metrics-collector
+          - network-manager
+          - security-switch
+          - storage-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}   # no PAT needed from Actions
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/ram-usb-${{ matrix.service }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployments/docker/${{ matrix.service }}/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
