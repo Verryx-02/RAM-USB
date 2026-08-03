@@ -29,9 +29,15 @@ import (
 // Handler.Grant needs it to persist which node the grant belongs to, so
 // NM-F-10's sweep can revoke the exact same node later without repeating
 // this lookup).
+//
+// RevokeStorageAccess is Handler.Grant's rollback path: it removes the tag
+// GrantStorageAccess just applied when NM-F-11's persistence then fails,
+// so no node is ever left carrying a storage-access tag that NM-F-10's
+// sweep has no recorded expiry for (RD-04, fail-secure).
 type MeshProvisioner interface {
 	CreateMeshUser(ctx context.Context, email string) (preAuthKey string, preAuthKeyID uint64, err error)
 	GrantStorageAccess(ctx context.Context, preAuthKeyID uint64) (nodeID uint64, err error)
+	RevokeStorageAccess(ctx context.Context, nodeID uint64) error
 }
 
 // HeadscaleAdapter adapts a headscale.Service (a real gRPC-backed client,
@@ -50,6 +56,12 @@ func (a HeadscaleAdapter) CreateMeshUser(ctx context.Context, email string) (str
 // headscale.GrantStorageAccess.
 func (a HeadscaleAdapter) GrantStorageAccess(ctx context.Context, preAuthKeyID uint64) (uint64, error) {
 	return headscale.GrantStorageAccess(ctx, a.Service, preAuthKeyID)
+}
+
+// RevokeStorageAccess satisfies MeshProvisioner by forwarding to
+// headscale.RevokeStorageAccess (Handler.Grant's rollback path).
+func (a HeadscaleAdapter) RevokeStorageAccess(ctx context.Context, nodeID uint64) error {
+	return headscale.RevokeStorageAccess(ctx, a.Service, nodeID)
 }
 
 // GrantRecorder is the narrow interface Handler.Grant needs against
@@ -72,13 +84,11 @@ type GrantRecorder interface {
 // PreAuthKeyIDForEmail methods have these exact signatures) - no adapter
 // type is needed, same shape as GrantRecorder above.
 //
-// Unlike GrantRecorder (whose persistence failure is logged loudly but
-// does not fail the request - NM-F-11's grant already succeeded at
-// Headscale, and the sweep is a durability nicety), a MeshUserStore
-// failure is treated as fatal by Handler.CreateMeshUser: without this row,
-// GrantStorageAccess can never find this user's node again, at any future
-// login, for the lifetime of the account - a silently "successful"
-// registration response would be actively misleading.
+// A MeshUserStore failure is treated as fatal by Handler.CreateMeshUser
+// (the same way a GrantRecorder failure is fatal to Handler.Grant):
+// without this row, GrantStorageAccess can never find this user's node
+// again, at any future login, for the lifetime of the account - a silently
+// "successful" registration response would be actively misleading.
 type MeshUserStore interface {
 	RecordPreAuthKeyID(ctx context.Context, email string, preAuthKeyID uint64) error
 	PreAuthKeyIDForEmail(ctx context.Context, email string) (preAuthKeyID uint64, found bool, err error)

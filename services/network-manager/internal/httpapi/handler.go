@@ -28,6 +28,7 @@ import (
 	"time"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
+	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 	"github.com/Verryx-02/RAM-USB/services/network-manager/internal/headscale"
 )
@@ -57,11 +58,11 @@ type Handler struct {
 	Mesh MeshProvisioner
 
 	// Grants persists NM-F-09's grant (NM-F-11: node, tag, expiry) so
-	// NM-F-10's sweep survives a Network-Manager restart. If nil, Grant
-	// still performs the real Headscale reachability grant but skips
-	// persistence, logging that fact loudly - see Grant's own doc
-	// comment for why a persistence failure does not itself fail the
-	// request.
+	// NM-F-10's sweep survives a Network-Manager restart. Must not be
+	// nil, same as MeshUsers below: NM-F-10's sweep revokes only what
+	// this store recorded, so a grant that is not persisted is not a
+	// less durable grant, it is an unlimited one - there is no useful
+	// degraded mode. See Grant's own doc comment.
 	Grants GrantRecorder
 
 	// MeshUsers persists (CreateMeshUser) and looks up (Grant) the
@@ -119,13 +120,12 @@ type meshUserResponse struct {
 //
 // After the real Headscale call succeeds, the generated pre-auth key's
 // numeric ID is persisted against email via h.MeshUsers (NM-F-09 needs it
-// at every future login - see MeshUserStore's own doc comment). Unlike
+// at every future login - see MeshUserStore's own doc comment). Like
 // Grant's NM-F-11 persistence below, a MeshUsers failure here fails the
 // whole request (500): the Headscale side already succeeded, but without
 // this row GrantStorageAccess can never find this user's node again, at
 // any future login, for the lifetime of the account - reporting success
-// to the caller would be actively misleading, not merely a durability
-// nicety. This does leave the just-created Headscale user/pre-auth key
+// to the caller would be actively misleading. This does leave the just-created Headscale user/pre-auth key
 // orphaned in that failure case; cleaning that up is an operational
 // concern out of this fix's scope, not something RD-04's fail-secure
 // principle requires undoing here.
@@ -155,7 +155,7 @@ func (h *Handler) CreateMeshUser(w http.ResponseWriter, r *http.Request) {
 	key, preAuthKeyID, err := h.Mesh.CreateMeshUser(r.Context(), req.Email)
 	if err != nil {
 		isError = true
-		h.logger().Error("mesh-user creation: headscale call failed", "error", err)
+		h.logger().Error("mesh-user creation: headscale call failed", "error", logging.Sanitize(err.Error()))
 		apperrors.WriteAppError(w, mapHeadscaleError(err))
 		return
 	}
@@ -243,7 +243,7 @@ func (h *Handler) Grant(w http.ResponseWriter, r *http.Request) {
 	preAuthKeyID, found, err := h.MeshUsers.PreAuthKeyIDForEmail(r.Context(), req.Email)
 	if err != nil {
 		isError = true
-		h.logger().Error("grant: failed to look up pre-auth key id", "error", err)
+		h.logger().Error("grant: failed to look up pre-auth key id", "error", logging.Sanitize(err.Error()))
 		apperrors.WriteAppError(w, apperrors.NewInternal(err))
 		return
 	}
@@ -257,24 +257,33 @@ func (h *Handler) Grant(w http.ResponseWriter, r *http.Request) {
 	nodeID, err := h.Mesh.GrantStorageAccess(r.Context(), preAuthKeyID)
 	if err != nil {
 		isError = true
-		h.logger().Error("grant: headscale call failed", "error", err)
+		h.logger().Error("grant: headscale call failed", "error", logging.Sanitize(err.Error()))
 		apperrors.WriteAppError(w, mapHeadscaleError(err))
 		return
 	}
 
 	// NM-F-11: persist the grant's expiry so NM-F-10's sweep can find and
-	// revoke it even across a Network-Manager restart. The real
-	// reachability grant above already succeeded - a persistence
-	// failure here is an operational/durability problem (the grant
-	// might outlive GrantDuration if the sweep never learns about it),
-	// not a reason to tell the caller the grant itself failed, so it is
-	// logged loudly rather than turned into a 5xx response. Nil Grants
-	// (no store configured) is treated the same way, loudly, not
-	// silently - see the Handler field's own doc comment.
-	if h.Grants == nil {
-		h.logger().Error("grant: no grant store configured, NM-F-11 persistence skipped", "node_id", nodeID)
-	} else if err := h.Grants.RecordGrant(r.Context(), req.Email, nodeID, headscale.TagStorageAccess, time.Now().Add(headscale.GrantDuration)); err != nil {
-		h.logger().Error("grant: failed to persist grant expiry (NM-F-11)", "node_id", nodeID, "error", err)
+	// revoke it even across a Network-Manager restart. A failure here is
+	// fail-secure (RD-04), not a durability nicety: the tag is already
+	// applied on Headscale, and NM-F-10's sweep revokes only grants it
+	// finds recorded, so an unpersisted grant would never expire. Roll
+	// the tag back best-effort and report the failure rather than
+	// answering 200 for reachability the caller believes is time-limited
+	// and is not.
+	if err := h.Grants.RecordGrant(r.Context(), req.Email, nodeID, headscale.TagStorageAccess, time.Now().Add(headscale.GrantDuration)); err != nil {
+		isError = true
+		h.logger().Error("grant: failed to persist grant expiry (NM-F-11), rolling the tag back",
+			"node_id", nodeID, "error", logging.Sanitize(err.Error()))
+		if revokeErr := h.Mesh.RevokeStorageAccess(r.Context(), nodeID); revokeErr != nil {
+			// Both the persistence and the rollback failed: the tag stays
+			// applied with no recorded expiry. Logged at Error so an
+			// operator can revoke it by hand; the client still gets a
+			// failure, never a 200.
+			h.logger().Error("grant: rollback revoke also failed, node keeps an unexpiring storage-access tag",
+				"node_id", nodeID, "error", logging.Sanitize(revokeErr.Error()))
+		}
+		apperrors.WriteAppError(w, apperrors.NewInternal(err))
+		return
 	}
 
 	h.logger().Info("grant: succeeded")

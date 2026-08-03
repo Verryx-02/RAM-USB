@@ -26,8 +26,10 @@ type fakeMesh struct {
 	createErr   error
 	grantErr    error
 	grantNodeID uint64
+	revokeErr   error
 	createCalls []string
 	grantCalls  []uint64
+	revokeCalls []uint64
 }
 
 func (f *fakeMesh) CreateMeshUser(_ context.Context, email string) (string, uint64, error) {
@@ -44,6 +46,11 @@ func (f *fakeMesh) GrantStorageAccess(_ context.Context, preAuthKeyID uint64) (u
 		return 0, f.grantErr
 	}
 	return f.grantNodeID, nil
+}
+
+func (f *fakeMesh) RevokeStorageAccess(_ context.Context, nodeID uint64) error {
+	f.revokeCalls = append(f.revokeCalls, nodeID)
+	return f.revokeErr
 }
 
 // fakeMeshUserStore is a hand-written fake implementing MeshUserStore
@@ -111,8 +118,11 @@ func (f *fakeGrantRecorder) RecordGrant(_ context.Context, email string, nodeID 
 // PreAuthKeyIDForEmail lookup succeeds by default for every test that
 // exercises Grant against testEmail without caring about the mapping
 // itself (see TestHandler_MeshUsersLookup* below for tests that do).
+// Grants is a required dependency (a grant whose expiry is not persisted
+// is never swept, i.e. unlimited - see Handler.Grants), so even tests that
+// do not care about persistence wire a working recorder.
 func newTestHandler(mesh MeshProvisioner) (*Handler, *bytes.Buffer) {
-	return newTestHandlerFull(mesh, nil, defaultMeshUserStore())
+	return newTestHandlerFull(mesh, &fakeGrantRecorder{}, defaultMeshUserStore())
 }
 
 func newTestHandlerWithGrants(mesh MeshProvisioner, grants GrantRecorder) (*Handler, *bytes.Buffer) {
@@ -238,7 +248,7 @@ func TestHandler_CreateMeshUser(t *testing.T) {
 func TestHandler_CreateMeshUser_PersistsPreAuthKeyID(t *testing.T) {
 	mesh := &fakeMesh{createKey: "authkey-generated", createKeyID: 99}
 	meshUsers := &fakeMeshUserStore{}
-	h, _ := newTestHandlerFull(mesh, nil, meshUsers)
+	h, _ := newTestHandlerFull(mesh, &fakeGrantRecorder{}, meshUsers)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, MeshUserPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
 	w := httptest.NewRecorder()
@@ -267,7 +277,7 @@ func TestHandler_CreateMeshUser_PersistsPreAuthKeyID(t *testing.T) {
 func TestHandler_CreateMeshUser_PersistenceFailureFailsTheRequest(t *testing.T) {
 	mesh := &fakeMesh{createKey: "authkey-generated", createKeyID: 99}
 	meshUsers := &fakeMeshUserStore{recordErr: errors.New("disk full")}
-	h, logBuf := newTestHandlerFull(mesh, nil, meshUsers)
+	h, logBuf := newTestHandlerFull(mesh, &fakeGrantRecorder{}, meshUsers)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, MeshUserPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
 	w := httptest.NewRecorder()
@@ -353,7 +363,7 @@ func TestHandler_Grant(t *testing.T) {
 func TestHandler_Grant_NoPreAuthKeyIDRecorded_Denies(t *testing.T) {
 	mesh := &fakeMesh{}
 	meshUsers := &fakeMeshUserStore{} // empty: no row for testEmail
-	h, _ := newTestHandlerFull(mesh, nil, meshUsers)
+	h, _ := newTestHandlerFull(mesh, &fakeGrantRecorder{}, meshUsers)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`","duration_seconds":43200}`))
 	w := httptest.NewRecorder()
@@ -375,7 +385,7 @@ func TestHandler_Grant_NoPreAuthKeyIDRecorded_Denies(t *testing.T) {
 func TestHandler_Grant_MeshUsersLookupFailure_Returns500(t *testing.T) {
 	mesh := &fakeMesh{}
 	meshUsers := &fakeMeshUserStore{lookupErr: errors.New("disk error")}
-	h, _ := newTestHandlerFull(mesh, nil, meshUsers)
+	h, _ := newTestHandlerFull(mesh, &fakeGrantRecorder{}, meshUsers)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`","duration_seconds":43200}`))
 	w := httptest.NewRecorder()
@@ -456,10 +466,10 @@ func TestHandler_Grant_PersistsExpiry(t *testing.T) {
 }
 
 // Requirement: NM-F-11
-func TestHandler_Grant_PersistenceFailureStillReturnsSuccess(t *testing.T) {
-	// A durability-layer failure must not turn an already-successful
-	// Headscale reachability grant into a client-visible failure - see
-	// Handler.Grant's own doc comment for the reasoning.
+func TestHandler_Grant_PersistenceFailureRevokesAndFails(t *testing.T) {
+	// An unpersisted grant is not a "less durable" grant, it is an
+	// unlimited one: NM-F-10's sweep only ever revokes what NM-F-11
+	// persisted. RD-04 fail-secure: undo the tag and report the failure.
 	mesh := &fakeMesh{grantNodeID: 42}
 	grants := &fakeGrantRecorder{err: errors.New("disk full")}
 	h, logBuf := newTestHandlerWithGrants(mesh, grants)
@@ -469,11 +479,32 @@ func TestHandler_Grant_PersistenceFailureStillReturnsSuccess(t *testing.T) {
 
 	h.Grant(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (body=%s)", w.Code, w.Body.String())
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body=%s)", w.Code, w.Body.String())
+	}
+	if len(mesh.revokeCalls) != 1 || mesh.revokeCalls[0] != 42 {
+		t.Fatalf("revokeCalls = %v, want [42] (the already-applied tag must be rolled back)", mesh.revokeCalls)
 	}
 	if !strings.Contains(logBuf.String(), "NM-F-11") {
 		t.Fatalf("expected the persistence failure to be logged loudly, log=%s", logBuf.String())
+	}
+}
+
+// Requirement: NM-F-11
+func TestHandler_Grant_PersistenceFailureFailsEvenIfRollbackFails(t *testing.T) {
+	// The rollback revoke is best-effort: if it too fails, the response
+	// must still be a failure, never a 200 the caller would act on.
+	mesh := &fakeMesh{grantNodeID: 42, revokeErr: errors.New("headscale down")}
+	grants := &fakeGrantRecorder{err: errors.New("disk full")}
+	h, _ := newTestHandlerWithGrants(mesh, grants)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, GrantPath, strings.NewReader(`{"email":"`+testEmail+`"}`))
+	w := httptest.NewRecorder()
+
+	h.Grant(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body=%s)", w.Code, w.Body.String())
 	}
 }
 
