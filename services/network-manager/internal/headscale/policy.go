@@ -243,11 +243,29 @@ func buildACLs() []policyACL {
 			// identity, and need this same mesh-routed reachability to
 			// mint/renew Grafana's TimescaleDB client certificate.
 			Action: "accept",
-			Src:    []string{TagEntryHub, TagSecuritySwitch, TagDatabaseVault, TagStorageService, TagNetworkManager, TagMQTTBroker, TagGrafana},
-			Dst:    []string{dstAny(TagCertificateAuthority)},
+			// TagMetricsCollector is included because NM-F-04 says "all
+			// internal components of the network, except Users", and
+			// Metrics-Collector is one: its own CA-F-04 bootstrap (the
+			// mTLS identity it needs to subscribe to the broker,
+			// MT-F-01..03) must reach Certificate-Authority over the mesh
+			// in production, and a bootstrap token is single-use - every
+			// s6 restart caused by an unreachable CA burns one.
+			Src: []string{
+				TagEntryHub,
+				TagSecuritySwitch,
+				TagDatabaseVault,
+				TagStorageService,
+				TagNetworkManager,
+				TagMQTTBroker,
+				TagMetricsCollector,
+				TagGrafana,
+			},
+			Dst: []string{dstAny(TagCertificateAuthority)},
 		},
 		{ // NM-F-04, direction two: Certificate-Authority can contact
-			// every internal component.
+			// every internal component - the same set as direction one,
+			// since NM-F-04's "can contact, and be contacted by" is
+			// symmetric over one component list.
 			Action: "accept",
 			Src:    []string{TagCertificateAuthority},
 			Dst: []string{
@@ -256,6 +274,9 @@ func buildACLs() []policyACL {
 				dstAny(TagDatabaseVault),
 				dstAny(TagStorageService),
 				dstAny(TagNetworkManager),
+				dstAny(TagMQTTBroker),
+				dstAny(TagMetricsCollector),
+				dstAny(TagGrafana),
 			},
 		},
 		{ // NM-F-05 and (together with the rule below) half of NM-F-07:
