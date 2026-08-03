@@ -11,8 +11,10 @@
 # unprivileged system account authorized-keys-command itself runs as (see
 # this container's Dockerfile's own comment on both) - it only needs
 # outbound mTLS calls to the Certificate-Authority and write access to
-# /etc/storage-service (already chowned to this account in the Dockerfile),
-# never root.
+# /var/lib/storage-service-identity (the directory the Dockerfile creates
+# owned by this account, 0700 - KI-56: /etc/storage-service itself stays
+# root-owned, because the shell scripts s6 runs as root live there), never
+# root.
 #
 # exec replaces this shell so the identity-provisioner binary becomes the
 # directly supervised process and receives s6's signals itself.

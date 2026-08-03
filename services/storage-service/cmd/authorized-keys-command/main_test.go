@@ -127,16 +127,16 @@ func TestParseConfig(t *testing.T) {
 			input: strings.Join([]string{
 				"# comment line, ignored",
 				"database_vault_url = https://database-vault.internal:8444",
-				"client_cert = /etc/storage-service/authorized-keys-command.crt",
-				"client_key = /etc/storage-service/authorized-keys-command.key",
-				"client_ca = /etc/storage-service/ca.crt",
+				"client_cert = /var/lib/storage-service-identity/authorized-keys-command.crt",
+				"client_key = /var/lib/storage-service-identity/authorized-keys-command.key",
+				"client_ca = /var/lib/storage-service-identity/ca.crt",
 				"",
 			}, "\n"),
 			want: config{
 				databaseVaultURL: "https://database-vault.internal:8444",
-				clientCertPath:   "/etc/storage-service/authorized-keys-command.crt",
-				clientKeyPath:    "/etc/storage-service/authorized-keys-command.key",
-				clientCAPath:     "/etc/storage-service/ca.crt",
+				clientCertPath:   "/var/lib/storage-service-identity/authorized-keys-command.crt",
+				clientKeyPath:    "/var/lib/storage-service-identity/authorized-keys-command.key",
+				clientCAPath:     "/var/lib/storage-service-identity/ca.crt",
 			},
 		},
 		{

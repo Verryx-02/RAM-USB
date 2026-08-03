@@ -60,7 +60,14 @@ import (
 // from (see the package doc comment for why a file, not an environment
 // variable). Exported as a named constant, not inlined, so a future
 // deployment/ops document or test can reference the exact same value.
-const configPath = "/etc/storage-service/authorized-keys-command.conf"
+//
+// /var/lib/storage-service-identity, not /etc/storage-service (KI-56): the
+// directory holding this identity is owned by the unprivileged sshd-authkeys
+// account this binary runs as, and is kept separate from the root-owned
+// /etc/storage-service where s6's root-executed shell scripts live. Must stay
+// identical to cmd/identity-provisioner/main.go's own configPath constant -
+// that process is what writes this file.
+const configPath = "/var/lib/storage-service-identity/authorized-keys-command.conf"
 
 // databaseVaultLookupTimeout bounds how long this process waits for
 // Database-Vault's response before giving up and denying the connection

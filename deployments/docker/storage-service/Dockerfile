@@ -165,14 +165,15 @@ RUN mkdir -p /var/lib/tailscale /var/run/tailscale
 # container - sshd_config's AuthorizedKeysCommandUser directive names it.
 # cmd/identity-provisioner (ST-F-11, KI-01) runs as this SAME account too
 # (see its own package doc comment for why): the only two things it needs
-# are outbound mTLS calls and write access to /etc/storage-service, exactly
-# the same unprivileged scope authorized-keys-command itself already has.
+# are outbound mTLS calls and write access to its own identity directory
+# (/var/lib/storage-service-identity, created below), exactly the same
+# unprivileged scope authorized-keys-command itself already has.
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin sshd-authkeys
 
 # /storage: root of all users (SRS 4.5's directory-structure diagram).
-# /etc/storage-service: holds authorized-keys-command.conf plus the
-# cert/key/CA-root files cmd/identity-provisioner writes into it (ST-F-11,
-# KI-01).
+# /etc/storage-service: root-owned 0755, holds ONLY the shell scripts the
+# s6-rc oneshots hand off to (tailscale-up.sh, trust-mesh-ca.sh,
+# identity-provisioner-ready.sh), all of which s6 executes as root.
 RUN mkdir -p /storage /etc/storage-service
 
 COPY --from=build /out/storage-service /usr/local/bin/storage-service
@@ -192,16 +193,24 @@ COPY deployments/docker/storage-service/sshd_config /etc/ssh/sshd_config
 # s6-overlay's README documents.
 COPY deployments/docker/storage-service/rootfs/ /
 
-# /etc/storage-service ownership: sshd-authkeys, not root, since
-# identity-provisioner (ST-F-11, KI-01) runs as that account and must be
-# able to write here, and authorized-keys-command reads the same files back
-# as that same account. Deliberately AFTER the rootfs COPY above, not
-# before it: that COPY lands files directly inside /etc/storage-service
-# (tailscale-up.sh, trust-mesh-ca.sh, identity-provisioner-ready.sh) and
-# was confirmed, by inspecting a real built image, to reset this
-# directory's own ownership back to root - chown must be the LAST write to
-# this path for the final image to actually have it.
-RUN chown sshd-authkeys:sshd-authkeys /etc/storage-service
+# /etc/storage-service stays root-owned 0755 (KI-56). It previously belonged
+# to sshd-authkeys so identity-provisioner could write its mTLS identity
+# there, but that COPY above lands three shell scripts in the same directory
+# (tailscale-up.sh, trust-mesh-ca.sh, identity-provisioner-ready.sh) which s6
+# executes AS ROOT on every container start. Owning a directory allows
+# unlinking and recreating any file inside it regardless of that file's own
+# owner, so anyone reaching code execution as sshd-authkeys (the account
+# authorized-keys-command runs as on every SFTP attempt, parsing a remote
+# Database-Vault response) could replace one of those scripts and gain root
+# - plus CHOWN/SETUID/SETGID/SYS_CHROOT - at the next restart, defeating the
+# container's cap_drop:ALL boundary (RNF-REL-01, RNF-SEC-03).
+RUN chmod 0755 /etc/storage-service
+
+# identity-provisioner (ST-F-11, KI-01) instead owns a dedicated directory
+# containing nothing root ever executes: its own mTLS certificate/key/CA
+# bundle plus authorized-keys-command.conf, which authorized-keys-command
+# reads back as the same account. 0700 keeps it unreadable by anyone else.
+RUN install -d -o sshd-authkeys -g sshd-authkeys -m 0700 /var/lib/storage-service-identity
 
 # No EXPOSE: neither sshd nor storage-service publish a host/ramusb-net
 # port anymore (NET-F-01) - both bind exclusively to the Tailscale mesh

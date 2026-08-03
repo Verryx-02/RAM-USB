@@ -20,10 +20,10 @@
 set -eu
 
 i=0
-while [ ! -f /etc/storage-service/authorized-keys-command.conf ]; do
+while [ ! -f /var/lib/storage-service-identity/authorized-keys-command.conf ]; do
 	i=$((i + 1))
 	if [ "$i" -ge 60 ]; then
-		echo "identity-provisioner-ready: timed out waiting for /etc/storage-service/authorized-keys-command.conf" >&2
+		echo "identity-provisioner-ready: timed out waiting for /var/lib/storage-service-identity/authorized-keys-command.conf" >&2
 		exit 1
 	fi
 	sleep 1
