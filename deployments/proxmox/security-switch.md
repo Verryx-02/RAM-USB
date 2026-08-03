@@ -23,10 +23,10 @@ Network-Manager either to grant 12-hour Storage-Service reachability
 (SS-F-09, registration) - then publishes aggregated, PII-free metrics
 every minute (SS-F-07/SS-F-08).
 
-`tailscaled` is a real OS-level client here, not `pkg/mesh`'s in-process
-`tsnet`, because neither `pkg/pki`'s CA-bootstrap/renewal traffic nor
-`pkg/metrics`' MQTT-publish traffic can be routed through an in-process-only
-netstack (confirmed library limitation, not a code gap - see
+`tailscaled` is a real OS-level client here because neither `pkg/pki`'s
+CA-bootstrap/renewal traffic nor `pkg/metrics`' MQTT-publish traffic can be
+routed through an in-process-only netstack (confirmed library limitation,
+not a code gap - see
 `.claude/agent-memory/code-agent.md`'s "pkg/pki dialer routing" section). A
 genuine kernel `tailscale0` interface forces every outbound connection this
 process makes through the mesh automatically, including those two
@@ -56,13 +56,26 @@ assembled at container start from the node's actual Tailscale IPv4 (never
 `0.0.0.0` or a Docker-bridge-style address, NET-F-01) - so the LXC guest
 needs the same effective privileges the dev Compose stack grants its
 Docker container (`cap_add: [NET_ADMIN, NET_RAW]`, `/dev/net/tun`). An
-**unprivileged** Proxmox LXC guest does not have `/dev/net/tun` access by
-default and needs it enabled explicitly in the guest's config (e.g. a
-`lxc.cgroup2.devices.allow: c 10:200 rwm` entry plus a `/dev/net/tun`
-mount, or the `keyctl`/`nesting` features if the guest runs this stack's
-Docker image rather than the Go binary and `tailscaled` directly) - this
-has not been verified against a real Proxmox LXC guest yet, only against
-the dev Compose stack's Docker container.
+**unprivileged** Proxmox LXC guest needs `/dev/net/tun` enabled explicitly
+in the guest's config, by appending to `/etc/pve/lxc/<vmid>.conf` (guest
+stopped/started to apply):
+
+```
+lxc.cgroup2.devices.allow: c 10:200 rwm
+lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file 0 0
+```
+
+That produces a working `/dev/net/tun` device node inside the guest. A
+Docker container inside that guest, given `--cap-add NET_ADMIN --cap-add
+NET_RAW --device /dev/net/tun` plus `TS_USERSPACE=false`, then brings up a
+**real kernel** `tailscale0` interface. Confirmed live on 2026-07-31
+against Certificate-Authority's own guest (CTID 102, the same
+unprivileged-LXC shape this service uses), via `ip link show` from inside
+the container - the interface is created before control-server
+registration, so this check holds even pointed at an unreachable control
+URL, and needs no real Headscale. A guest running this stack's Docker
+image rather than the Go binary and `tailscaled` directly may additionally
+need the `keyctl`/`nesting` guest features.
 
 Once joined, this node is reachable only by NM-F-01's allow-list (Entry-
 Hub, Database-Vault, Network-Manager, Certificate-Authority), enforced at

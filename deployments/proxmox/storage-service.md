@@ -2,8 +2,9 @@
 
 Written directly from `services/storage-service/cmd/storage-service/main.go`'s
 own package doc comment and `const` block,
-`services/storage-service/cmd/authorized-keys-command/main.go`'s own doc
-comment, `deployments/docker/storage-service/Dockerfile`'s doc comment,
+`services/storage-service/cmd/authorized-keys-command/main.go`'s and
+`services/storage-service/cmd/identity-provisioner/main.go`'s own doc
+comments, `deployments/docker/storage-service/Dockerfile`'s doc comment,
 `deployments/docker/storage-service/sshd_config`, and
 `deployments/compose/storage-service.yml`'s dev-stack wiring, translated to
 a Proxmox guest instead of a Compose service - same approach
@@ -13,18 +14,23 @@ a Proxmox guest instead of a Compose service - same approach
 ## What this process is
 
 Storage-Service is the one component genuinely doing OS-level work, per
-the SRS 4.5 `[!NOTE]` right after its directory-structure diagram: three
+the SRS 4.5 `[!NOTE]` right after its directory-structure diagram: four
 independent long-lived processes, s6-overlay-supervised on a
-`debian:bookworm-slim` base - a real OS-level `tailscaled` client, a
-hardened `sshd` (ST-F-03/04/07/08/09: SFTP-only, no password
-authentication, no root login, `ChrootDirectory` per user), and this
-repo's own storage-service Go mTLS HTTP server (ST-F-01/06/10) which
-creates a POSIX user (`useradd`/`groupadd`, `user<xxxxxx>`, ST-F-06) on
-every request from Database-Vault and reports the outcome back in that
-same HTTP response (ST-F-10 - there is no separate outbound call anywhere
-in this service).
+`debian:bookworm-slim` base (`deployments/docker/storage-service/rootfs/
+etc/s6-overlay/s6-rc.d/`, one `longrun` directory each) -
 
-A fourth binary, `authorized-keys-command`, is installed alongside but is
+- `tailscaled`, a real OS-level mesh client;
+- a hardened `sshd` (ST-F-03/04/07/08/09: SFTP-only, no password
+  authentication, no root login, `ChrootDirectory` per user);
+- this repo's own storage-service Go mTLS HTTP server (ST-F-01/06/10),
+  which creates a POSIX user (`useradd`/`groupadd`, `user<xxxxxx>`,
+  ST-F-06) on every request from Database-Vault and reports the outcome
+  back in that same HTTP response (ST-F-10 - there is no separate outbound
+  call anywhere in this service);
+- `identity-provisioner`, which keeps `authorized-keys-command`'s own mTLS
+  identity and config file on disk current (ST-F-11, see below).
+
+A fifth binary, `authorized-keys-command`, is installed alongside but is
 **not** s6-overlay-supervised: `sshd`'s own `AuthorizedKeysCommand`
 directive invokes it once per SFTP connection attempt, running as a
 dedicated unprivileged system account (`sshd-authkeys`) with no other role
@@ -36,10 +42,10 @@ The container runs with `cap_drop: ALL` plus a minimal added set
 (`CHOWN`, `SETUID`, `SETGID`, `SYS_CHROOT` for user creation and sshd's
 own per-connection setuid/chroot; `NET_ADMIN`, `NET_RAW` and
 `/dev/net/tun` for `tailscaled`'s kernel TUN interface), per RNF-SEC-03/
-RNF-REL-01. `tailscaled` is real here (not `pkg/mesh`'s in-process
-`tsnet`) because `sshd` - a C binary, not Go code `pkg/mesh` could route
-through application-level dial injection - needs a genuine kernel network
-interface to bind and accept connections on at all.
+RNF-REL-01. `tailscaled` is a real OS-level client here because `sshd` - a
+C binary, outside the reach of any application-level dial injection -
+needs a genuine kernel network interface to bind and accept connections on
+at all.
 
 ## Container sizing (dev/thesis-scale judgment call, not a measured
 production figure)
@@ -81,9 +87,10 @@ Network-Manager's `buildACLs`, not by anything in this container itself.
 
 ## Dependencies that must exist first
 
-- Certificate-Authority, reachable to mint this service's single-use
-  bootstrap token (`RAM_USB_CA_BOOTSTRAP_TOKEN`, CA-F-04) for the Go
-  mTLS listener's identity.
+- Certificate-Authority, reachable to mint this container's two single-use
+  bootstrap tokens (CA-F-04): `RAM_USB_CA_BOOTSTRAP_TOKEN` for the Go mTLS
+  listener's identity, and `RAM_USB_STORAGE_SERVICE_AKC_BOOTSTRAP_TOKEN`
+  for `identity-provisioner`'s.
 - The separately-deployed Headscale/reverse-proxy container
   (`deployments/compose/headscale.yml`), reachable at
   `RAM_USB_TAILSCALE_CONTROL_URL` to mint this node's single-use Tailscale
@@ -108,24 +115,28 @@ authoritative list and each one's doc comment)
 | `RAM_USB_STORAGE_SERVICE_MESH_HOSTNAME` | yes | This node's MagicDNS short name within the Headscale mesh (also the name `authorized-keys-command`'s AuthorizedKeysCommand consumers/other mesh nodes resolve this node by, NM-F-15) |
 | `RAM_USB_TAILSCALE_CONTROL_URL` | yes | The Headscale coordination URL - the separately-deployed `headscale` container/VPS |
 | `RAM_USB_STORAGE_SERVICE_TAILSCALE_AUTHKEY` | yes | Single-use Tailscale pre-auth key, tagged `tag:storage-service` |
+| `RAM_USB_STORAGE_SERVICE_AKC_BOOTSTRAP_TOKEN` | yes | `identity-provisioner`'s OWN single-use CA bootstrap token (CA-F-04, organization `StorageService`), distinct from `RAM_USB_CA_BOOTSTRAP_TOKEN` because a bootstrap token is single-use and two processes in this container each need one |
+| `RAM_USB_DATABASE_VAULT_PUBLIC_KEY_URL` | yes | Database-Vault's ST-F-11 public-key lookup base URL, e.g. `https://database-vault:8446`; `identity-provisioner` writes it verbatim into `authorized-keys-command.conf`'s `database_vault_url` key |
 
 `authorized-keys-command` does **not** read environment variables at all
 (sshd invokes it with a minimal, sanitized environment by design) - it
 reads its own mTLS client identity and Database-Vault's base URL from a
-fixed config file, `/etc/storage-service/authorized-keys-command.conf`
+fixed config file, `/var/lib/storage-service-identity/authorized-keys-command.conf`
 (`services/storage-service/cmd/authorized-keys-command/main.go`'s
-`configPath` constant). Every required variable in the table above is a
-hard startup failure if unset (RD-04, fail-secure).
+`configPath` constant). That file, plus the certificate/key/CA-bundle it
+points at (`akc-client.crt`, `akc-client.key`, `akc-ca.crt` in the same
+directory), is written by the `identity-provisioner` longrun
+(`services/storage-service/cmd/identity-provisioner/main.go`): it
+bootstraps its own mTLS identity from the Certificate-Authority with the
+token above, writes the config once, and re-encodes the current
+certificate/key to disk every five minutes so the on-disk copy tracks
+`pkg/pki`'s automatic renewal. `sshd` starts only after that first write
+lands (`s6-rc.d/sshd/dependencies.d/identity-provisioner-ready`). Every
+required variable in the table above is a hard startup failure if unset
+(RD-04, fail-secure).
 
 ## What a real (non-dev) deployment still needs, not yet decided here
 
-- **`/etc/storage-service/authorized-keys-command.conf`'s own contents
-  are not yet provisioned anywhere** - the Dockerfile creates the
-  `/etc/storage-service` directory and installs the binary, but nothing
-  in this repository writes this file's actual mTLS certificate/key/CA
-  bundle and Database-Vault URL yet; `main.go`'s own package doc comment
-  explicitly calls this out as "a separate, not-yet-scoped task." Without
-  it, ST-F-11 fails closed (RD-04) on every SFTP connection attempt.
 - ST-F-14 (per-user quota limits) and ST-F-15 (replication/fault
   tolerance via CephFS) are both explicitly "should"/nice-to-have, not
   built - directly relevant to this note's own disk-sizing section above.
