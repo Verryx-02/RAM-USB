@@ -78,8 +78,14 @@ func (c Config) repository() string {
 // sftpCommand returns the -o sftp.command value that makes restic
 // authenticate over SFTP using CL-F-01's client-generated private key
 // instead of any default identity.
+//
+// Every interpolated value is single-quoted: restic splits sftp.command
+// shell-style (respecting quotes) before exec'ing it, and
+// sshkey.ConfigDir() on darwin returns "$HOME/Library/Application Support/
+// ram-usb" - a path containing a space, which unquoted would reach ssh as
+// two separate arguments and break CL-F-06/CL-F-07 on every macOS run.
 func (c Config) sftpCommand() string {
-	return fmt.Sprintf("ssh -i %s -l %s %s -s sftp", c.PrivateKeyPath, c.PosixUsername, c.Host)
+	return fmt.Sprintf("ssh -i '%s' -l '%s' '%s' -s sftp", c.PrivateKeyPath, c.PosixUsername, c.Host)
 }
 
 // env returns the RESTIC_PASSWORD environment entry every invocation

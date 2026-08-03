@@ -159,10 +159,16 @@ func (w *wrappedError) Unwrap() error { return w.inner }
 
 // Requirement: CL-F-09
 func TestResolveCredentials(t *testing.T) {
+	// notATerminal is the default prompt stub: it reproduces a
+	// non-interactive stdin (script, CI, pipe), where the real
+	// promptPassword reads nothing and reports ok=false.
+	notATerminal := func() (string, bool, error) { return "", false, nil }
+
 	tests := []struct {
 		name        string
 		args        []string
 		envPassword string
+		prompt      func() (string, bool, error)
 		wantEmail   string
 		wantPass    string
 		wantErr     bool
@@ -193,8 +199,31 @@ func TestResolveCredentials(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "missing password (no flag, no env var) is rejected",
+			name:    "missing password on a non-interactive stdin is rejected, never blocks on a prompt",
 			args:    []string{"--email=user@example.com"},
+			wantErr: true,
+		},
+		{
+			name:      "missing password on an interactive terminal is prompted for",
+			args:      []string{"--email=user@example.com"},
+			prompt:    func() (string, bool, error) { return validPassword, true, nil },
+			wantEmail: "user@example.com",
+			wantPass:  validPassword,
+		},
+		{
+			name:        "an explicitly supplied password is never overridden by the prompt",
+			args:        []string{"--email=user@example.com"},
+			envPassword: validPassword,
+			prompt: func() (string, bool, error) {
+				return "prompted-instead", true, errors.New("prompt must not be reached")
+			},
+			wantEmail: "user@example.com",
+			wantPass:  validPassword,
+		},
+		{
+			name:    "a failing terminal read is surfaced as an error",
+			args:    []string{"--email=user@example.com"},
+			prompt:  func() (string, bool, error) { return "", false, errors.New("read failed") },
 			wantErr: true,
 		},
 		{
@@ -210,6 +239,14 @@ func TestResolveCredentials(t *testing.T) {
 				t.Setenv(envLoginPassword, tt.envPassword)
 			} else {
 				t.Setenv(envLoginPassword, "")
+			}
+
+			original := promptPassword
+			t.Cleanup(func() { promptPassword = original })
+			if tt.prompt != nil {
+				promptPassword = tt.prompt
+			} else {
+				promptPassword = notATerminal
 			}
 
 			fs := flag.NewFlagSet("test", flag.ContinueOnError)

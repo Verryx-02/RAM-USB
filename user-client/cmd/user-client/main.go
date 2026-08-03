@@ -25,10 +25,14 @@
 //   - CLI subcommand/flag naming below (register/login/backup/restore,
 //     --email/--password/--entry-hub-url/--login-server/--storage-host)
 //     is this session's judgment call.
-//   - The password is accepted via --password or the RAM_USB_PASSWORD
-//     environment variable (never required as a bare positional argument,
-//     to keep it out of shell history when possible) - this is a
-//     usability/security trade-off, not an SRS-specified mechanism.
+//   - The password is read, in order, from --password, the RAM_USB_PASSWORD
+//     environment variable, or - when stdin is an interactive terminal - an
+//     echo-free prompt. Leaving both the flag and the env var unset is the
+//     recommended interactive use: --password puts the password in argv,
+//     where any local "ps aux" can read it. A non-interactive run with
+//     neither set fails immediately instead of blocking on a prompt. This
+//     precedence is a usability/security trade-off, not an SRS-specified
+//     mechanism.
 //   - Entry-Hub's base URL, Headscale's login-server URL, and
 //     Storage-Service's mesh hostname are read from environment variables
 //     (RAM_USB_ENTRY_HUB_URL, RAM_USB_HEADSCALE_URL,
@@ -44,6 +48,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	"golang.org/x/term"
 
 	apperrors "github.com/Verryx-02/RAM-USB/pkg/errors"
 	"github.com/Verryx-02/RAM-USB/pkg/validation"
@@ -111,21 +117,59 @@ func userFacingMessage(err error) string {
 	return err.Error()
 }
 
-// resolveCredentials reads --email/--password (password falling back to
-// RAM_USB_PASSWORD) shared by register and login.
-func resolveCredentials(fs *flag.FlagSet, args []string) (email, password string, err error) {
+// promptPassword reads a password from stdin with echo disabled, so that
+// the most convenient way to supply it is also the one that leaves it out
+// of both argv (visible to any local "ps aux") and the shell history. The
+// prompt goes to stderr, keeping stdout free for a subcommand's own output.
+// It reports ok=false, without reading anything, when stdin is not an
+// interactive terminal - a scripted or piped run must fail fast rather than
+// block forever on a prompt nobody can answer.
+//
+// It is a var so tests can drive both branches: "go test" hands its own
+// stdin to a single test binary, which is a real terminal when the suite is
+// run by hand, so the non-interactive path cannot be reached by relying on
+// the test environment alone.
+var promptPassword = func() (string, bool, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return "", false, nil
+	}
+	fmt.Fprint(os.Stderr, "Password: ")
+	raw, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", false, fmt.Errorf("read password from terminal: %w", err)
+	}
+	return string(raw), true, nil
+}
+
+// resolveCredentials reads --email/--password shared by register and
+// login. The password is taken from --password, then RAM_USB_PASSWORD,
+// then - when stdin is an interactive terminal - an echo-free prompt; a
+// non-interactive run (script, CI, pipe) with neither flag nor env var set
+// is still rejected outright rather than blocking on a read.
+func resolveCredentials(fs *flag.FlagSet, args []string) (string, string, error) {
 	emailFlag := fs.String("email", "", "account email address")
-	passwordFlag := fs.String("password", "", "account password (or set "+envLoginPassword+")")
+	passwordFlag := fs.String("password", "", "account password (or set "+envLoginPassword+", or leave both unset to be prompted)")
 	if err := fs.Parse(args); err != nil {
 		return "", "", err
 	}
 
-	password = *passwordFlag
+	if *emailFlag == "" {
+		return "", "", fmt.Errorf("--email is required")
+	}
+
+	password := *passwordFlag
 	if password == "" {
 		password = os.Getenv(envLoginPassword)
 	}
-	if *emailFlag == "" {
-		return "", "", fmt.Errorf("--email is required")
+	if password == "" {
+		prompted, ok, err := promptPassword()
+		if err != nil {
+			return "", "", err
+		}
+		if ok {
+			password = prompted
+		}
 	}
 	if password == "" {
 		return "", "", fmt.Errorf("--password or %s is required", envLoginPassword)

@@ -8,13 +8,51 @@ import (
 	"github.com/Verryx-02/RAM-USB/user-client/internal/execrunner"
 )
 
+// testKeyPath deliberately contains a space: os.UserConfigDir() on darwin
+// returns "$HOME/Library/Application Support", so every real macOS run of
+// CL-F-06/CL-F-07 passes a space-containing key path through
+// -o sftp.command, which restic splits shell-style before exec'ing ssh.
+const testKeyPath = "/Users/alice/Library/Application Support/ram-usb/id_ed25519"
+
 func testConfig(fake execrunner.Runner) Config {
 	return Config{
 		Runner:             fake,
 		Host:               "storage-service.mesh.ts.net",
 		PosixUsername:      "user000001",
-		PrivateKeyPath:     "/home/user/.config/ram-usb/id_ed25519",
+		PrivateKeyPath:     testKeyPath,
 		RepositoryPassword: "repo-secret",
+	}
+}
+
+// Requirement: CL-F-06
+func TestSftpCommand_QuotesInterpolatedValues(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{
+			name: "space-containing key path stays a single ssh argument",
+			cfg:  testConfig(&execrunner.Fake{}),
+			want: "ssh -i '/Users/alice/Library/Application Support/ram-usb/id_ed25519' -l 'user000001' 'storage-service.mesh.ts.net' -s sftp",
+		},
+		{
+			name: "space-free key path is quoted just the same",
+			cfg: Config{
+				Host:           "storage-service",
+				PosixUsername:  "user000002",
+				PrivateKeyPath: "/home/user/.config/ram-usb/id_ed25519",
+			},
+			want: "ssh -i '/home/user/.config/ram-usb/id_ed25519' -l 'user000002' 'storage-service' -s sftp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.sftpCommand(); got != tt.want {
+				t.Errorf("sftpCommand() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -32,7 +70,7 @@ func TestInit_Success(t *testing.T) {
 	}
 	call := fake.Calls[0]
 	wantRepo := "sftp:user000001@storage-service.mesh.ts.net:/data"
-	wantSftpCmd := "sftp.command=ssh -i /home/user/.config/ram-usb/id_ed25519 -l user000001 storage-service.mesh.ts.net -s sftp"
+	wantSftpCmd := "sftp.command=ssh -i '" + testKeyPath + "' -l 'user000001' 'storage-service.mesh.ts.net' -s sftp"
 	want := []string{"restic", "-r", wantRepo, "-o", wantSftpCmd, "init"}
 	if len(call) != len(want) {
 		t.Fatalf("call = %v, want %v", call, want)
