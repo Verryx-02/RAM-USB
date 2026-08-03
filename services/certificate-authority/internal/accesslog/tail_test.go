@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -105,6 +106,137 @@ func TestFollow_DeliversLinesAppendedAfterStart(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Follow did not return after context cancellation")
 	}
+}
+
+// startFollow runs Follow in the background against path's current end and
+// returns the channel its delivered lines arrive on. Every rotation test
+// below drives a REAL file on disk (t.TempDir()) through exactly what
+// logrotate does to step-ca's access log - no fake filesystem, since the
+// behavior under test (a shrunk file, a replaced inode) is precisely the
+// part a fake would have to invent.
+func startFollow(t *testing.T, path string) <-chan []byte {
+	t.Helper()
+
+	r := openReader(t, path)
+	if _, err := r.Seek(0, io.SeekEnd); err != nil {
+		t.Fatalf("Seek: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	got := make(chan []byte, 8)
+	go func() {
+		_ = Follow(ctx, r, 10*time.Millisecond, func(line []byte) {
+			got <- append([]byte(nil), line...)
+		})
+	}()
+	return got
+}
+
+func expectLine(t *testing.T, got <-chan []byte, want string) {
+	t.Helper()
+	select {
+	case line := <-got:
+		if string(line) != want {
+			t.Fatalf("line = %q, want %q", line, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %q", want)
+	}
+}
+
+// Requirement: CA-F-03
+//
+// logrotate's copytruncate mode truncates the log in place: the file's size
+// drops below the reader's own offset while the reader keeps that offset.
+// Without rotation handling every later read returns io.EOF forever and the
+// published counters freeze on a flat line (docs/Known_Issues.md KI-43).
+func TestFollow_ResumesAfterCopytruncateRotation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "access.log")
+	w := openWriter(t, path)
+
+	// Push the reader's offset well past what the post-rotation file will
+	// hold, so a stale offset cannot accidentally still land on new data.
+	if _, err := w.WriteString(`{"status":200,"duration-ns":111,"padding":"` + strings.Repeat("x", 4096) + "\"}\n"); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+
+	got := startFollow(t, path)
+	time.Sleep(30 * time.Millisecond)
+
+	if _, err := w.WriteString("{\"status\":200,\"duration-ns\":111}\n"); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	expectLine(t, got, `{"status":200,"duration-ns":111}`)
+
+	if err := os.Truncate(path, 0); err != nil {
+		t.Fatalf("Truncate: %v", err)
+	}
+	// The writer holds O_APPEND, so this lands at the new offset 0.
+	if _, err := w.WriteString("{\"status\":500,\"duration-ns\":222}\n"); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+
+	expectLine(t, got, `{"status":500,"duration-ns":222}`)
+}
+
+// Requirement: CA-F-03
+//
+// logrotate's default (rename) mode moves the log aside and the writer
+// recreates it: the reader's open handle keeps pointing at the renamed
+// inode, which never grows again (docs/Known_Issues.md KI-43).
+func TestFollow_ResumesAfterRenameRotation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "access.log")
+	w := openWriter(t, path)
+
+	got := startFollow(t, path)
+	time.Sleep(30 * time.Millisecond)
+
+	if _, err := w.WriteString("{\"status\":200,\"duration-ns\":111}\n"); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	expectLine(t, got, `{"status":200,"duration-ns":111}`)
+
+	if err := os.Rename(path, filepath.Join(dir, "access.log.1")); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	rotated := openWriter(t, path)
+	if _, err := rotated.WriteString("{\"status\":500,\"duration-ns\":222}\n"); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+
+	expectLine(t, got, `{"status":500,"duration-ns":222}`)
+}
+
+// Requirement: CA-F-03
+//
+// A rotation must not resurrect the partial line buffered from the previous
+// file: gluing it onto the first line of the new file would hand onLine a
+// corrupted, unparsable record.
+func TestFollow_DropsPartialLineAcrossRotation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "access.log")
+	w := openWriter(t, path)
+
+	got := startFollow(t, path)
+	time.Sleep(30 * time.Millisecond)
+
+	if _, err := w.WriteString(`{"status":200,"dura`); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	time.Sleep(30 * time.Millisecond)
+
+	if err := os.Rename(path, filepath.Join(dir, "access.log.1")); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	rotated := openWriter(t, path)
+	if _, err := rotated.WriteString("{\"status\":500,\"duration-ns\":222}\n"); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+
+	expectLine(t, got, `{"status":500,"duration-ns":222}`)
 }
 
 // Requirement: CA-F-03
