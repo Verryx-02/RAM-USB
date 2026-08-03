@@ -62,7 +62,7 @@ func (f *fakeBeginner) Begin(_ context.Context) (Tx, error) {
 // (not real credentials) used across this file's test cases.
 func testRecord() UserRecord {
 	return UserRecord{ //nolint:gosec // fixture data, not a real password hash
-		EmailHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd",
+		EmailHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		EmailEncrypted: encryption.EncryptedEmail{
 			Salt:       []byte("0123456789abcdef"),
 			Nonce:      []byte("012345678901"),

@@ -276,6 +276,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("build schema migration: %w", err)
 	}
+	// schema.New opens its own database/sql pool for golang-migrate, which
+	// is a different object from the pgxpool below: closing that one does
+	// not close this one, so without this the migration pool stays idle-open
+	// for the whole process lifetime. Close returns (source, database)
+	// errors; neither is actionable once migrations already succeeded.
+	defer func() { _, _ = migration.Close() }()
 	// Up() only, never Down() - Down() is test-cleanup-only (see
 	// internal/schema's package doc comment) and must never run against
 	// a real database. A failed migration fails this process's startup

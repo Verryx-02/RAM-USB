@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -165,6 +166,29 @@ func VerifyPassword(password, pepper []byte, encoded string) (bool, error) {
 	gotHash := argon2.IDKey(composePassword(password, pepper), salt, time, memoryKiB, threads, uint32(len(wantHash))) //nolint:gosec // bounded by the explicit MaxUint32 check above
 
 	return subtle.ConstantTimeCompare(gotHash, wantHash) == 1, nil
+}
+
+// dummyHash returns a PHC string carrying DV-F-07's exact cost parameters,
+// computed at most once per process (sync.OnceValue) no matter how many
+// requests call VerifyDummy. Its salt and digest are meaningless — only the
+// parameters matter, since they are what determines how long recomputing it
+// takes. The salt comes from saltSize rather than a literal length so this
+// cannot silently start producing an empty string if saltSize ever changes.
+var dummyHash = sync.OnceValue(func() string {
+	encoded, _ := HashPassword(nil, make([]byte, saltSize), nil)
+	return encoded
+})
+
+// VerifyDummy performs the same Argon2id computation VerifyPassword does,
+// against a throwaway hash, and discards the result. Callers use it on paths
+// that reject a login before any stored hash is available (no such user, or
+// the lookup itself failed), so that the rejection takes the same order of
+// magnitude of time as a wrong-password rejection. Without it, Argon2id's
+// ~50ms only runs for existing emails, turning login latency into a user
+// enumeration oracle even though DV-F-15's response and log line are
+// identical.
+func VerifyDummy(password, pepper []byte) {
+	_, _ = VerifyPassword(password, pepper, dummyHash())
 }
 
 // encodeHash formats salt and hash into the PHC string this package uses

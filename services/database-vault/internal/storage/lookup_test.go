@@ -76,7 +76,7 @@ func TestGetPasswordHash(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			db := fakeQuerier{row: tt.row}
 
-			got, err := GetPasswordHash(context.Background(), db, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd")
+			got, err := GetPasswordHash(context.Background(), db, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {

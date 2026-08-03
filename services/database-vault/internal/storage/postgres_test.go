@@ -59,7 +59,7 @@ func TestSaveUser_Postgres(t *testing.T) {
 	db := PoolBeginner{Pool: pool}
 
 	record := UserRecord{ //nolint:gosec // fixture data, not a real password hash
-		EmailHash: "postgres0123456789abcdef0123456789abcdef0123456789abcdef012345",
+		EmailHash: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
 		EmailEncrypted: encryption.EncryptedEmail{
 			Salt:       []byte("0123456789abcdef"),
 			Nonce:      []byte("012345678901"),

@@ -20,9 +20,15 @@ import (
 type fakePublicKeyStore struct {
 	key string
 	err error
+
+	// calls counts GetSSHPublicKey invocations, so a test asserting the
+	// store is never reached can check that directly instead of inferring
+	// it from the response status.
+	calls int
 }
 
 func (f *fakePublicKeyStore) GetSSHPublicKey(_ context.Context, _ string) (string, error) {
+	f.calls++
 	return f.key, f.err
 }
 
@@ -121,8 +127,11 @@ func TestPublicKeyHandler_MalformedUsernameRejected(t *testing.T) {
 		{"empty", ""},
 	}
 
-	// Store is never called in any of these cases — the fake would panic
-	// if it were, since none of it configures a key or error.
+	// Store must never be reached in any of these cases: the handler
+	// rejects the malformed username before any lookup. The fake's call
+	// counter is asserted after the loop — previously this was only an
+	// assumption stated in a comment, which the status-code assertion alone
+	// does not actually prove.
 	store := &fakePublicKeyStore{err: errors.New("store must not be called for a malformed username")}
 
 	for _, tt := range tests {
@@ -150,6 +159,10 @@ func TestPublicKeyHandler_MalformedUsernameRejected(t *testing.T) {
 				t.Fatalf("log leaked the raw posix_username value: %s", logBuf.String())
 			}
 		})
+	}
+
+	if store.calls != 0 {
+		t.Fatalf("store was called %d times, want 0 for malformed usernames", store.calls)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -282,6 +283,43 @@ func TestHandler_Login_UnauthorizedDoesNotLeakDetail(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(resp.Error), "email") || strings.Contains(strings.ToLower(resp.Error), "password") {
 		t.Fatalf("response body must not distinguish the failure cause, got: %q", resp.Error)
+	}
+}
+
+// Requirement: DV-F-15
+func TestHandler_Login_LookupFailureLogsAtErrorLevel(t *testing.T) {
+	cases := []struct {
+		name      string
+		store     *fakeLoginStorage
+		wantLevel string
+	}{
+		// The lookup itself failed: an internal fault, not a user's bad
+		// credentials. Logging it at WARN alongside ordinary rejections
+		// makes a database outage read as a wave of failed logins.
+		{"database unreachable", &fakeLoginStorage{err: errors.New("connection refused")}, "level=ERROR"},
+		// A stored hash that will not parse is likewise an internal fault.
+		{"corrupt stored hash", &fakeLoginStorage{hash: "not-a-phc-string"}, "level=ERROR"},
+		// A genuinely wrong credential stays at WARN.
+		{"no such user", &fakeLoginStorage{err: storage.ErrUserNotFound}, "level=WARN"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, logBuf := newTestHandler(&fakeRegistrationStorage{}, &fakePOSIX{}, tc.store)
+
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, LoginPath, strings.NewReader(loginRequestBody(testEmail, testPassword)))
+			rec := httptest.NewRecorder()
+
+			h.Login(rec, req)
+
+			// DV-F-15/RD-04: every one of these is still a 401 to the client.
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+			}
+			if !strings.Contains(logBuf.String(), tc.wantLevel) {
+				t.Fatalf("log = %q, want %s", logBuf.String(), tc.wantLevel)
+			}
+		})
 	}
 }
 

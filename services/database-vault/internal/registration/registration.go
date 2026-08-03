@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/encryption"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/posix"
@@ -79,6 +80,12 @@ type Result struct {
 	// Err is nil only when Outcome is OutcomeRegistered.
 	Err error
 }
+
+// rollbackTimeout bounds DV-F-10's compensating DeleteUser, which runs on a
+// context detached from the request's own (see Register). No SRS value
+// specifies it; 5s is chosen as comfortably longer than a single-row delete
+// and short enough that a hung database cannot pin the request goroutine.
+const rollbackTimeout = 5 * time.Second
 
 // ErrOrphanedRecord means POSIX-user creation failed AND the compensating
 // rollback (storage.DeleteUser) also failed: the user record was not
@@ -136,7 +143,21 @@ func Register(ctx context.Context, store Storage, posixSvc POSIXProvisioner, inp
 	if err := posixSvc.CreatePOSIXUser(ctx, username); err != nil {
 		// DV-F-10: compensating rollback. The record was saved above; it
 		// must not survive a failed POSIX-user creation.
-		if delErr := store.DeleteUser(ctx, input.EmailHash); delErr != nil {
+		//
+		// The rollback deliberately does not run on ctx: ctx's cancellation
+		// (client disconnected, upstream deadline expired) is one of the
+		// likeliest reasons CreatePOSIXUser just failed, and reusing it
+		// would make DeleteUser fail immediately, leaving an orphaned row.
+		// Since email_hash is the primary key, that row makes the address
+		// permanently unregisterable (DV-F-12 would answer 409 forever) and
+		// no deletion or administration endpoint exists anywhere in the
+		// system. WithoutCancel keeps ctx's values while dropping its
+		// cancellation; the timeout bounds the rollback so a dead database
+		// cannot block the request goroutine indefinitely.
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+		defer cancel()
+
+		if delErr := store.DeleteUser(rollbackCtx, input.EmailHash); delErr != nil {
 			return Result{
 				Outcome: OutcomeFailed,
 				Err:     fmt.Errorf("%w: posix creation error: %w; delete error: %w", ErrOrphanedRecord, err, delErr),
