@@ -3,6 +3,7 @@ package registration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -33,9 +34,15 @@ func (f *fakeStorage) SaveUser(_ context.Context, record storage.UserRecord) err
 	return f.saveErr
 }
 
-func (f *fakeStorage) DeleteUser(_ context.Context, emailHash string) error {
+// DeleteUser refuses to run on an already-cancelled context, the way a real
+// database driver does. Without that, a test could not tell whether the
+// rollback ran on a live context or on the request's cancelled one.
+func (f *fakeStorage) DeleteUser(ctx context.Context, emailHash string) error {
 	f.deleteCalled = true
 	f.deletedHash = emailHash
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("fake storage: delete on a cancelled context: %w", err)
+	}
 	return f.deleteErr
 }
 
@@ -44,13 +51,24 @@ func (f *fakeStorage) DeleteUser(_ context.Context, emailHash string) error {
 type fakePOSIX struct {
 	createErr error
 
+	// cancelRequest, when set, is called before returning, reproducing the
+	// real failure mode where the client disconnects (or the upstream
+	// deadline expires) while Storage-Service is hanging: the request
+	// context is cancelled and that cancellation is what makes this call
+	// fail.
+	cancelRequest context.CancelFunc
+
 	createCalled   bool
 	createUsername string
 }
 
-func (f *fakePOSIX) CreatePOSIXUser(_ context.Context, username string) error {
+func (f *fakePOSIX) CreatePOSIXUser(ctx context.Context, username string) error {
 	f.createCalled = true
 	f.createUsername = username
+	if f.cancelRequest != nil {
+		f.cancelRequest()
+		return fmt.Errorf("fake posix: storage-service call aborted: %w", ctx.Err())
+	}
 	return f.createErr
 }
 
@@ -58,7 +76,7 @@ func (f *fakePOSIX) CreatePOSIXUser(_ context.Context, username string) error {
 // (not real credentials).
 func testInput() Input {
 	return Input{ //nolint:gosec // fixture data, not a real password hash
-		EmailHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd",
+		EmailHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		EmailEncrypted: encryption.EncryptedEmail{
 			Salt:       []byte("0123456789abcdef"),
 			Nonce:      []byte("012345678901"),
@@ -192,6 +210,39 @@ func TestRegister_POSIXCreationFailure_RollbackAlsoFails(t *testing.T) {
 	}
 	if !store.deleteCalled {
 		t.Fatal("DeleteUser was not called")
+	}
+}
+
+// Requirement: DV-F-10
+func TestRegister_POSIXCreationFailure_RollsBackAfterRequestContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	store := &fakeStorage{}
+	// The client disconnects while Storage-Service hangs: cancelling ctx is
+	// itself what makes CreatePOSIXUser fail. Reusing that same cancelled
+	// context for the rollback would make DeleteUser fail immediately,
+	// leaving the row behind — and since email_hash is the primary key, that
+	// row would make the address permanently unregisterable (DV-F-12 would
+	// answer 409 forever, with no deletion endpoint anywhere in the system).
+	posixSvc := &fakePOSIX{cancelRequest: cancel}
+	input := testInput()
+
+	result := Register(ctx, store, posixSvc, input)
+
+	if result.Outcome != OutcomeFailed {
+		t.Fatalf("Outcome = %v, want OutcomeFailed", result.Outcome)
+	}
+	if !store.deleteCalled {
+		t.Fatal("DeleteUser was not called after POSIX user creation failed")
+	}
+	if store.deletedHash != input.EmailHash {
+		t.Fatalf("DeleteUser emailHash = %q, want %q", store.deletedHash, input.EmailHash)
+	}
+	// The row must not survive: an ErrOrphanedRecord result means DeleteUser
+	// itself failed, i.e. the address stayed permanently taken.
+	if errors.Is(result.Err, ErrOrphanedRecord) {
+		t.Fatalf("Err = %v: the rollback ran on the cancelled request context and left the record orphaned", result.Err)
 	}
 }
 
