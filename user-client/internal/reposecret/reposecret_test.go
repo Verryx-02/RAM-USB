@@ -49,6 +49,35 @@ func TestEnsure_FilePermissions(t *testing.T) {
 }
 
 // Requirement: CL-F-06
+func TestEnsure_TrimsSurroundingWhitespace(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "trailing newline added by a text editor", content: "stored-password\n"},
+		{name: "trailing CRLF", content: "stored-password\r\n"},
+		{name: "leading and trailing spaces", content: "  stored-password  "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, fileName), []byte(tt.content), fileMode); err != nil {
+				t.Fatalf("os.WriteFile() error = %v, want nil", err)
+			}
+
+			got, err := Ensure(dir)
+			if err != nil {
+				t.Fatalf("Ensure() error = %v, want nil", err)
+			}
+			if got != "stored-password" {
+				t.Errorf("Ensure() = %q, want %q - a changed RESTIC_PASSWORD makes every existing snapshot undecryptable (RU-07)", got, "stored-password")
+			}
+		})
+	}
+}
+
+// Requirement: CL-F-06
 func TestEnsure_DifferentDirsGetDifferentPasswords(t *testing.T) {
 	dirA := t.TempDir()
 	dirB := t.TempDir()

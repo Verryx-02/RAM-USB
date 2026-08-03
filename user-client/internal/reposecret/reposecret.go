@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // fileName is the fixed file name this package stores the repository
@@ -52,7 +53,12 @@ func Ensure(dir string) (string, error) {
 
 	existing, err := os.ReadFile(path) //nolint:gosec // G304: path is dir (the caller's own ram-usb config directory) joined with this package's own fixed fileName constant, never externally-supplied input.
 	if err == nil {
-		return string(existing), nil
+		// Trimmed for the same reason clientstate.LoadPosixUsername trims:
+		// an editor that appends a trailing newline would otherwise change
+		// RESTIC_PASSWORD, and restic cannot decrypt an existing
+		// repository's snapshots with any password other than the one that
+		// created it - a permanent data loss (RU-07).
+		return strings.TrimSpace(string(existing)), nil
 	}
 	if !os.IsNotExist(err) {
 		return "", fmt.Errorf("reposecret: read existing password: %w", err)
