@@ -4,9 +4,18 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
-rm -f /tmp/ramusb_test_key /tmp/ramusb_test_key.pub
-ssh-keygen -t ed25519 -N "" -f /tmp/ramusb_test_key -C "test@ramusb" -q
-TESTKEY=$(cat /tmp/ramusb_test_key.pub)
+# KI-78: the test SSH key is a live credential - it is registered against a
+# real account whose Storage-Service chroot really exists (ST-F-03/ST-F-05),
+# so it must not outlive this script nor sit at a path another user on a
+# shared/CI host can pre-create or read. mktemp -d gives a fresh 0700
+# directory per run, and the EXIT trap removes the key whether the run
+# succeeds, fails, or is interrupted.
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+KEYFILE="$TMPDIR/ramusb_test_key"
+
+ssh-keygen -t ed25519 -N "" -f "$KEYFILE" -C "test@ramusb" -q
+TESTKEY=$(cat "$KEYFILE.pub")
 TESTEMAIL="test-$(date +%s)@example.com"
 
 REGISTER_RAW=$(curl -sk -w "\n%{http_code}" -X POST https://localhost:8443/api/register \
