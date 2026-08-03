@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/Verryx-02/RAM-USB/pkg/logging"
 )
 
 // CreateUserPath is the HTTP endpoint Database-Vault calls on
@@ -92,7 +94,12 @@ func CreatePOSIXUser(ctx context.Context, client *http.Client, baseURL string, u
 
 	if resp.StatusCode != http.StatusCreated || !parsed.Success {
 		if parsed.Error != "" {
-			return fmt.Errorf("%w: status %d: %s", ErrPOSIXUserCreationFailed, resp.StatusCode, parsed.Error)
+			// parsed.Error is attacker-influenceable text from a downstream
+			// service, and this error is logged verbatim by
+			// internal/httpapi's registration handler. Sanitize strips the
+			// control characters a compromised or buggy Storage-Service
+			// would otherwise use to forge extra log lines.
+			return fmt.Errorf("%w: status %d: %s", ErrPOSIXUserCreationFailed, resp.StatusCode, logging.Sanitize(parsed.Error))
 		}
 		return fmt.Errorf("%w: status %d", ErrPOSIXUserCreationFailed, resp.StatusCode)
 	}
