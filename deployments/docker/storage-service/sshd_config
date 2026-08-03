@@ -1,11 +1,20 @@
 # Storage-Service's hardened sshd configuration (ST-F-03, ST-F-04, ST-F-07,
-# ST-F-08, ST-F-09; RNF-SEC-02/03; RD-04).
+# ST-F-08, ST-F-09, ST-F-11; NET-F-02; RNF-SEC-02/03; RD-04).
 #
 # This file is a full replacement for Debian's default /etc/ssh/sshd_config
 # (COPY'd over it in the Dockerfile), not an addition via
 # /etc/ssh/sshd_config.d/*.conf, so every directive relevant to this
 # container's single purpose (SFTP-only access for POSIX-user accounts
 # created by ST-F-06) is visible in one place.
+#
+# Directive ordering rule, load-bearing throughout this file: sshd_config(5)
+# takes the FIRST occurrence of each keyword, and every directive after a
+# "Match" line belongs to that Match block, not to the global scope. Every
+# hardening directive is therefore stated globally, up here, so it applies
+# to any connection whatsoever; the single "Match User user*" block at the
+# bottom holds only the two directives that are inherently per-user
+# (ChrootDirectory, ForceCommand). A Match block can then only ever narrow
+# this configuration, never widen it.
 
 # Port 2222, not 22: the container runs with cap_drop: ALL plus only
 # CAP_CHOWN/CAP_SETUID/CAP_SETGID/CAP_SYS_CHROOT/CAP_NET_ADMIN/CAP_NET_RAW
@@ -14,6 +23,12 @@
 # UID 0 cannot bind a port below 1024 inside the container. Verified
 # empirically this session (see code-agent report): sshd fails to start on
 # port 22 under this exact capability set, starts cleanly on 2222.
+#
+# Keep this line exactly "Port 2222", with no trailing comment or extra
+# whitespace: rootfs/etc/storage-service/tailscale-up.sh matches it with the
+# anchored sed address /^Port 2222$/ to insert ListenAddress below it at
+# container start (that script re-checks the result and fails the oneshot if
+# the insertion did not happen, so a mismatch here is loud, not silent).
 Port 2222
 
 # No ListenAddress here: this node's mesh IPv4 address is only known at
@@ -25,15 +40,41 @@ Port 2222
 
 # ssh-keygen -A (run once at container start by the sshd-hostkeys oneshot,
 # see rootfs/etc/s6-overlay/s6-rc.d/sshd-hostkeys/up) writes host keys to
-# these exact default paths.
-HostKey /etc/ssh/ssh_host_rsa_key
-HostKey /etc/ssh/ssh_host_ecdsa_key
+# these exact default paths. It also writes an ECDSA host key, deliberately
+# not listed here: its NIST curve is outside the algorithm set selected
+# below, so sshd never loads or offers it.
 HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+# Explicit algorithm selection rather than OpenSSH 9.2's compiled-in
+# defaults, which still include hmac-sha1 and the NIST-curve key exchanges.
+# This is the SSH-side counterpart of NET-F-02's TLS 1.3 floor: only
+# AEAD ciphers, only curve25519 key agreement, only encrypt-then-MAC
+# integrity, only Ed25519 / RSA-SHA2-512 host keys.
+#
+# sntrup761x25519-sha512@openssh.com (post-quantum, supported by the
+# OpenSSH client restic shells out to) is offered alongside
+# curve25519-sha256 rather than instead of it: golang.org/x/crypto/ssh
+# v0.54.0 - the client used by this repo's own integration tests - does not
+# implement sntrup761, but does implement curve25519-sha256 (verified
+# against that module's supportedKexAlgos), so both client families
+# negotiate successfully against this list.
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,sntrup761x25519-sha512@openssh.com
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+HostKeyAlgorithms ssh-ed25519,rsa-sha2-512
 
 # Required at top level for "ForceCommand internal-sftp" below to resolve
 # to OpenSSH's built-in SFTP server rather than an external sftp-server
 # binary.
 Subsystem sftp internal-sftp
+
+# ST-F-04/ST-F-06: only the "user<xxxxxx>" accounts ST-F-06 creates may
+# authenticate at all. Every other account on the system - existing
+# (root, sshd-authkeys) or added by some future image change - is denied
+# before any authentication method is even offered, so no account can ever
+# fall outside the Match block below and silently inherit weaker settings.
+AllowUsers user*
 
 # ST-F-09: required regardless of the fact that every created POSIX account
 # has no password set at all.
@@ -44,6 +85,14 @@ PermitRootLogin no
 # for a POSIX account created by ST-F-06 to authenticate with.
 PubkeyAuthentication yes
 PermitEmptyPasswords no
+
+# KbdInteractiveAuthentication defaults to yes and is a second, separate
+# authentication channel that PasswordAuthentication no does not cover.
+# It is inert in this image only as a side effect of UsePAM no (no kbdint
+# device is registered in Debian's build without PAM) - stating it
+# explicitly means ST-F-09's "no password-style authentication" guarantee
+# does not silently depend on that coupling.
+KbdInteractiveAuthentication no
 
 # UsePAM no: this container's accounts are created directly via
 # groupadd/useradd (services/storage-service/internal/posixuser), never
@@ -56,9 +105,56 @@ PermitEmptyPasswords no
 # container relies on for per-connection isolation.
 UsePAM no
 
+# ST-F-11: Database-Vault, reached through authorized-keys-command, is the
+# ONLY source of authorized keys. AuthorizedKeysFile would otherwise keep
+# its compiled-in default (.ssh/authorized_keys .ssh/authorized_keys2),
+# which sshd consults BEFORE running AuthorizedKeysCommand: any component
+# able to write inside a user's chroot root - notably the storage-service
+# Go process, which runs as root and creates those directories - could then
+# grant SSH access that revoking the key in Database-Vault would no longer
+# undo. "none" removes that path entirely, so revocation in Database-Vault
+# stays the single, effective revocation mechanism (RNF-REL-01, RD-04).
+AuthorizedKeysFile none
+
+# ST-F-11: on every SFTP connection attempt, sshd invokes this binary with
+# the connecting username as %u to fetch that user's current public key
+# from Database-Vault - see
+# services/storage-service/cmd/authorized-keys-command/main.go's own fixed
+# config file contract (/etc/storage-service/authorized-keys-command.conf).
+# Global, not inside the Match block: every connection attempt that gets as
+# far as authentication must go through this one key source, whatever
+# username it presents.
+AuthorizedKeysCommand /usr/local/bin/authorized-keys-command %u
+AuthorizedKeysCommandUser sshd-authkeys
+
+# Connection-slot exhaustion limits (RD-04). Left at OpenSSH's defaults,
+# any single mesh peer holding 10 unauthenticated connections open would
+# deny SFTP to everyone else for 120 seconds at a time, indefinitely
+# repeatable. Restic opens one SFTP session per invocation and authenticates
+# immediately, so none of these bind legitimate use: 30s is ample for one
+# public-key exchange, and 3 attempts covers a client offering a couple of
+# keys from its agent before the right one.
+LoginGraceTime 30
+MaxAuthTries 3
+MaxSessions 10
+MaxStartups 10:30:60
+
+# ST-F-04/ST-F-07: no port/agent forwarding, no X11, no tun-device
+# tunneling, no user-controlled ~/.ssh/rc script - none of these are SFTP,
+# and each would otherwise be a way to reach outside this user's isolated
+# space or the mesh network boundary. Global (AllowTcpForwarding and
+# AllowAgentForwarding both default to yes), so the guarantee holds for any
+# connection rather than only for usernames matching the block below.
+AllowTcpForwarding no
+AllowAgentForwarding no
+X11Forwarding no
+PermitTunnel no
+PermitUserRC no
+
 # ST-F-06's fixed "user<xxxxxx>" shape (^user[0-9a-z]{6}$ in the Go code)
 # is matched here with the glob "user*", per sshd_config(5)'s Match
-# pattern syntax.
+# pattern syntax. Only the two inherently per-user directives live here;
+# everything else is already global above.
 Match User user*
     # ST-F-05/ST-F-07: confines the session's filesystem view to this
     # user's own subtree. Per sshd_config(5), ChrootDirectory and every
@@ -70,21 +166,3 @@ Match User user*
     # ST-F-03/ST-F-04: SFTP is the only permitted operation; a plain
     # interactive/exec SSH session is refused outright.
     ForceCommand internal-sftp
-
-    # ST-F-04/ST-F-07: no port/agent forwarding, no X11, no tun-device
-    # tunneling - none of these are SFTP, and each would otherwise be a
-    # way to reach outside this user's isolated space or the mesh network
-    # boundary.
-    AllowTcpForwarding no
-    AllowAgentForwarding no
-    X11Forwarding no
-    PermitTunnel no
-
-    # ST-F-11: on every SFTP connection attempt, sshd invokes this binary
-    # with the connecting username as %u to fetch that user's current
-    # public key from Database-Vault - see
-    # services/storage-service/cmd/authorized-keys-command/main.go's own
-    # fixed config file contract
-    # (/etc/storage-service/authorized-keys-command.conf).
-    AuthorizedKeysCommand /usr/local/bin/authorized-keys-command %u
-    AuthorizedKeysCommandUser sshd-authkeys
