@@ -23,21 +23,20 @@ package main
 // tests and metrics-collector/cmd/metrics-collector/
 // main_integration_test.go's TestMetricsPipeline_RealBroker_RealTimescaleDB_*.
 //
-// ST-F-11's AuthorizedKeysCommand (sshd invoking a Go binary that calls
-// out to Database-Vault over mTLS) is a separate requirement, not
-// exercised here: standing up Database-Vault/Certificate-Authority just to
-// authenticate two SFTP sessions would test that requirement's own
-// network wiring, not sshd's hardening. Each test user's public key is
-// instead installed directly under their own chroot via sshd_config's own
-// (unmodified, already-enabled-by-default) AuthorizedKeysFile mechanism -
-// the same real pubkey-authentication code path in sshd itself that
-// AuthorizedKeysCommand also feeds into, just supplied without a network
-// round trip. authorized-keys-command still runs on every connection
-// attempt here (nothing disables it); it fails closed (no config file
-// present) and contributes no key, exactly as
-// deployments/docker/storage-service/VERIFICATION.md's "known gap"
-// section already documents - AuthorizedKeysFile is what grants access in
-// this test.
+// Keys are supplied through the SAME mechanism production uses,
+// AuthorizedKeysCommand (ST-F-11): sshd_config sets "AuthorizedKeysFile
+// none", so a key file under a user's chroot is not a credential source at
+// all any more, by design. What this test substitutes is only the far end
+// of that command - the real /usr/local/bin/authorized-keys-command binary
+// is replaced in the throwaway container by a stub script that echoes back
+// a fixture keyed by the %u sshd passes it (see installStubAuthorizedKeysCommand).
+// sshd's own invocation path (AuthorizedKeysCommandUser sshd-authkeys,
+// argument expansion, exit-status handling, fail-closed on no output) is
+// therefore exercised exactly as in production; only Database-Vault and
+// the mTLS round trip behind it are stubbed out, since standing up
+// Database-Vault/Certificate-Authority just to authenticate two SFTP
+// sessions would test that requirement's own network wiring rather than
+// sshd's hardening.
 import (
 	"bytes"
 	"context"
@@ -70,6 +69,13 @@ const (
 	// (^user[0-9a-z]{6}$) that posixuser.Creator itself re-validates.
 	sshdUserA = "userstfa1a"
 	sshdUserB = "userstfb2b"
+
+	// authorizedKeysCommandPath is the exact path the production
+	// sshd_config names in its AuthorizedKeysCommand directive; the
+	// stub overwrites the binary there rather than changing the config,
+	// so the config under test stays the real one.
+	authorizedKeysCommandPath = "/usr/local/bin/authorized-keys-command"
+	stubAuthorizedKeysDir     = "/etc/ssh/itest-authorized-keys"
 
 	dockerCommandTimeout = 30 * time.Second
 )
@@ -281,34 +287,67 @@ func generateSSHKeyPair(t *testing.T) (ssh.Signer, string) {
 	return signer, string(ssh.MarshalAuthorizedKey(sshPub))
 }
 
-// installAuthorizedKey writes authorizedKeyLine to username's own
-// ~/.ssh/authorized_keys inside the container (see this file's own
-// package doc comment for why this test uses AuthorizedKeysFile rather
-// than standing up ST-F-11's AuthorizedKeysCommand round trip).
-//
-// Order matters: chmod runs BEFORE chown, not after. This container's
-// capability set (CHOWN/SETUID/SETGID/SYS_CHROOT only, no CAP_FOWNER/
-// CAP_DAC_OVERRIDE) means root can chmod a file it still owns, but loses
-// the ability to chmod it at all the instant chown hands ownership to a
-// different POSIX user - confirmed empirically against this exact image.
-func installAuthorizedKey(ctx context.Context, t *testing.T, container, username, authorizedKeyLine string) {
+// writeFileInContainer writes content to containerPath inside container
+// (as root, the container's only usable identity here) and sets mode on
+// it. Order matters throughout this file: chmod runs BEFORE any chown, not
+// after. This container's capability set (CHOWN/SETUID/SETGID/SYS_CHROOT
+// only, no CAP_FOWNER/CAP_DAC_OVERRIDE) means root can chmod a file it
+// still owns, but loses the ability to chmod it at all the instant chown
+// hands ownership to a different POSIX user - confirmed empirically
+// against this exact image.
+func writeFileInContainer(ctx context.Context, t *testing.T, container, containerPath, content, mode string) {
 	t.Helper()
-
-	sshDir := "/storage/" + username + "/.ssh"
-	dockerExec(ctx, t, container, "mkdir", "-p", sshDir)
-	dockerExec(ctx, t, container, "chmod", "700", sshDir)
 
 	writeCtx, cancel := context.WithTimeout(ctx, dockerCommandTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(writeCtx, "docker", "exec", "-i", container, //nolint:noctx,gosec // ctx already bounds this call; fixed argv, test-only
-		"sh", "-c", "cat > "+sshDir+"/authorized_keys")
-	cmd.Stdin = strings.NewReader(authorizedKeyLine)
+		"sh", "-c", "cat > "+containerPath)
+	cmd.Stdin = strings.NewReader(content)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("write authorized_keys: %v\n%s", err, out)
+		t.Fatalf("write %s: %v\n%s", containerPath, err, out)
 	}
+	dockerExec(ctx, t, container, "chmod", mode, containerPath)
+}
 
-	dockerExec(ctx, t, container, "chmod", "600", sshDir+"/authorized_keys")
-	dockerExec(ctx, t, container, "chown", "-R", username+":"+username, sshDir)
+// installStubAuthorizedKeysCommand replaces the real
+// /usr/local/bin/authorized-keys-command (which would call Database-Vault
+// over mTLS) with a stub returning the fixture registered for the username
+// sshd passes as %u, and creates the fixture directory those keys live in.
+//
+// Everything on sshd's own side of ST-F-11 stays real: the same
+// AuthorizedKeysCommand path from the production sshd_config, run as the
+// same unprivileged AuthorizedKeysCommandUser (sshd-authkeys), with the
+// same fail-closed contract - a username with no fixture makes `cat` exit
+// nonzero and sshd offers no key at all, exactly as a Database-Vault
+// lookup failure would (RD-04).
+//
+// Location: /etc/ssh (root-owned), not /etc/storage-service (owned by
+// sshd-authkeys per the Dockerfile) - without CAP_DAC_OVERRIDE, root
+// cannot create entries inside a directory it does not own. Mode 0755/0644
+// so the unprivileged sshd-authkeys account can read the fixtures back.
+func installStubAuthorizedKeysCommand(ctx context.Context, t *testing.T, container string) {
+	t.Helper()
+
+	dockerExec(ctx, t, container, "mkdir", "-p", "-m", "0755", stubAuthorizedKeysDir)
+
+	const stub = `#!/bin/sh
+# Test-only stand-in for ST-F-11's real authorized-keys-command: sshd
+# passes the connecting username as $1 (%u in sshd_config). Missing
+# fixture -> cat exits nonzero, no key is printed, sshd denies the
+# connection, same fail-closed outcome as a Database-Vault lookup error.
+set -eu
+exec cat "` + stubAuthorizedKeysDir + `/$1"
+`
+	writeFileInContainer(ctx, t, container, authorizedKeysCommandPath, stub, "0755")
+}
+
+// registerAuthorizedKey makes authorizedKeyLine the key the stub
+// AuthorizedKeysCommand returns for username - the test-side equivalent of
+// that user's public key being registered in Database-Vault.
+func registerAuthorizedKey(ctx context.Context, t *testing.T, container, username, authorizedKeyLine string) {
+	t.Helper()
+
+	writeFileInContainer(ctx, t, container, stubAuthorizedKeysDir+"/"+username, authorizedKeyLine, "0644")
 }
 
 // dialSSHDContainer opens a real SSH connection to c, authenticating as
@@ -366,14 +405,21 @@ func TestStorageServiceSSHD_RealContainer_EnforcesHardening(t *testing.T) {
 	dockerExec(ctx, t, c.name, "/usr/local/bin/itest-provision-user", sshdUserA)
 	dockerExec(ctx, t, c.name, "/usr/local/bin/itest-provision-user", sshdUserB)
 
+	installStubAuthorizedKeysCommand(ctx, t, c.name)
+
 	signerA, authorizedKeyLineA := generateSSHKeyPair(t)
 	// signerB is userB's own real, registered key - never registered for
 	// sshdUserA, so it also doubles as ST-F-03's "unregistered key" case
 	// when presented as sshdUserA below.
 	signerB, authorizedKeyLineB := generateSSHKeyPair(t)
+	// signerRoot is registered for root, so the root subtest below is
+	// rejected by sshd's own account policy and not merely by the absence
+	// of a usable key.
+	signerRoot, authorizedKeyLineRoot := generateSSHKeyPair(t)
 
-	installAuthorizedKey(ctx, t, c.name, sshdUserA, authorizedKeyLineA)
-	installAuthorizedKey(ctx, t, c.name, sshdUserB, authorizedKeyLineB)
+	registerAuthorizedKey(ctx, t, c.name, sshdUserA, authorizedKeyLineA)
+	registerAuthorizedKey(ctx, t, c.name, sshdUserB, authorizedKeyLineB)
+	registerAuthorizedKey(ctx, t, c.name, "root", authorizedKeyLineRoot)
 
 	// A marker file inside user B's own data/ directory - real content
 	// this test attempts (and must fail) to reach from user A's session
@@ -627,15 +673,35 @@ func TestStorageServiceSSHD_RealContainer_EnforcesHardening(t *testing.T) {
 	})
 
 	t.Run("ST-F-09_root_login_denied", func(t *testing.T) {
-		config := &ssh.ClientConfig{
-			User:            "root",
-			Auth:            []ssh.AuthMethod{ssh.Password("irrelevant")},
-			HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // test-only, host key is freshly generated per run
-			Timeout:         10 * time.Second,
-		}
-		if client, err := ssh.Dial("tcp", fmt.Sprintf("localhost:%d", c.sshPort), config); err == nil {
+		// Public-key auth, with a key the AuthorizedKeysCommand actually
+		// returns for root: a password attempt here would only re-prove
+		// PasswordAuthentication no (already covered by the subtest
+		// above) and would pass identically with root logins wide open.
+		// Presenting a genuinely usable root key means the only thing
+		// that can reject this connection is sshd's account policy -
+		// AllowUsers user* (root does not match the glob) and
+		// PermitRootLogin no behind it, two independent denials.
+		if client, err := dialSSHDContainer(c, "root", signerRoot); err == nil {
 			_ = client.Close()
-			t.Fatal("ssh.Dial as root error = nil, want PermitRootLogin no to reject it")
+			t.Fatal("ssh.Dial as root with a registered key error = nil, want root logins rejected")
+		}
+	})
+
+	t.Run("ST-F-04_non_matching_account_denied", func(t *testing.T) {
+		// sshd-authkeys is a real, existing account in this image (the
+		// AuthorizedKeysCommandUser) that does not match the
+		// "Match User user*" block, so no directive inside that block
+		// applies to it. Asserted here as an outcome, not as proof of one
+		// specific directive: AllowUsers user* denies it, and so
+		// independently does its "!"-locked shadow entry (useradd
+		// --system sets no password). Both are deliberate; what must
+		// never happen is a usable session.
+		signer, authorizedKeyLine := generateSSHKeyPair(t)
+		registerAuthorizedKey(ctx, t, c.name, "sshd-authkeys", authorizedKeyLine)
+
+		if client, err := dialSSHDContainer(c, "sshd-authkeys", signer); err == nil {
+			_ = client.Close()
+			t.Fatal("ssh.Dial as sshd-authkeys error = nil, want AllowUsers user* to reject a non-matching account")
 		}
 	})
 }
