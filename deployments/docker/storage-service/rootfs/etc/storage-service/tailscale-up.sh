@@ -95,3 +95,16 @@ printf '%s' "$TS_IP" >/var/run/s6/container_environment/RAM_USB_STORAGE_SERVICE_
 if ! grep -q "^ListenAddress ${TS_IP}\$" /etc/ssh/sshd_config; then
 	sed -i "/^Port 2222\$/a ListenAddress ${TS_IP}" /etc/ssh/sshd_config
 fi
+
+# Post-condition, not decoration: sed exits 0 whether or not its address
+# matched, and "set -e" cannot see a no-op. If the "Port 2222" line in
+# sshd_config is ever reworded, commented or re-indented, the insertion
+# above would silently do nothing and sshd would start with no
+# ListenAddress at all - listening on 0.0.0.0:2222, the exact NET-F-01
+# violation this insertion exists to prevent. Failing the oneshot here
+# keeps sshd (dependencies.d/tailscale-up) from ever starting in that
+# state (RD-04).
+if ! grep -q "^ListenAddress ${TS_IP}\$" /etc/ssh/sshd_config; then
+	echo "tailscale-up: failed to pin ListenAddress ${TS_IP} in /etc/ssh/sshd_config" >&2
+	exit 1
+fi
