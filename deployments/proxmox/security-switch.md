@@ -68,7 +68,8 @@ lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file 0 0
 That produces a working `/dev/net/tun` device node inside the guest. A
 Docker container inside that guest, given `--cap-add NET_ADMIN --cap-add
 NET_RAW --device /dev/net/tun` plus `TS_USERSPACE=false`, then brings up a
-**real kernel** `tailscale0` interface. Confirmed live on 2026-07-31
+**real kernel** `tailscale0` interface, not the userspace-netstack
+fallback. Confirmed live on 2026-07-31
 against Certificate-Authority's own guest (CTID 102, the same
 unprivileged-LXC shape this service uses), via `ip link show` from inside
 the container - the interface is created before control-server
@@ -129,25 +130,3 @@ fail-secure).
   (PKI-F-03 - "should" exist).
 - Log shipping/monitoring of this process's own health beyond `slog`'s
   stdout output, same open item as every other service's Proxmox note.
-
-**Confirmed live, 2026-07-31** (on Certificate-Authority's own guest,
-CTID 102, same unprivileged-LXC shape this service uses): an unprivileged
-Proxmox LXC guest does *not* have `/dev/net/tun` by default, but granting
-it explicitly at the guest-config level -
-
-```
-lxc.cgroup2.devices.allow: c 10:200 rwm
-lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file 0 0
-```
-
-(appended to `/etc/pve/lxc/<vmid>.conf`, guest stopped/started to apply) -
-produces a working `/dev/net/tun` device node inside the guest. A Docker
-container inside that guest, given `--cap-add NET_ADMIN --cap-add
-NET_RAW --device /dev/net/tun` plus `TS_USERSPACE=false`, then
-successfully brings up a **real kernel** `tailscale0` interface (not the
-userspace-netstack fallback) - confirmed via `ip link show` from inside
-the container, even pointed at an unreachable/fake control-server URL
-(interface creation happens before control-server registration, so this
-doesn't require a real Headscale to verify). This closes the "not yet
-verified against a real Proxmox LXC guest" gap this section used to
-flag.
