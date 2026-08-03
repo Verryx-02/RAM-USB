@@ -171,10 +171,15 @@ Storage-Service's real reason for needing a full KVM guest (avoiding a
 second UID-namespace layer on top of `useradd`/`setuid`/`chroot`). An
 **unprivileged** Proxmox LXC guest needs the same explicit `/dev/net/tun`
 enablement Security-Switch's own doc describes
-(`lxc.cgroup2.devices.allow: c 10:200 rwm` plus a `/dev/net/tun` mount, or
-running this stack's Docker image with `nesting`/`keyctl` features) - not
-yet verified against a real Proxmox LXC guest, same open item as
-Security-Switch's.
+(`lxc.cgroup2.devices.allow: c 10:200 rwm` plus a `/dev/net/tun` mount).
+**Confirmed live, 2026-07-31, on this component's own guest (CTID 102)**:
+that config change alone (no `keyctl` feature needed) produces a working
+`/dev/net/tun` device node, and a Docker container granted `--cap-add
+NET_ADMIN --cap-add NET_RAW --device /dev/net/tun` plus
+`TS_USERSPACE=false` inside this guest successfully brings up a real
+kernel `tailscale0` interface - see Security-Switch's own doc for the
+full verification detail (same test, same guest shape, not repeated
+twice here).
 
 ## Dependencies that must exist first
 
