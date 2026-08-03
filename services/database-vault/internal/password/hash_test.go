@@ -3,6 +3,7 @@ package password
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -255,5 +256,26 @@ func TestVerifyPassword(t *testing.T) {
 				t.Fatalf("VerifyPassword() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// Requirement: DV-F-15
+func TestDummyHash_IsWellFormedWithProductionParameters(t *testing.T) {
+	// VerifyDummy exists purely to burn the same Argon2id time a real
+	// verification costs, so callers' rejections stay untimeable. If
+	// dummyHash were ever malformed (e.g. HashPassword started erroring and
+	// the discarded error left an empty string), VerifyPassword would bail
+	// out during parsing and the whole equalization would silently vanish.
+	// This asserts the hash actually parses and carries DV-F-07's exact
+	// cost parameters, which are what determine the elapsed time.
+	encoded := dummyHash()
+
+	wantPrefix := fmt.Sprintf("$%s$v=%d$m=%d,t=%d,p=%d$", phcAlgorithmID, argon2.Version, argonMemoryKiB, argonTime, argonThreads)
+	if !strings.HasPrefix(encoded, wantPrefix) {
+		t.Fatalf("dummyHash() = %q, want prefix %q", encoded, wantPrefix)
+	}
+
+	if _, err := VerifyPassword([]byte("any password"), []byte("any pepper"), encoded); err != nil {
+		t.Fatalf("VerifyPassword against the dummy hash errored (%v), so no Argon2id work would be done", err)
 	}
 }

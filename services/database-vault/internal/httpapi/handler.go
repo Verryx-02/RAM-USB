@@ -19,6 +19,7 @@
 package httpapi
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -189,10 +190,18 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		apperrors.WriteJSON(w, http.StatusOK, loginResponse{Status: "ok"})
 	default:
 		isError = true
-		// DV-F-15: result.Err is already one of the two fixed sentinels
-		// (login.ErrAuthenticationFailed, login.ErrPasswordVerificationFailed)
-		// carrying no per-record content — safe to log as-is.
-		h.logger().Warn("login: failed", "error", result.Err)
+		// DV-F-15: result.Err is already one of the three fixed sentinels
+		// (login.ErrAuthenticationFailed, login.ErrPasswordVerificationFailed,
+		// login.ErrLookupFailed) carrying no per-record content — safe to log
+		// as-is. The latter two are internal faults (corrupt stored hash,
+		// database unreachable) rather than a user's bad credentials, so
+		// they are logged at Error level: a database outage must not look
+		// like a wave of failed logins in the operator's dashboard.
+		level := slog.LevelWarn
+		if errors.Is(result.Err, login.ErrPasswordVerificationFailed) || errors.Is(result.Err, login.ErrLookupFailed) {
+			level = slog.LevelError
+		}
+		h.logger().Log(r.Context(), level, "login: failed", "error", result.Err)
 		apperrors.WriteAppError(w, apperrors.NewUnauthorized(result.Err))
 	}
 }

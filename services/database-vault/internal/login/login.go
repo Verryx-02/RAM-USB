@@ -20,7 +20,13 @@
 //     only forbids distinguishing "nonexistent email" from "wrong
 //     password"; it does not require hiding an internal verification
 //     error, so long as nothing in the log identifies which record/user
-//     triggered it.
+//     triggered it. A failure of the lookup itself (database unreachable,
+//     query error) is treated the same way, via ErrLookupFailed.
+//   - DV-F-15's timing dimension: the rejection must also take the same
+//     time whether or not the email exists, otherwise login latency is a
+//     user-enumeration oracle. Every path that rejects before a stored
+//     hash is available calls password.VerifyDummy to spend the same
+//     Argon2id budget a real verification does.
 //
 // This package does not implement any HTTP boundary: Result's Outcome
 // field is what a future handler maps to 401/200, without inspecting Err's
@@ -35,6 +41,7 @@ import (
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/hashing"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/password"
+	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/storage"
 )
 
 // Outcome distinguishes the two ways Login can conclude, so a future HTTP
@@ -90,14 +97,24 @@ var ErrAuthenticationFailed = errors.New("login: authentication failed")
 // email/password distinction, and a stricter leak besides.
 var ErrPasswordVerificationFailed = errors.New("login: password verification failed due to an internal error")
 
+// ErrLookupFailed means the password-hash lookup itself failed — a transport
+// or query error, not storage.ErrUserNotFound. Like
+// ErrPasswordVerificationFailed it is an internal fault rather than a user
+// mistake, maps to the same OutcomeUnauthorized (still 401, per DV-F-15 and
+// RD-04), and carries a fixed generic message with no per-record content.
+// DV-F-15 requires "nonexistent email" and "wrong password" to be
+// indistinguishable; it does not require an infrastructure failure to
+// impersonate a bad credential, and an operator seeing 401s during a
+// database outage would otherwise read them as an attack.
+var ErrLookupFailed = errors.New("login: password hash lookup failed due to an internal error")
+
 // Result is Login's return value. Err is nil only when Outcome is
 // OutcomeSuccess. On OutcomeUnauthorized, Err is exactly
 // ErrAuthenticationFailed for the two cases DV-F-15 requires to be
 // indistinguishable (nonexistent email, wrong password), or exactly
-// ErrPasswordVerificationFailed for an internal verification error — a
-// case DV-F-15 does not require hiding, so long as the value itself
-// carries no per-record content (see ErrPasswordVerificationFailed's doc
-// comment).
+// ErrPasswordVerificationFailed / ErrLookupFailed for an internal fault —
+// cases DV-F-15 does not require hiding, so long as the value itself
+// carries no per-record content (see those sentinels' doc comments).
 type Result struct {
 	Outcome Outcome
 	Err     error
@@ -142,10 +159,28 @@ func Login(ctx context.Context, store Storage, pepper []byte, input Input) Resul
 
 	storedHash, err := store.GetPasswordHash(ctx, emailHash)
 	if err != nil {
-		// DV-F-15: a nonexistent email must be indistinguishable, in both
-		// the returned Result and any log built from it, from the
-		// wrong-password case below. err's content (e.g. wrapping
-		// storage.ErrUserNotFound) is deliberately not carried into Err.
+		// DV-F-15 requires the nonexistent-email case to be
+		// indistinguishable from the wrong-password case below. The
+		// response and the log line already were; the elapsed time was
+		// not, because Argon2id (47104 KiB, 2 passes) only ran when a row
+		// existed. VerifyDummy spends that same time here, on every error
+		// path — including the lookup-failure one, so that an infrastructure
+		// failure is not itself timeable either.
+		password.VerifyDummy(input.Password, pepper)
+
+		if !errors.Is(err, storage.ErrUserNotFound) {
+			// The lookup itself failed (transport, query, ...) rather than
+			// reporting "no such user". RD-04 (fail-secure) keeps the
+			// client-facing outcome at 401, but a distinct sentinel lets
+			// the handler log it at Error level as an internal fault, the
+			// way ErrPasswordVerificationFailed already is — otherwise a
+			// database outage reads as a wave of failed logins. Nothing
+			// per-record is carried: err's own content is discarded.
+			return Result{Outcome: OutcomeUnauthorized, Err: ErrLookupFailed}
+		}
+
+		// err's content (wrapping storage.ErrUserNotFound) is deliberately
+		// not carried into Err.
 		return Result{Outcome: OutcomeUnauthorized, Err: ErrAuthenticationFailed}
 	}
 

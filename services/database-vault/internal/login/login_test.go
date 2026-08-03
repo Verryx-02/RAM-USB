@@ -3,12 +3,16 @@ package login
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Verryx-02/RAM-USB/pkg/logging"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/hashing"
 	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/password"
+	"github.com/Verryx-02/RAM-USB/services/database-vault/internal/storage"
 )
 
 // testPepper is a fixed, non-secret test fixture (not a real pepper).
@@ -19,21 +23,26 @@ var testPepper = []byte("test-pepper-not-a-real-secret")
 // email hash, or a fixed "not found" error, without a real database.
 type fakeStorage struct {
 	hashes map[string]string
+
+	// lookupErr, when non-nil, is returned instead of consulting hashes:
+	// the fake stands in for a database that is unreachable or whose query
+	// failed, as opposed to one that reported "no such user".
+	lookupErr error
 }
 
 func (f *fakeStorage) GetPasswordHash(_ context.Context, emailHash string) (string, error) {
+	if f.lookupErr != nil {
+		return "", f.lookupErr
+	}
 	hash, ok := f.hashes[emailHash]
 	if !ok {
-		return "", errNotFound
+		// The real storage.GetPasswordHash wraps this exact sentinel, and
+		// Login now distinguishes it from any other lookup error, so the
+		// fake must reproduce its identity rather than an arbitrary error.
+		return "", fmt.Errorf("fake storage: %w", storage.ErrUserNotFound)
 	}
 	return hash, nil
 }
-
-// errNotFound simulates storage.ErrUserNotFound without importing the
-// storage package here — login.Storage only needs an error to exist, its
-// identity/wrapping is storage's concern, not login's (DV-F-15: login must
-// not branch on what kind of error the lookup returned).
-var errNotFound = errors.New("fake storage: no such user")
 
 const testEmail = "user@example.com"
 const testPassword = "correct horse battery staple 42!"
@@ -190,5 +199,89 @@ func TestLogin_MalformedStoredHash_TreatedAsUnauthorized(t *testing.T) {
 	// stored row/user.
 	if got := result.Err.Error(); strings.Contains(got, malformedHash) {
 		t.Fatalf("Err.Error() = %q leaks the fixture's malformed stored hash content", got)
+	}
+}
+
+// Requirement: DV-F-15
+func TestLogin_LookupFailure_IsDistinctFromBadCredentials(t *testing.T) {
+	store := &fakeStorage{lookupErr: errors.New("dial tcp 10.0.0.5:5432: connect: connection refused")}
+
+	result := Login(context.Background(), store, testPepper, Input{
+		Email:    logging.Redacted(testEmail),
+		Password: []byte(testPassword),
+	})
+
+	// RD-04, fail-secure: the client-facing outcome is still 401.
+	if result.Outcome != OutcomeUnauthorized {
+		t.Fatalf("Outcome = %v, want OutcomeUnauthorized", result.Outcome)
+	}
+
+	// DV-F-15 requires "nonexistent email" and "wrong password" to be
+	// indistinguishable. A database outage is neither: presenting it as a
+	// bad credential makes an infrastructure failure look like an attack in
+	// the operator's logs, so it carries its own sentinel.
+	if !errors.Is(result.Err, ErrLookupFailed) {
+		t.Fatalf("Err = %v, want ErrLookupFailed", result.Err)
+	}
+	if errors.Is(result.Err, ErrAuthenticationFailed) {
+		t.Fatalf("Err = %v, want a distinct sentinel from ErrAuthenticationFailed", result.Err)
+	}
+
+	// The sentinel must stay generic: no address, no query, nothing that
+	// ties the failure to a specific record or host.
+	if got := result.Err.Error(); strings.Contains(got, "10.0.0.5") {
+		t.Fatalf("Err.Error() = %q leaks the underlying error's content", got)
+	}
+}
+
+// medianLoginDuration runs Login runs times and returns the median elapsed
+// time. The median, not the mean, because a single scheduler hiccup or GC
+// pause on a loaded machine skews a mean badly while leaving the median
+// intact — the point is to compare orders of magnitude, not to benchmark.
+func medianLoginDuration(store Storage, input Input, runs int) time.Duration {
+	samples := make([]time.Duration, 0, runs)
+	for range runs {
+		start := time.Now()
+		_ = Login(context.Background(), store, testPepper, input)
+		samples = append(samples, time.Since(start))
+	}
+	slices.Sort(samples)
+
+	return samples[len(samples)/2]
+}
+
+// Requirement: DV-F-15
+func TestLogin_NonexistentEmailTakesComparableTimeToWrongPassword(t *testing.T) {
+	emailHash := hashing.HashEmail(logging.Redacted(testEmail))
+	storeWithUser := &fakeStorage{hashes: map[string]string{emailHash: newStoredHash(t)}}
+	storeWithoutUser := &fakeStorage{hashes: map[string]string{}}
+
+	existing := Input{Email: logging.Redacted(testEmail), Password: []byte(testWrongPassword)}
+	missing := Input{Email: logging.Redacted("nobody@example.com"), Password: []byte(testWrongPassword)}
+
+	// Warm-up: the first call on the missing-email path also pays for
+	// building the process-wide dummy hash (password.VerifyDummy's
+	// sync.OnceValue), which must not land in the measured samples.
+	_ = Login(context.Background(), storeWithoutUser, testPepper, missing)
+	_ = Login(context.Background(), storeWithUser, testPepper, existing)
+
+	const runs = 5
+	wrongPassword := medianLoginDuration(storeWithUser, existing, runs)
+	nonexistent := medianLoginDuration(storeWithoutUser, missing, runs)
+
+	// DV-F-15's response and log line were already identical; the elapsed
+	// time was not, because Argon2id only ran when a row existed. That gap
+	// is over an order of magnitude and trivially measurable from anywhere
+	// on the mesh, i.e. a user-enumeration oracle.
+	//
+	// The threshold is deliberately loose: this asserts "same order of
+	// magnitude," which is what closes the oracle, and stays quiet under
+	// the noise of a loaded machine or the race detector. A tight timing
+	// assertion would flake, and a flaky timing test is worse than none.
+	const maxRatio = 3.0
+	ratio := float64(wrongPassword) / float64(nonexistent)
+	if ratio > maxRatio || ratio < 1/maxRatio {
+		t.Fatalf("median login time differs by %.1fx (wrong password %v, nonexistent email %v), want within %.0fx",
+			ratio, wrongPassword, nonexistent, maxRatio)
 	}
 }
