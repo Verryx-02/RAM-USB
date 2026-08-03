@@ -1,0 +1,48 @@
+# Build-context exclusions (KI-57).
+#
+# Every deployments/compose/*.yml builds with `context: ../..`, i.e. the
+# whole repository, and Docker deliberately ignores .gitignore. Without this
+# file the context carried real private keys, the step-ca provisioner
+# password, and the entire .git history into BuildKit's cache - material that
+# the multi-stage builds keep out of the FINAL images but not out of an
+# intermediate stage, which `--target build`, `--cache-to`, or a `docker save`
+# of that stage publishes verbatim (RD-01, PKI-F-02).
+#
+# What the builds actually need from the context, verified against every
+# COPY in deployments/docker/*/Dockerfile: go.mod, go.sum, the Go module
+# source (pkg/, services/, test/, user-client/ - all pulled in by the build
+# stages' `COPY . .`), services/{database-vault,metrics-collector}/migrations,
+# and deployments/docker/<service>/{rootfs/,sshd_config,nginx.conf}. Nothing
+# below is referenced by any COPY, and no Go package uses go:embed, so
+# nothing here can be reached at build time.
+
+# Version-control and agent/tooling state (also the largest single item).
+.git
+.gitignore
+.github
+.claude
+graphify-out
+.obsidian
+.vscode
+.idea
+
+# Third-party runtime config and dev-only PKI material: mounted into
+# containers as volumes at RUN time by deployments/compose/*.yml, never
+# COPYed at BUILD time. Holds Mosquitto's issued private keys, Headscale's
+# dev TLS key, Entry-Hub's server key, and step-ca's provisioner password.
+third-party
+
+# Documentation and static assets: no COPY, no go:embed.
+docs
+assets
+private
+**/*.md
+LICENSE
+
+# Belt-and-braces: no Dockerfile COPYs any key, certificate, or env file.
+**/*.key
+**/*.pem
+**/*.crt
+**/*.dev-only.*
+**/.env
+**/.env.*

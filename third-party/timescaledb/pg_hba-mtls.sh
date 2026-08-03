@@ -46,9 +46,34 @@
 # requirement at all). Every OTHER caller - specifically Grafana,
 # MT-F-04/UC-05's genuine cross-guest connection - is forced through the
 # `hostssl ... clientcert=verify-full` rule.
+#
+# KI-71: `set -eu` plus the post-write assertion below make this script
+# fail LOUDLY instead of silently leaving the upstream entrypoint's own
+# permissive "host all all all scram-sha-256" line in force. Without them,
+# an empty or wrongly-pointed $PGDATA sends the heredoc to /pg_hba.conf,
+# this script still exits 0, and TimescaleDB (listen_addresses=*) keeps
+# accepting password-only, no-client-certificate connections from any mesh
+# peer - a fail-OPEN outcome, the opposite of RD-04, and a direct
+# RNF-SEC-04 violation. Nothing above tolerates a failing command (this
+# script is a single write, run non-interactively by the image's own
+# entrypoint), so -e has nothing here to break.
+set -eu
+
+: "${PGDATA:?PGDATA is not set}"
+: "${POSTGRES_DB:?POSTGRES_DB is not set}"
+: "${POSTGRES_USER:?POSTGRES_USER is not set}"
+
 cat > "$PGDATA/pg_hba.conf" <<EOF
 local all all trust
 host    ${POSTGRES_DB} ${POSTGRES_USER} 127.0.0.1/32 scram-sha-256
 host    ${POSTGRES_DB} ${POSTGRES_USER} ::1/128      scram-sha-256
 hostssl ${POSTGRES_DB} ${POSTGRES_USER} all          scram-sha-256 clientcert=verify-full
 EOF
+
+# The write above is the only thing standing between a mesh peer and a
+# password-only connection - verify it actually landed where intended
+# rather than trusting `cat`'s own exit status.
+grep -q '^hostssl' "$PGDATA/pg_hba.conf" || {
+	echo "pg_hba-mtls: $PGDATA/pg_hba.conf has no hostssl rule after write - refusing to continue" >&2
+	exit 1
+}

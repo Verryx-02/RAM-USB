@@ -1,7 +1,7 @@
 // Command identity-provisioner closes KI-01: ST-F-11's
 // cmd/authorized-keys-command binary expects its own mTLS identity and
 // Database-Vault's URL at a fixed config file path
-// (/etc/storage-service/authorized-keys-command.conf), but that file's
+// (/var/lib/storage-service-identity/authorized-keys-command.conf), but that file's
 // real contents were never actually provisioned by anything - only the
 // empty containing directory was created.
 //
@@ -32,7 +32,8 @@
 // dedicated unprivileged sshd-authkeys system account
 // authorized-keys-command itself runs as (see this container's Dockerfile)
 // - this process never needs root, only the ability to make outbound mTLS
-// calls and write to /etc/storage-service.
+// calls and write to /var/lib/storage-service-identity, the directory that
+// account exclusively owns (see the configDir constant below).
 package main
 
 import (
@@ -75,8 +76,18 @@ const (
 // cmd/authorized-keys-command/main.go's config/parseConfig), so the two
 // binaries stay coupled only through configPath itself, not through any of
 // these three.
+//
+// /var/lib/storage-service-identity, not /etc/storage-service (KI-56): this
+// directory is owned by the unprivileged sshd-authkeys account this process
+// runs as, and it deliberately contains nothing root ever executes.
+// /etc/storage-service stays root-owned, because the three shell scripts s6
+// hands off to as root live there - owning that directory would let anyone
+// with code execution as sshd-authkeys replace one of those scripts and get
+// root, plus CHOWN/SETUID/SETGID/SYS_CHROOT, on the next container start
+// (RNF-REL-01, RNF-SEC-03). See this container's Dockerfile, which creates
+// both directories.
 const (
-	configDir = "/etc/storage-service"
+	configDir = "/var/lib/storage-service-identity"
 	certPath  = configDir + "/akc-client.crt"
 	keyPath   = configDir + "/akc-client.key"
 	caPath    = configDir + "/akc-ca.crt"

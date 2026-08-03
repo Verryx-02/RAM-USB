@@ -24,9 +24,31 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 docker network create ramusb-net 2>/dev/null || true
 
-docker exec headscale headscale users create certificate-authority 2>/dev/null || true
-CA_ID=$(docker exec headscale headscale users list -o json | jq -r '.[] | select(.name=="certificate-authority") | .id')
 export RAM_USB_TAILSCALE_CONTROL_URL="https://headscale:8080"
-export RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY=$(docker exec headscale headscale preauthkeys create --user "$CA_ID" --expiration 30m --tags tag:certificate-authority)
+
+# KI-58: on a clean machine the `headscale` container does not exist yet -
+# this script runs BEFORE shell 2 by design (see the header comment). The
+# pre-auth-key minting below is therefore conditional: without the guard,
+# `docker exec headscale ...` exits 1, `pipefail` propagates it through the
+# `jq` pipe, and `set -e` kills this script before the `docker compose up`
+# below ever runs - leaving headscale.sh's own readiness loop waiting
+# forever on a CA that was never started.
+#
+# certificate-authority.yml requires RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY
+# as `${VAR:?...}` (fail-secure, RD-04), so it cannot simply be left unset:
+# Compose refuses to interpolate the file at all and nothing starts. A
+# clearly-labelled placeholder is used instead - the mesh sidecar then fails
+# to authenticate and exits, which is the SAME observable outcome this
+# script's header already documents for "Headscale is not up yet", while
+# step-ca itself starts normally and shell 2 can fetch its root certificate.
+if docker inspect headscale >/dev/null 2>&1; then
+	docker exec headscale headscale users create certificate-authority 2>/dev/null || true
+	CA_ID=$(docker exec headscale headscale users list -o json | jq -r '.[] | select(.name=="certificate-authority") | .id')
+	export RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY=$(docker exec headscale headscale preauthkeys create --user "$CA_ID" --expiration 30m --tags tag:certificate-authority)
+else
+	echo "certificate-authority.sh: no 'headscale' container yet - starting step-ca WITHOUT a mesh identity." >&2
+	echo "certificate-authority.sh: re-run this script after shell 2 (headscale.sh) is up to join the mesh (NM-F-04)." >&2
+	export RAM_USB_CERTIFICATE_AUTHORITY_TAILSCALE_AUTHKEY="placeholder-no-headscale-yet-rerun-this-script"
+fi
 
 docker compose -f deployments/compose/certificate-authority.yml up --build

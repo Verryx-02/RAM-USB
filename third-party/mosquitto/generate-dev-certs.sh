@@ -254,15 +254,29 @@ mint_and_copy() {
 	# Step 2: exchange the token for a certificate over the network, via
 	# a disposable step-cli container on the same Docker network as the
 	# CA - see this file's own doc comment above for the full reasoning.
+	#
+	# KI-83: the token travels as an INHERITED environment variable
+	# (`-e STEP_TOKEN`, no value on the command line) and is dereferenced
+	# inside the container, never as `--token "$token"`. A value written
+	# into argv is world-readable in the host's own process table for as
+	# long as `docker run` lives - `ps` is enough - and a single-use CA
+	# token is exactly the credential CA-F-04 assumes stays private. Same
+	# mechanism deployments/compose/mqtt-broker.yml's own cert-issuer
+	# already uses; the token mint above was already safe (--password-file,
+	# not a password argument).
+	export STEP_TOKEN="$token"
 	docker run --rm \
 		--network "$DOCKER_NETWORK" \
 		--user "$(id -u):$(id -g)" \
 		-v "$OUT_DIR:/out" \
 		-v "$OUT_DIR/mqtt-dev-ca.dev-only.crt:/root_ca.crt:ro" \
-		"$STEP_CLI_IMAGE" \
-		step ca certificate "$subject" \
-			"/out/$out_basename.dev-only.crt" "/out/$out_basename.dev-only.key" \
-			--token "$token" --ca-url "$CA_URL" --root /root_ca.crt --force
+		-e STEP_TOKEN \
+		--entrypoint /bin/sh \
+		"$STEP_CLI_IMAGE" -c \
+		'step ca certificate "$1" "/out/$2.dev-only.crt" "/out/$2.dev-only.key" \
+			--token "$STEP_TOKEN" --ca-url "$3" --root /root_ca.crt --force' \
+		sh "$subject" "$out_basename" "$CA_URL"
+	unset STEP_TOKEN
 
 	chmod 0600 "$OUT_DIR/$out_basename.dev-only.key"
 	echo "wrote dev-only certificate (real CA, ~24h validity): $OUT_DIR/$out_basename.dev-only.crt"
