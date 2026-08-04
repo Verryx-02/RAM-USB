@@ -1,5 +1,6 @@
 @startuml
 !include _style.puml
+!pragma layout smetana
 
 title Trust Zones: Mesh Network Reachability
 
@@ -29,27 +30,62 @@ skinparam node<<userFull>> {
 ' appears, not a locally redefined color here.
 
 package "Unauthenticated User Zone" {
-  node "**User**\nregistered,\nnot logged in" as UnauthUser <<userLimited>>
+  ' Trailing blank padding on the last label line is a deliberate spacer
+  ' (same idiom as the blank quoted edge labels below, applied to a node
+  ' label instead): it widens UnauthUser just enough to pull this
+  ' package's left border into line with Authenticated User Zone's left
+  ' border. AuthUser (below) carries an analogous, smaller trailing-space
+  ' pad on its own last line: without it, UnauthUser filled ~92% of its
+  ' zone's width while AuthUser filled only ~59% of its own, an
+  ' inconsistent look the user flagged. Padding AuthUser too (verified via
+  ' a joint grid search over both nodes' pad lengths, since growing either
+  ' node measurably shifts UnauthUser's zone's left border) reaches ~93%
+  ' vs ~88% fill, a close and visually consistent match, while ALSO
+  ' landing both zones' left borders pixel-identical (0px gap, better than
+  ' the previous 1px). Costs a small, verified increase in the
+  ' zone-to-mesh gap (~2.0cm -> ~2.6cm, unchanged from prior rounds, not a
+  ' new cost of this fix); every other invariant (row alignment, node
+  ' centering, Internal Mesh internal grid) was re-verified unaffected.
+  node "**User**\nregistered,\nnot logged in                         " as UnauthUser <<userLimited>>
 }
 
 package "Authenticated User Zone" {
-  node "**User**\nregistered\n& logged in" as AuthUser <<userFull>>
+  ' See the fill-consistency note above: this trailing pad is tuned
+  ' jointly with UnauthUser's own pad, not independently.
+  node "**User**\nregistered\n& logged in              " as AuthUser <<userFull>>
 }
 
-UnauthUser -[hidden]right- AuthUser
-
 package "Internal Mesh" {
-  node "**Entry-Hub**" as EntryHub <<service>>
+  ' Entry-Hub and Security-Switch (row 1) each get a leading + trailing
+  ' blank label line: a deliberate spacer that grows their box height to
+  ' match UnauthUser's (3-line label) height exactly, symmetric around
+  ' their already-correct row center. This pulls Internal Mesh's own top
+  ' border up to match Unauthenticated User Zone's top border pixel-for-
+  ' pixel (55.2969 -> 41.2969) without moving the row-1 center alignment
+  ' that was already correct (verified via rendered SVG coordinates).
+  node "\n**Entry-Hub**\n" as EntryHub <<service>>
+  node "\n**Security-Switch**\n" as SecuritySwitch <<service>>
   node "**Storage-Service**" as StorageService <<service>>
-  node "**Security-Switch**" as SecuritySwitch <<service>>
-  node "**Database-Vault**" as DatabaseVault <<service>>
   node "**Network-Manager**" as NetworkManager <<service>>
+  node "**Database-Vault**" as DatabaseVault <<service>>
   node "**Certificate-Authority**" as CA <<certAuthority>>
 
-  EntryHub -[hidden]right- StorageService
-  SecuritySwitch -[hidden]right- DatabaseVault
-  DatabaseVault -[hidden]right- NetworkManager
-  NetworkManager -[hidden]right- CA
+  ' Column 1 top-to-bottom: Entry-Hub, Storage-Service, Database-Vault.
+  ' Doubled: a single hidden edge left Entry-Hub/Storage-Service ~10px off
+  ' center under the pull of the diagonal Security-Switch<-->Database-Vault
+  ' edge below; the second hidden edge adds pull strength to hold the
+  ' column centered (verified via rendered SVG coordinates).
+  EntryHub -[hidden]down- StorageService
+  EntryHub -[hidden]down- StorageService
+  ' Column 2 top-to-bottom: Security-Switch, Network-Manager,
+  ' Certificate-Authority (CA has no explicit placement instruction this
+  ' round; it trails Network-Manager, the component it is most closely
+  ' related to). Doubled for the same reason as column 1 above: the
+  ' diagonal edge to Database-Vault pulls Security-Switch off-center
+  ' relative to Network-Manager unless countered.
+  SecuritySwitch -[hidden]down- NetworkManager
+  SecuritySwitch -[hidden]down- NetworkManager
+  NetworkManager -[hidden]down- CA
 
   note bottom of CA
     Certificate-Authority can reach, and be reached by,
@@ -57,13 +93,40 @@ package "Internal Mesh" {
   end note
 }
 
-UnauthUser --> EntryHub
-AuthUser --> EntryHub
-AuthUser --> StorageService
+' Unauthenticated Zone stacks above Authenticated Zone: Unauthenticated
+' Zone row-aligns with Entry-Hub (row 1), Authenticated Zone row-aligns
+' with Storage-Service (row 2) below it.
+UnauthUser -[hidden]down- AuthUser
 
-EntryHub --> SecuritySwitch
-StorageService --> DatabaseVault
+' Unauthenticated Zone row-aligned with Entry-Hub (row 1). The blank
+' quoted label is a deliberate spacer: global nodesep/ranksep bumps and
+' PlantUML's dash-length rank-distance trick both have zero effect on the
+' user-zone-to-Internal-Mesh gap under smetana (verified); a wide blank
+' edge label is the lever that actually reserves extra horizontal room
+' here, and as a side effect also recenters the User node inside its
+' zone package (previously hugging the package's right edge). The
+' relative width between this label and the one below controls both
+' zones' centering jointly, not just their own zone; tune both together.
+UnauthUser -right-> EntryHub : "                                "
+' Authenticated Zone row-aligned with Storage-Service (row 2); the
+' relationship to Entry-Hub still targets row 1, so it renders as an
+' upward/diagonal arrow. See the spacer-label note above: this label
+' must stay 8 spaces wider than Unauthenticated Zone's above to keep
+' both User nodes centered in their packages (verified via rendered SVG
+' coordinates; the two labels' relative width, not the absolute size,
+' is what balances the centering).
+AuthUser -[hidden]right- StorageService
+AuthUser -up-> EntryHub
+AuthUser -right-> StorageService : "                                        "
+
+' Row 1, column 1 -> column 2.
+EntryHub -right-> SecuritySwitch
+' Column 1, row 1 -> row 2 (DV-F-09 / ST-F-11, bidirectional per KI-07).
+StorageService <-down-> DatabaseVault
+' Security-Switch (row 1, column 2) to Database-Vault (row 3, column 1):
+' not a clean row/column pairing, renders as a longer diagonal hop.
 SecuritySwitch <--> DatabaseVault
-SecuritySwitch <--> NetworkManager
+' Column 2, row 1 -> row 2.
+SecuritySwitch <-down-> NetworkManager
 
 @enduml
