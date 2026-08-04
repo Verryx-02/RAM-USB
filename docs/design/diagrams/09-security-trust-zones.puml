@@ -29,6 +29,16 @@ skinparam node<<userFull>> {
 ' Certificate-Authority node uses that shared identity everywhere it
 ' appears, not a locally redefined color here.
 
+' meshCoordinator: Headscale's own dedicated identity, matching
+' 01-architecture-container.puml / 02-architecture-deployment.puml exactly
+' (not centralized in _style.puml, so redeclared here per-file, all three
+' properties together per the local-override gotcha).
+skinparam node<<meshCoordinator>> {
+  BackgroundColor #4A7E9E/#345A73
+  BorderColor #1F3E4E
+  FontColor #F0F0F0
+}
+
 package "Unauthenticated User Zone" {
   ' Trailing blank padding on the last label line is a deliberate spacer
   ' (same idiom as the blank quoted edge labels below, applied to a node
@@ -46,6 +56,13 @@ package "Unauthenticated User Zone" {
   ' zone-to-mesh gap (~2.0cm -> ~2.6cm, unchanged from prior rounds, not a
   ' new cost of this fix); every other invariant (row alignment, node
   ' centering, Internal Mesh internal grid) was re-verified unaffected.
+  ' Attempted swapping this package's declaration order with Authenticated
+  ' User Zone below (user wanted Authenticated on top) - even though Mesh
+  ' VPN Zone's own declaration position didn't change, swapping just the
+  ' two satellite packages' relative order was enough to flip the whole
+  ' canvas under smetana (Mesh VPN Zone moved to canvas-left, its internal
+  ' columns reversed, both User Zones moved to canvas-right). Reverted;
+  ' order swap is not safe here, at least not via declaration order alone.
   node "**User**\nregistered,\nnot logged in                         " as UnauthUser <<userLimited>>
 }
 
@@ -55,7 +72,7 @@ package "Authenticated User Zone" {
   node "**User**\nregistered\n& logged in              " as AuthUser <<userFull>>
 }
 
-package "Internal Mesh" {
+package "Mesh VPN Zone" {
   ' Entry-Hub and Security-Switch (row 1) each get a leading + trailing
   ' blank label line: a deliberate spacer that grows their box height to
   ' match UnauthUser's (3-line label) height exactly, symmetric around
@@ -85,17 +102,36 @@ package "Internal Mesh" {
   ' relative to Network-Manager unless countered.
   SecuritySwitch -[hidden]down- NetworkManager
   SecuritySwitch -[hidden]down- NetworkManager
+  ' Tripled (was doubled): the new MeshBaseWaypoint edges below pull both
+  ' DatabaseVault and CA toward one shared target, which was enough to flip
+  ' their column order (verified via rendered SVG x-coordinates - CA ended
+  ' up left, DatabaseVault right, opposite of every prior round this
+  ' session). Extra hidden-edge weight here plus the new explicit
+  ' StorageService-DatabaseVault pull below re-anchors column 1 (Entry-Hub/
+  ' Storage-Service/Database-Vault) vs column 2 (Security-Switch/Network-
+  ' Manager/CA) strongly enough to hold against that new competing pull.
   NetworkManager -[hidden]down- CA
-
-  note bottom of CA
-    Certificate-Authority can reach, and be reached by,
-    every internal component (NM-F-04).
-  end note
+  NetworkManager -[hidden]down- CA
+  ' New: Database-Vault previously had no hidden-edge column anchor of its
+  ' own, only the real StorageService<-->DatabaseVault edge - not enough
+  ' once MeshBaseWaypoint introduced competing pull on both bottom-row
+  ' nodes. This explicitly reinforces column 1.
+  StorageService -[hidden]down- DatabaseVault
+  StorageService -[hidden]down- DatabaseVault
 }
 
-' Unauthenticated Zone stacks above Authenticated Zone: Unauthenticated
-' Zone row-aligns with Entry-Hub (row 1), Authenticated Zone row-aligns
-' with Storage-Service (row 2) below it.
+' Headscale is deliberately its own package, declared after Internal Mesh
+' (smetana places same-rank satellite packages by declaration order: after
+' the big cluster lands it on canvas-right, mirroring the User Zones on
+' canvas-left). It is NOT nested inside Internal Mesh: unlike every other
+' component there, Headscale is reachable over the public network, not by
+' mesh placement (NM-F-12) - this package exists to make that exception
+' visible rather than misrepresenting Headscale as mesh-reachable.
+package "Public Zone" {
+  node "**Headscale**" as Headscale <<meshCoordinator>>
+}
+
+' Unauthenticated Zone stacks above Authenticated Zone (reverted swap).
 UnauthUser -[hidden]down- AuthUser
 
 ' Unauthenticated Zone row-aligned with Entry-Hub (row 1). The blank
@@ -107,7 +143,7 @@ UnauthUser -[hidden]down- AuthUser
 ' zone package (previously hugging the package's right edge). The
 ' relative width between this label and the one below controls both
 ' zones' centering jointly, not just their own zone; tune both together.
-UnauthUser -right-> EntryHub : "                                "
+UnauthUser -right-> EntryHub : "                  "
 ' Authenticated Zone row-aligned with Storage-Service (row 2); the
 ' relationship to Entry-Hub still targets row 1, so it renders as an
 ' upward/diagonal arrow. See the spacer-label note above: this label
@@ -117,7 +153,7 @@ UnauthUser -right-> EntryHub : "                                "
 ' is what balances the centering).
 AuthUser -[hidden]right- StorageService
 AuthUser -up-> EntryHub
-AuthUser -right-> StorageService : "                                        "
+AuthUser -right-> StorageService : "             "
 
 ' Row 1, column 1 -> column 2.
 EntryHub -right-> SecuritySwitch
@@ -128,5 +164,16 @@ StorageService <-down-> DatabaseVault
 SecuritySwitch <--> DatabaseVault
 ' Column 2, row 1 -> row 2.
 SecuritySwitch <-down-> NetworkManager
+
+' Network-Manager to Headscale (NM-F-12): the one inter-service call in
+' this diagram NOT gated by network placement, only by mTLS + token. The
+' direction hint also does the rank-ordering job of a hidden edge (no
+' redundant hidden edge needed alongside a real one between the same pair).
+NetworkManager -right-> Headscale : "           "
+
+legend
+  Certificate-Authority can reach, and be reached by,
+  every internal component (NM-F-04).
+end legend
 
 @enduml
