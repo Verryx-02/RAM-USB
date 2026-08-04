@@ -26,11 +26,11 @@ jobs:
     name: Verification pipeline (CONTRIBUTING §7)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # gitleaks scans history, not just the tip
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -52,9 +52,16 @@ jobs:
       - name: go test -race
         run: go test -race ./...
 
-      - uses: golangci/golangci-lint-action@v6
+      # Pinned, not `latest`, and deliberately: golangci-lint refuses to run
+      # when the Go version it was built with is older than go.mod's target.
+      # `latest` on the v6 action resolved to golangci-lint v1.64.8 (built with
+      # Go 1.24) against our go 1.26.5 and failed with "the Go language version
+      # used to build golangci-lint is lower than the targeted Go version".
+      # v2.12.2 is what the workstation runs, so CI and local agree by
+      # construction; bump both together, never one alone.
+      - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.12.2
           args: --timeout=10m
 
       - name: govulncheck
@@ -97,17 +104,17 @@ jobs:
           - security-switch
           - storage-service
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}   # no PAT needed from Actions
 
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: meta
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/ram-usb-${{ matrix.service }}
@@ -115,7 +122,7 @@ jobs:
             type=raw,value=latest
             type=sha,format=long
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: deployments/docker/${{ matrix.service }}/Dockerfile
