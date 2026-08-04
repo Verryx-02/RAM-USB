@@ -122,6 +122,14 @@ jobs:
             type=raw,value=latest
             type=sha,format=long
 
+      # `scope` is required on both lines: the `type=gha` backend defaults every
+      # caller to the same scope ("buildkit"), so without it all 8 matrix jobs
+      # write to one shared cache concurrently. Observed live 2026-08-04: one
+      # job out of 8 failed with "error writing layer blob: not_found" on a
+      # commit that touched zero Docker/code files, a shared-scope write race
+      # under docker/build-push-action's own documented default
+      # (https://docs.docker.com/build/cache/backends/gha/). Scoping per
+      # service isolates each job's cache namespace.
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -130,5 +138,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
