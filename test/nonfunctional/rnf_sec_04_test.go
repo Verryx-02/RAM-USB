@@ -1,8 +1,8 @@
 // Package nonfunctional holds system-level tests for non-functional
-// requirements (RNF-*, docs/Test_Plan.md §2.3) measured against the real,
-// already-running dev Docker stack (deployments/compose/*.yml) rather than
-// a single service's own package - these checks span components no single
-// service test file owns.
+// requirements (RNF-*, docs/Test_Plan.md section 2.3) measured against the
+// real, already-running dev Docker stack (deployments/compose/*.yml)
+// rather than a single service's own package - these checks span
+// components no single service test file owns.
 package nonfunctional
 
 import (

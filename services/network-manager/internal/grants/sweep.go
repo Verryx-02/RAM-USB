@@ -20,14 +20,14 @@ type SweepStore interface {
 	RestoreGrant(ctx context.Context, g Grant) error
 }
 
-// Revoker performs the real Headscale tag removal for one expired grant.
-// A production caller binds this to internal/headscale.RevokeStorageAccess
+// Revoker performs the real Headscale tag removal for one expired grant. A
+// production caller binds this to internal/headscale.RevokeStorageAccess
 // (or, for a tag other than TagStorageAccess, RemoveNodeTag) - see
 // cmd/network-manager/main.go's wiring for the concrete adapter, kept
 // there rather than in this package so internal/grants stays free of a
 // dependency on internal/headscale's Headscale-specific types (per
-// CONTRIBUTING.md §7.2's package-layout guidance: cmd/<service>/main.go
-// owns dependency construction/wiring).
+// CONTRIBUTING.md section 7.2's package-layout guidance:
+// cmd/<service>/main.go owns dependency construction/wiring).
 type Revoker interface {
 	Revoke(ctx context.Context, nodeID uint64, tag string) error
 }

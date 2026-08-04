@@ -230,7 +230,7 @@ func TestPolicyDocument_EveryReferencedTagHasAnOwner(t *testing.T) {
 }
 
 // fakePolicyPusher is a hand-written fake of hs.PolicyPusher (CONTRIBUTING.md
-// §7.5) - no real Headscale connection is needed to exercise PushPolicy's
+// section 7.5) - no real Headscale connection is needed to exercise PushPolicy's
 // own wiring (construct the request, call SetPolicy, wrap a failure).
 type fakePolicyPusher struct {
 	setPolicyErr  error

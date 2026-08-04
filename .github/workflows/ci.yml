@@ -1,6 +1,6 @@
 # Continuous integration and image publication (KI-54, KI-72).
 #
-# Two jobs. `verify` runs CONTRIBUTING §7's verification pipeline — the nine
+# Two jobs. `verify` runs CONTRIBUTING section 7's verification pipeline — the nine
 # checks that until now had to be remembered by hand, and that nothing
 # confirmed had actually run. `publish` builds every service image and pushes
 # it to GHCR, but only after `verify` passes.
@@ -23,7 +23,7 @@ env:
 
 jobs:
   verify:
-    name: Verification pipeline (CONTRIBUTING §7)
+    name: Verification pipeline (CONTRIBUTING section 7)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

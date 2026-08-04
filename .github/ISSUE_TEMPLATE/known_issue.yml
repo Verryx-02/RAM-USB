@@ -1,5 +1,5 @@
 name: Known Issue
-description: A gap between what the SRS/design says and what the code actually does — not a deliberately-deferred SRS-level decision (those go in the SRS's own §8 instead).
+description: A gap between what the SRS/design says and what the code actually does — not a deliberately-deferred SRS-level decision (those go in the SRS's own section 8 instead).
 title: "[KI] "
 labels: ["known-issue"]
 assignees:
@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Use this for something that should already work per the SRS/design but doesn't yet — discovered while working on something else. If this is instead a deliberately-deferred requirement-level decision, it belongs in the SRS's §8 "Known risks and open issues" instead, not here.
+        Use this for something that should already work per the SRS/design but doesn't yet — discovered while working on something else. If this is instead a deliberately-deferred requirement-level decision, it belongs in the SRS's section 8 "Known risks and open issues" instead, not here.
 
   - type: input
     id: area
@@ -58,7 +58,7 @@ body:
     attributes:
       label: Confirm
       options:
-        - label: This is not already covered by a RISK-* entry in the SRS's own §8
+        - label: This is not already covered by a RISK-* entry in the SRS's own section 8
           required: true
         - label: I checked there isn't already an open issue for this
           required: true

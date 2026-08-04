@@ -54,7 +54,7 @@ var ErrDuplicateUser = errors.New("storage: user with this email or SSH key alre
 // narrow interface, instead of the full pgx.Tx interface (which also
 // includes CopyFrom, SendBatch, LargeObjects, Prepare, Query, QueryRow,
 // Begin, Conn — none of which SaveUser calls), lets unit tests substitute a
-// small hand-written fake per CONTRIBUTING.md §7.5.
+// small hand-written fake per CONTRIBUTING.md section 7.5.
 type Tx interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 	Commit(ctx context.Context) error

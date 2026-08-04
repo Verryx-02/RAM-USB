@@ -122,10 +122,10 @@ type Result struct {
 
 // Storage is the subset of persistence Login needs: retrieving the stored
 // password_hash for an email hash (DV-F-13). Depending on this narrow
-// interface, rather than on storage.Querier directly, lets tests
-// substitute a hand-written fake (CONTRIBUTING.md §7.5) without a real
-// database — same pattern as the registration package's Storage interface
-// over storage.Beginner.
+// interface, rather than on storage.Querier directly, lets tests substitute
+// a hand-written fake (CONTRIBUTING.md section 7.5) without a real database
+// — same pattern as the registration package's Storage interface over
+// storage.Beginner.
 type Storage interface {
 	GetPasswordHash(ctx context.Context, emailHash string) (string, error)
 }

@@ -9,7 +9,7 @@ import (
 )
 
 // fakeSweepStore is a hand-written fake implementing SweepStore
-// (CONTRIBUTING.md §7.5). Its fields are guarded by mu because
+// (CONTRIBUTING.md section 7.5). Its fields are guarded by mu because
 // TestRun_TicksAndSweeps drives it from Run's background goroutine while
 // polling/asserting from the test's own goroutine concurrently; every
 // access (including the test's own reads) must go through the accessor
@@ -218,8 +218,8 @@ func TestRun_TicksAndSweeps(t *testing.T) {
 	go Run(ctx, 10*time.Millisecond, store, revoker)
 
 	// Same real-short-interval wall-clock wait already established as
-	// acceptable per Test_Plan §2.1 for "wait, then assert a call count
-	// changed" (pkg/metrics's own schedule_test.go uses the identical
+	// acceptable per Test_Plan section 2.1 for "wait, then assert a call
+	// count changed" (pkg/metrics's own schedule_test.go uses the identical
 	// pattern for Run).
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for len(store.deletedHashesSnapshot()) == 0 && time.Now().Before(deadline) {

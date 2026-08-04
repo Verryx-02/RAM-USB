@@ -42,8 +42,8 @@
 // it this process has no reason to run at all.
 //
 // Every configuration value is read from an environment variable, per
-// CONTRIBUTING.md §7's "cmd/<service>/main.go: wiring, config loading,
-// dependency construction, server start." Env var names not already
+// CONTRIBUTING.md section 7's "cmd/<service>/main.go: wiring, config
+// loading, dependency construction, server start." Env var names not already
 // established by an earlier requirement are this session's judgment call,
 // documented on each constant below.
 package main

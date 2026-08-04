@@ -26,7 +26,7 @@ const (
 )
 
 // fakeDBVault is a hand-written fake implementing DatabaseVaultClient
-// (CONTRIBUTING.md §7.5).
+// (CONTRIBUTING.md section 7.5).
 type fakeDBVault struct {
 	registerResult dbvault.Result
 	loginResult    dbvault.Result

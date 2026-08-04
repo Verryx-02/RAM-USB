@@ -31,7 +31,7 @@ var ErrUserNotFound = errors.New("storage: no user found for this email hash")
 // Querier is the minimal subset of *pgxpool.Pool that GetPasswordHash
 // needs: a single QueryRow call. Depending on this narrow interface,
 // instead of *pgxpool.Pool directly, lets unit tests substitute a small
-// hand-written fake per CONTRIBUTING.md §7.5 — same pattern as this
+// hand-written fake per CONTRIBUTING.md section 7.5 — same pattern as this
 // package's existing Tx/Beginner interfaces over SaveUser/DeleteUser.
 type Querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row

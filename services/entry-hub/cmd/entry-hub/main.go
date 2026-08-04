@@ -6,7 +6,7 @@
 // and EH-F-10/EH-F-11's periodic metrics publish over MQTT.
 //
 // Every configuration value is read from an environment variable, per
-// CONTRIBUTING.md §7's "cmd/<service>/main.go: wiring, config loading,
+// CONTRIBUTING.md section 7's "cmd/<service>/main.go: wiring, config loading,
 // dependency construction, server start." This mirrors
 // services/security-switch/cmd/security-switch/main.go's structure
 // exactly, adapted to Entry-Hub's own inbound listeners (see "Listener

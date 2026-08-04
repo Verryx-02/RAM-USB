@@ -184,7 +184,7 @@ func decodeCreateUserRequest(r *http.Request) (createUserRequest, error) {
 // writeResult writes appErr.Status with a createUserResponse body carrying
 // success=false and appErr's fixed public message — never appErr.Internal,
 // which stays in the log line the caller already wrote, per pkg/errors's
-// no-detail-leak convention (ST-F-* per CONTRIBUTING.md §7.3).
+// no-detail-leak convention (ST-F-* per CONTRIBUTING.md section 7.3).
 func writeResult(w http.ResponseWriter, appErr *apperrors.AppError) {
 	apperrors.WriteJSON(w, appErr.Status, createUserResponse{Success: false, Error: appErr.Public})
 }

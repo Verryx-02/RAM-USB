@@ -2,10 +2,11 @@
 // POSIX-user-creation code (ST-F-06, ST-F-08) depends on for shelling out to
 // external binaries (useradd), instead of calling os/exec directly. This is
 // a design choice not specified by the SRS: a unit test (docs/Test_Plan.md
-// §2.1: "no network, no other service") must not actually invoke useradd -
-// so every caller depends on the Runner interface below, and tests
-// substitute a hand-written fake (CONTRIBUTING.md §7.5's "hand-written
-// fakes implementing the relevant interface"), never a real subprocess.
+// section 2.1: "no network, no other service") must not actually invoke
+// useradd - so every caller depends on the Runner interface below, and tests
+// substitute a hand-written fake (CONTRIBUTING.md section 7.5's
+// "hand-written fakes implementing the relevant interface"), never a real
+// subprocess.
 //
 // This package deliberately duplicates
 // user-client/internal/execrunner's shape (Runner/Real/Fake) rather than

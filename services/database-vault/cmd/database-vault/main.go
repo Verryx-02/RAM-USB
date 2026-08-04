@@ -7,7 +7,7 @@
 // periodic metrics publish over MQTT.
 //
 // Every configuration value is read from an environment variable, per
-// CONTRIBUTING.md §7's "cmd/<service>/main.go: wiring, config loading,
+// CONTRIBUTING.md section 7's "cmd/<service>/main.go: wiring, config loading,
 // dependency construction, server start." Env var names not already
 // established by an earlier requirement (RAM_USB_MASTER_KEY,
 // RAM_USB_PASSWORD_PEPPER) are this session's invented judgment call,
@@ -31,7 +31,7 @@
 // net/http.Request.TLS/Response.TLS, which net/http populates from the
 // completed handshake regardless of which library built the tls.Config.
 //
-// One bootstrap token only, per SRS §2.6 ("a single-use bootstrap token,"
+// One bootstrap token only, per SRS section 2.6 ("a single-use bootstrap token,"
 // singular, one per service): this server's single identity is
 // bootstrapped once (pki.BootstrapTokenEnvVar, via pki.NewServer, see
 // buildServerTLSConfig) and its resulting *tls.Config is reused for three

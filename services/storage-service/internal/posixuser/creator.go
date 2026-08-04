@@ -1,7 +1,7 @@
 // Package posixuser implements the real OS-level half of POSIX-user
 // creation (ST-F-06, ST-F-08) behind httpapi.UserCreator: shelling out to
 // groupadd then useradd, then creating the chroot root and its writable
-// data subdirectory per SRS §4.5's directory-structure diagram.
+// data subdirectory per SRS section 4.5's directory-structure diagram.
 package posixuser
 
 import (
@@ -25,12 +25,13 @@ import (
 var usernamePattern = regexp.MustCompile(`^user[0-9a-z]{6}$`)
 
 // storageRoot is the parent directory of every user's chroot root, per SRS
-// §4.5's directory-structure diagram ("/storage/ <- root of all users").
+// section 4.5's directory-structure diagram ("/storage/ <- root of all
+// users").
 const storageRoot = "/storage"
 
 // rootOwner is the POSIX user (and group) that must own each user's chroot
-// root directory, per SRS §4.5 ("chroot root of THIS user, owned by:
-// root:root").
+// root directory, per SRS section 4.5 ("chroot root of THIS user, owned
+// by: root:root").
 const rootOwner = "root"
 
 // ErrInvalidUsername means CreateUser was called with a username that does
@@ -152,7 +153,7 @@ func (c *Creator) CreateUser(ctx context.Context, username string) error {
 	// 0711 adds execute-only for group/other (no read, so the directory's
 	// own contents stay unlistable by anyone but root - it should never
 	// contain more than the single "data" entry anyway), matching SRS
-	// §4.5's "chroot root of THIS user, owned by: root:root" note.
+	// section 4.5's "chroot root of THIS user, owned by: root:root" note.
 	if err := c.DirMaker.Mkdir(chrootRoot, chrootRootMode); err != nil {
 		return fmt.Errorf("posixuser: create chroot root: %w", err)
 	}

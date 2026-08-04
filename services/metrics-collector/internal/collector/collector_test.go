@@ -8,7 +8,7 @@ import (
 	"github.com/Verryx-02/RAM-USB/pkg/metrics"
 )
 
-// fakeStore is a hand-written fake of Store (CONTRIBUTING.md §7.5).
+// fakeStore is a hand-written fake of Store (CONTRIBUTING.md section 7.5).
 type fakeStore struct {
 	insertErr   error
 	insertCalls int
@@ -152,8 +152,8 @@ func TestHandler_OnMessage(t *testing.T) {
 }
 
 // fakeMessage is a hand-written fake of mqtt.Message (CONTRIBUTING.md
-// §7.5) — only Topic() and Payload() are exercised by OnMessage/Handle,
-// every other method is an unused stub.
+// section 7.5) — only Topic() and Payload() are exercised by
+// OnMessage/Handle, every other method is an unused stub.
 type fakeMessage struct {
 	topic   string
 	payload []byte

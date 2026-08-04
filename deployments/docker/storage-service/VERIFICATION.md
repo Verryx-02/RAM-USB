@@ -1,6 +1,6 @@
 # Storage-Service container verification
 
-This is the manual system-test procedure for ST-F-02 through ST-F-11's OS-level guarantees: chroot isolation, SFTP-only access, sshd hardening, and public-key resolution via `AuthorizedKeysCommand`. It exercises Storage-Service's real container against a real Database-Vault, per `Test_Plan.md` §2.3's system-test technique (full stack, real mTLS certificates).
+This is the manual system-test procedure for ST-F-02 through ST-F-11's OS-level guarantees: chroot isolation, SFTP-only access, sshd hardening, and public-key resolution via `AuthorizedKeysCommand`. It exercises Storage-Service's real container against a real Database-Vault, per `Test_Plan.md` section 2.3's system-test technique (full stack, real mTLS certificates).
 
 ## Mesh architecture (NET-F-01)
 

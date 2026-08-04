@@ -37,7 +37,7 @@
 //     Storage-Service's mesh hostname are read from environment variables
 //     (RAM_USB_ENTRY_HUB_URL, RAM_USB_HEADSCALE_URL,
 //     RAM_USB_STORAGE_HOST), mirroring every other RAM-USB service's own
-//     env-var configuration convention (CONTRIBUTING.md §7's
+//     env-var configuration convention (CONTRIBUTING.md section 7's
 //     cmd/<service>/main.go pattern), even though this component is not a
 //     server.
 package main

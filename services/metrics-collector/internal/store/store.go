@@ -31,8 +31,8 @@ INSERT INTO metrics (
 // Depending on this narrow interface, instead of the full pgxpool.Pool
 // (which also exposes Query, QueryRow, Begin, Acquire, Ping, Stat, Close —
 // none of which Insert calls), lets unit tests substitute a small
-// hand-written fake per CONTRIBUTING.md §7.5. Same "narrow interface for
-// testability" pattern as Database-Vault's internal/storage.Tx.
+// hand-written fake per CONTRIBUTING.md section 7.5. Same "narrow interface
+// for testability" pattern as Database-Vault's internal/storage.Tx.
 type Querier interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 }

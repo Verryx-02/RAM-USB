@@ -9,7 +9,7 @@ import (
 )
 
 // fakePolicyPusher is a hand-written fake of headscale.PolicyPusher
-// (CONTRIBUTING.md §7.5), same shape as
+// (CONTRIBUTING.md section 7.5), same shape as
 // internal/headscale/policy_test.go's own fakePolicyPusher - kept as a
 // separate, narrower copy here rather than exported/reused across
 // packages, since this file only needs to prove pushStartupPolicy's own

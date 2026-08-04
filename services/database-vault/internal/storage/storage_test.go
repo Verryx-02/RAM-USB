@@ -12,9 +12,9 @@ import (
 )
 
 // fakeTx is a hand-written fake implementing this package's own Tx
-// interface (CONTRIBUTING.md §7.5), not the full pgx.Tx interface: SaveUser
-// only ever calls Exec, Commit, and Rollback, so the fake only needs to
-// implement those.
+// interface (CONTRIBUTING.md section 7.5), not the full pgx.Tx interface:
+// SaveUser only ever calls Exec, Commit, and Rollback, so the fake only
+// needs to implement those.
 type fakeTx struct {
 	execErr   error
 	commitErr error

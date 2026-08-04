@@ -15,9 +15,9 @@ import (
 	"github.com/Verryx-02/RAM-USB/services/storage-service/internal/httpapi"
 )
 
-// fakeCreator is a hand-written UserCreator fake (CONTRIBUTING.md §7.5):
-// it records the username it was asked to create and returns whatever
-// error (if any) the test configured.
+// fakeCreator is a hand-written UserCreator fake (CONTRIBUTING.md
+// section 7.5): it records the username it was asked to create and returns
+// whatever error (if any) the test configured.
 type fakeCreator struct {
 	err          error
 	gotUsername  string

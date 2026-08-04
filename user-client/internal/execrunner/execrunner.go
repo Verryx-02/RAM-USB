@@ -3,11 +3,11 @@
 // "restic") depends on, instead of calling os/exec directly. This is a
 // design choice not specified by the SRS: CL-F-04/CL-F-05/CL-F-06/CL-F-07
 // all require driving a real, separately-installed system binary, but a
-// unit test (docs/Test_Plan.md §2.1: "no network, no other service") must
-// not actually invoke tailscale/restic - so every caller depends on the
-// Runner interface below, and tests substitute a hand-written fake
-// (CONTRIBUTING.md §7.5's "hand-written fakes implementing the relevant
-// interface"), never a real subprocess.
+// unit test (docs/Test_Plan.md section 2.1: "no network, no other
+// service") must not actually invoke tailscale/restic - so every caller
+// depends on the Runner interface below, and tests substitute a
+// hand-written fake (CONTRIBUTING.md section 7.5's "hand-written fakes
+// implementing the relevant interface"), never a real subprocess.
 package execrunner
 
 import (

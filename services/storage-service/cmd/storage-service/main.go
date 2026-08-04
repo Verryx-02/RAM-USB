@@ -46,7 +46,7 @@
 // automatically now; no manual step is required.
 //
 // Every configuration value is read from an environment variable, per
-// CONTRIBUTING.md §7's "cmd/<service>/main.go: wiring, config loading,
+// CONTRIBUTING.md section 7's "cmd/<service>/main.go: wiring, config loading,
 // dependency construction, server start." Env var names not already
 // established by an earlier requirement (pki.BootstrapTokenEnvVar) follow
 // the same RAM_USB_STORAGE_SERVICE_* convention already established by

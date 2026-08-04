@@ -16,11 +16,12 @@ import (
 // saltSize is this session's judgment call, not an SRS-specified value:
 // DV-F-07/DV-F-14 require "the salt" without ever giving a length (unlike
 // DV-F-04, whose "random 16-byte salt" wording is explicit). 16 bytes (128
-// bits) is used here because it is the minimum RFC 9106 (§3.1) requires for
-// any Argon2 salt and the size the reference implementation itself
-// recommends for password hashing, not a business rule with a meaningful
-// trade-off space the way Argon2id's cost parameters below are — so it is
-// implemented directly rather than deferred as part of the blocking gap.
+// bits) is used here because it is the minimum RFC 9106 (section 3.1)
+// requires for any Argon2 salt and the size the reference implementation
+// itself recommends for password hashing, not a business rule with a
+// meaningful trade-off space the way Argon2id's cost parameters below are —
+// so it is implemented directly rather than deferred as part of the blocking
+// gap.
 const saltSize = 16
 
 // Argon2id cost parameters, confirmed by the user against the live OWASP

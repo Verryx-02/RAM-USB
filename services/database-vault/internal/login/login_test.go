@@ -19,8 +19,9 @@ import (
 var testPepper = []byte("test-pepper-not-a-real-secret")
 
 // fakeStorage is a hand-written fake implementing this package's Storage
-// interface (CONTRIBUTING.md §7.5): it returns a fixed stored hash keyed by
-// email hash, or a fixed "not found" error, without a real database.
+// interface (CONTRIBUTING.md section 7.5): it returns a fixed stored hash
+// keyed by email hash, or a fixed "not found" error, without a real
+// database.
 type fakeStorage struct {
 	hashes map[string]string
 

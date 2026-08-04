@@ -16,14 +16,14 @@ import (
 	"github.com/Verryx-02/RAM-USB/pkg/dial"
 )
 
-// caURLEnvVar names the environment variable that points this test at a
-// real Certificate-Authority instance (e.g. the certificate-authority
-// service in deployments/compose/certificate-authority.yml). docs/Test_Plan.md §4
-// requires unit tests to run with no external dependency and no Docker —
-// same env-var-gated-skip pattern already used by
+// caURLEnvVar names the environment variable that points this test at a real
+// Certificate-Authority instance (e.g. the certificate-authority service in
+// deployments/compose/certificate-authority.yml). docs/Test_Plan.md section 4
+// requires unit tests to run with no external dependency and no Docker — same
+// env-var-gated-skip pattern already used by
 // services/database-vault/internal/storage/postgres_test.go's
-// TestSaveUser_Postgres — so this test is skipped whenever the variable
-// is unset, instead of being a hard dependency of `go test ./...`.
+// TestSaveUser_Postgres — so this test is skipped whenever the variable is
+// unset, instead of being a hard dependency of `go test ./...`.
 const caURLEnvVar = "PKI_TEST_CA_URL"
 
 // caContainerEnvVar optionally overrides the Docker container name this

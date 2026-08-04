@@ -11,10 +11,10 @@ import (
 )
 
 // fakeDirMaker is a hand-written test double for DirMaker (CONTRIBUTING.md
-// §7.5), recording every call in order (including the requested mode, so
-// tests can assert the chroot root and data directory get two different,
-// correct modes) so tests can assert both that a call happened and its
-// exact order relative to other calls.
+// section 7.5), recording every call in order (including the requested
+// mode, so tests can assert the chroot root and data directory get two
+// different, correct modes) so tests can assert both that a call happened
+// and its exact order relative to other calls.
 type fakeDirMaker struct {
 	mkdirErr error
 	chownErr error

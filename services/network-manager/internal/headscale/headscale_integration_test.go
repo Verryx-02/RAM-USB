@@ -18,8 +18,8 @@ import (
 // headscaleTestAddrEnvVar gates this test on a real, already-running
 // standalone Headscale+reverse-proxy stack (deployments/compose/
 // headscale.yml) - e.g. "https://localhost:8080". Same env-var-gated-skip
-// shape as docs/Test_Plan.md §4's "integration tests run against the
-// Docker Compose stack", and the same pattern this codebase already
+// shape as docs/Test_Plan.md section 4's "integration tests run against
+// the Docker Compose stack", and the same pattern this codebase already
 // established for DV-F-08's postgres_test.go
 // (DATABASE_VAULT_TEST_DATABASE_URL).
 const headscaleTestAddrEnvVar = "NM_TEST_HEADSCALE_ADDR"

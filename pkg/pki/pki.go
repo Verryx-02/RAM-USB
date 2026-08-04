@@ -1,17 +1,17 @@
 // Package pki is a thin wrapper around github.com/smallstep/certificates/ca's
 // bootstrap primitives (CA-F-04, PKI-F-01). Each RAM-USB service holds a
-// single-use bootstrap token, distributed out-of-band (SRS §2.6, the note
-// on "Distribution of initial certificates" — same channel used for
+// single-use bootstrap token, distributed out-of-band (SRS section 2.6, the
+// note on "Distribution of initial certificates" — same channel used for
 // RAM_USB_MASTER_KEY (DV-F-05) and RAM_USB_PASSWORD_PEPPER (DV-F-06)), and
 // exchanges it exactly once, at startup, for an initial mTLS certificate
-// issued by the Certificate-Authority (the official smallstep/step-ca
-// server, run as a separate container — see
+// issued by the Certificate-Authority (the official smallstep/step-ca server,
+// run as a separate container — see
 // deployments/compose/certificate-authority.yml and
-// docs/design/diagrams/08-security-pki-hierarchy.puml). Subsequent
-// renewal happens automatically, driven by the vendor SDK's own built-in
-// mechanism (renewing at 2/3 of the certificate's lifetime by default) —
-// no polling loop, and the bootstrap token itself is never reused for a
-// renewal (CA-F-04).
+// docs/design/diagrams/08-security-pki-hierarchy.puml). Subsequent renewal
+// happens automatically, driven by the vendor SDK's own built-in mechanism
+// (renewing at 2/3 of the certificate's lifetime by default) — no polling
+// loop, and the bootstrap token itself is never reused for a renewal
+// (CA-F-04).
 //
 // The bootstrap token carries the CA's URL (its "aud" claim) and the CA's
 // root certificate fingerprint (its "sha" claim) — see
@@ -73,7 +73,7 @@ func forceTLS13(ctx *stepca.TLSOptionCtx) error {
 
 // BootstrapTokenEnvVar names the environment variable holding this
 // service's single-use CA bootstrap token (CA-F-04), distributed
-// out-of-band per SRS §2.6. This name is this package's own judgment
+// out-of-band per SRS section 2.6. This name is this package's own judgment
 // call (the SRS specifies only "out-of-band," no variable name) — chosen
 // to follow the same RAM_USB_* convention as RAM_USB_MASTER_KEY and
 // RAM_USB_PASSWORD_PEPPER.

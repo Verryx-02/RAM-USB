@@ -16,7 +16,7 @@ import (
 	"github.com/Verryx-02/RAM-USB/services/metrics-collector/internal/schema"
 )
 
-// fakeQuerier is a hand-written fake of Querier (CONTRIBUTING.md §7.5).
+// fakeQuerier is a hand-written fake of Querier (CONTRIBUTING.md section 7.5).
 type fakeQuerier struct {
 	execErr   error
 	execCalls int
@@ -99,20 +99,20 @@ func TestStore_Insert(t *testing.T) {
 	})
 }
 
-// databaseURLEnvVar names the environment variable that points this test
-// at a real TimescaleDB instance (e.g. the metrics-collector-timescaledb
-// service in deployments/compose/metrics-collector-timescaledb.yml). docs/Test_Plan.md §4
-// requires unit tests to run with no external dependency and no Docker —
-// so, like Database-Vault's own storage/postgres_test.go, this test is
-// skipped whenever the variable is unset, instead of being a hard
-// dependency of `go test ./...`.
+// databaseURLEnvVar names the environment variable that points this test at a
+// real TimescaleDB instance (e.g. the metrics-collector-timescaledb service
+// in deployments/compose/metrics-collector-timescaledb.yml).
+// docs/Test_Plan.md section 4 requires unit tests to run with no external
+// dependency and no Docker — so, like Database-Vault's own
+// storage/postgres_test.go, this test is skipped whenever the variable is
+// unset, instead of being a hard dependency of `go test ./...`.
 const databaseURLEnvVar = "METRICS_COLLECTOR_TEST_DATABASE_URL"
 
 // Requirement: MT-F-03
 func TestStore_Insert_Postgres(t *testing.T) {
 	databaseURL := os.Getenv(databaseURLEnvVar)
 	if databaseURL == "" {
-		t.Skipf("%s not set; skipping the real-TimescaleDB MT-F-03 test (see docs/Test_Plan.md §4: unit tests run with no external dependency, no Docker). Start deployments/compose/metrics-collector-timescaledb.yml's metrics-collector-timescaledb service and set this variable to run it.", databaseURLEnvVar)
+		t.Skipf("%s not set; skipping the real-TimescaleDB MT-F-03 test (see docs/Test_Plan.md section 4: unit tests run with no external dependency, no Docker). Start deployments/compose/metrics-collector-timescaledb.yml's metrics-collector-timescaledb service and set this variable to run it.", databaseURLEnvVar)
 	}
 
 	ctx := context.Background()

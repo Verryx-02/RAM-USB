@@ -1,9 +1,9 @@
 // Package mesh implements CL-F-04: joining the private Headscale mesh
 // network by shelling out to the user's already-installed system
-// "tailscale" binary (SRS §2.6's own assumption - "the user is assumed to
-// have installed the Tailscale client on their system before completing
-// registration" - so this package never embeds tailscale.com/tsnet or any
-// other in-process client library).
+// "tailscale" binary (SRS section 2.6's own assumption - "the user is
+// assumed to have installed the Tailscale client on their system before
+// completing registration" - so this package never embeds
+// tailscale.com/tsnet or any other in-process client library).
 //
 // CL-F-05 (resolving Storage-Service via MagicDNS) needs no code of its
 // own here: once "tailscale up" succeeds with the default --accept-dns=true

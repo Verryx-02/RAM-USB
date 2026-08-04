@@ -3,7 +3,7 @@
 This file is a scratch cache, not the durable record. GitHub Issues
 (label [`known-issue`](https://github.com/Verryx-02/RAM-USB/issues?q=is%3Aissue+label%3Aknown-issue),
 using `.github/ISSUE_TEMPLATE/known_issue.yml`) is the durable tracker —
-distinct from the SRS's own §8 ("Known risks and open issues"), which is
+distinct from the SRS's own section 8 ("Known risks and open issues"), which is
 for deliberately-deferred requirement-level decisions requiring the
 SRS's own approval process.
 

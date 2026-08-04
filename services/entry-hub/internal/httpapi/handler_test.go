@@ -24,7 +24,7 @@ const (
 )
 
 // fakeSecuritySwitch is a hand-written fake implementing
-// httpapi.SecuritySwitchClient (CONTRIBUTING.md §7.5).
+// httpapi.SecuritySwitchClient (CONTRIBUTING.md section 7.5).
 type fakeSecuritySwitch struct {
 	registerResult securityswitch.Result
 	loginResult    securityswitch.Result

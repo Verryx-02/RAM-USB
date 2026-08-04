@@ -12,7 +12,7 @@ import (
 // new user record (DV-F-08) and deleting one as a compensating rollback
 // (DV-F-10). Depending on this narrow interface, rather than on
 // storage.Beginner directly, lets tests substitute a hand-written fake
-// (CONTRIBUTING.md §7.5) without a real database — same pattern as
+// (CONTRIBUTING.md section 7.5) without a real database — same pattern as
 // storage.Beginner/storage.Tx being narrower than the full pgx interfaces
 // they're built on.
 type Storage interface {

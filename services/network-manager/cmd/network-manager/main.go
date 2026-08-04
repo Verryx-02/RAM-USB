@@ -68,7 +68,7 @@
 // Headscale's own limitation, not an oversight or a shortcut.
 //
 // Every configuration value is read from an environment variable, per
-// CONTRIBUTING.md §7's "cmd/<service>/main.go: wiring, config loading,
+// CONTRIBUTING.md section 7's "cmd/<service>/main.go: wiring, config loading,
 // dependency construction, server start." Env var names not already
 // established by an earlier requirement (RAM_USB_CA_BOOTSTRAP_TOKEN,
 // CA-F-04) are this session's invented judgment call, documented on each
@@ -176,7 +176,7 @@ const (
 	// out-of-band by the operator on the Headscale container/VPS itself
 	// ("headscale apikeys create" - see deployments/scripts/headscale.sh)
 	// and distributed to Network-Manager out-of-band as this env var, the
-	// same out-of-band-distribution pattern SRS §2.6 already establishes
+	// same out-of-band-distribution pattern SRS section 2.6 already establishes
 	// for RAM_USB_MASTER_KEY/RAM_USB_PASSWORD_PEPPER/CA-F-04's bootstrap
 	// token. Distinct from, and layered independently on top of, this
 	// process's own mTLS client certificate (NM-F-12) - Headscale's own

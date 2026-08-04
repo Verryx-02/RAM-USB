@@ -2,12 +2,12 @@ package execrunner
 
 import "context"
 
-// Fake is a hand-written test double for Runner (CONTRIBUTING.md §7.5), not
-// a mocking library. It records every call it received and returns the
-// caller-configured Output/Err (or, if RunFunc is set, whatever RunFunc
-// computes for that specific call), so tests can assert on exactly what
-// command(s) a package under test attempted to run without spawning a real
-// subprocess.
+// Fake is a hand-written test double for Runner (CONTRIBUTING.md
+// section 7.5), not a mocking library. It records every call it received and
+// returns the caller-configured Output/Err (or, if RunFunc is set, whatever
+// RunFunc computes for that specific call), so tests can assert on exactly
+// what command(s) a package under test attempted to run without spawning a
+// real subprocess.
 type Fake struct {
 	// Output and Err are returned by every call to Run, unless RunFunc is
 	// set.

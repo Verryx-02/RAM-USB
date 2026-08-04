@@ -19,7 +19,7 @@ import (
 const testEmail = "user@example.com"
 
 // fakeMesh is a hand-written fake implementing MeshProvisioner
-// (CONTRIBUTING.md §7.5).
+// (CONTRIBUTING.md section 7.5).
 type fakeMesh struct {
 	createKey   string
 	createKeyID uint64
@@ -54,7 +54,7 @@ func (f *fakeMesh) RevokeStorageAccess(_ context.Context, nodeID uint64) error {
 }
 
 // fakeMeshUserStore is a hand-written fake implementing MeshUserStore
-// (CONTRIBUTING.md §7.5), letting tests assert the new persisted
+// (CONTRIBUTING.md section 7.5), letting tests assert the new persisted
 // email -> pre-auth-key-ID mapping without a real SQLite store.
 type fakeMeshUserStore struct {
 	recordErr error
@@ -94,8 +94,8 @@ func (f *fakeMeshUserStore) PreAuthKeyIDForEmail(_ context.Context, email string
 }
 
 // fakeGrantRecorder is a hand-written fake implementing GrantRecorder
-// (CONTRIBUTING.md §7.5), letting tests assert NM-F-11's persistence call
-// without a real SQLite store.
+// (CONTRIBUTING.md section 7.5), letting tests assert NM-F-11's persistence
+// call without a real SQLite store.
 type fakeGrantRecorder struct {
 	err   error
 	calls []recordedGrant

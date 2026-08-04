@@ -8,9 +8,9 @@ import (
 )
 
 // masterKeyEnvVar is the configurable source DV-F-05 requires. Per SRS
-// §2.6 ("Assumptions and dependencies"), the master key is assumed to
-// reside in an environment variable for now; no other source (file, KMS,
-// secrets manager) is in scope until the SRS says otherwise.
+// section 2.6 ("Assumptions and dependencies"), the master key is assumed
+// to reside in an environment variable for now; no other source (file,
+// KMS, secrets manager) is in scope until the SRS says otherwise.
 const masterKeyEnvVar = "RAM_USB_MASTER_KEY"
 
 // masterKeySize is the length DV-F-05 requires of the decoded master key:

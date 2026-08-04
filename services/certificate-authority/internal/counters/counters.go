@@ -16,7 +16,7 @@ import (
 // errorStatusThreshold is the HTTP status code at and above which a
 // request counts as an error (CA-F-03's "ErrorCount"). No SRS requirement
 // or design document names an exact threshold; 400 is the standard HTTP
-// client/server-error boundary (RFC 9110 §15), the same judgment call
+// client/server-error boundary (RFC 9110 section 15), the same judgment call
 // every other service's own handler-level isError classification makes
 // implicitly by treating a 4xx/5xx response as an error case.
 const errorStatusThreshold = 400

@@ -29,7 +29,7 @@ var testMasterKey = bytes.Repeat([]byte{0x01}, 32)
 var testPepper = []byte("test-pepper-not-a-real-secret")
 
 // fakeRegistrationStorage is a hand-written fake implementing
-// registration.Storage (CONTRIBUTING.md §7.5), same shape as
+// registration.Storage (CONTRIBUTING.md section 7.5), same shape as
 // registration_test.go's fakeStorage.
 type fakeRegistrationStorage struct {
 	saveErr   error

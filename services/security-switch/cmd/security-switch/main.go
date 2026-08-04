@@ -7,7 +7,7 @@
 // metrics publish over MQTT.
 //
 // Every configuration value is read from an environment variable, per
-// CONTRIBUTING.md §7's "cmd/<service>/main.go: wiring, config loading,
+// CONTRIBUTING.md section 7's "cmd/<service>/main.go: wiring, config loading,
 // dependency construction, server start." Env var names not already
 // established by an earlier requirement follow the same RAM_USB_<SERVICE>_*
 // convention Database-Vault's main.go introduced - this session's invented
@@ -33,7 +33,7 @@
 //     pkg/mtls.WrapRoundTripper (wrapping each outbound client's
 //     Transport).
 //
-//  2. One bootstrap token only, per SRS §2.6 ("a single-use bootstrap
+//  2. One bootstrap token only, per SRS section 2.6 ("a single-use bootstrap
 //     token," singular, one per service): this server's single identity is
 //     bootstrapped once (pki.BootstrapTokenEnvVar, via pki.NewServer, see
 //     buildServerTLSConfig) and its resulting *tls.Config is reused for

@@ -10,10 +10,10 @@ import (
 )
 
 // fakeRow is a hand-written fake implementing pgx.Row (CONTRIBUTING.md
-// §7.5): its Scan either writes a fixed string into dest or returns a fixed
-// error, simulating what *pgxpool.Pool.QueryRow's returned pgx.Row would do
-// for a matched row, a no-rows result (pgx.ErrNoRows), or a lower-level
-// query failure — without a real database connection.
+// section 7.5): its Scan either writes a fixed string into dest or returns
+// a fixed error, simulating what *pgxpool.Pool.QueryRow's returned pgx.Row
+// would do for a matched row, a no-rows result (pgx.ErrNoRows), or a
+// lower-level query failure — without a real database connection.
 type fakeRow struct {
 	value   string
 	scanErr error

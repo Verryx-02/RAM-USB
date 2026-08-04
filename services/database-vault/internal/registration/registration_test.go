@@ -16,8 +16,8 @@ import (
 var usernamePattern = regexp.MustCompile(`^user[0-9a-z]{6}$`)
 
 // fakeStorage is a hand-written fake implementing this package's Storage
-// interface (CONTRIBUTING.md §7.5), recording every call so tests can
-// assert on call order and arguments without a real database.
+// interface (CONTRIBUTING.md section 7.5), recording every call so tests
+// can assert on call order and arguments without a real database.
 type fakeStorage struct {
 	saveErr   error
 	deleteErr error

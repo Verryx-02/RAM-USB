@@ -10,9 +10,9 @@ import (
 )
 
 // newTestServer starts an httptest.Server invoking handler for every
-// request, and returns a Client pointed at it - CONTRIBUTING.md §7.5's
-// hand-written-fake convention applied at the HTTP boundary itself (a
-// real net/http round trip, not a mocked RoundTripper), the same
+// request, and returns a Client pointed at it - CONTRIBUTING.md
+// section 7.5's hand-written-fake convention applied at the HTTP boundary
+// itself (a real net/http round trip, not a mocked RoundTripper), the same
 // verification depth pkg/metrics' own real-paho-broker tests use.
 func newTestServer(t *testing.T, handler http.HandlerFunc) (*Client, *httptest.Server) {
 	t.Helper()

@@ -5,11 +5,12 @@ import (
 	"strings"
 )
 
-// Fake is a hand-written Runner double (CONTRIBUTING.md §7.5: "hand-written
-// fakes implementing the relevant interface", not a mocking framework),
-// exported (not confined to a _test.go file) so mesh's and restic's own
-// tests can construct one directly, the same precedent as pkg/mtls.TestCA
-// living in its own package rather than a separate test-only package.
+// Fake is a hand-written Runner double (CONTRIBUTING.md section 7.5:
+// "hand-written fakes implementing the relevant interface", not a mocking
+// framework), exported (not confined to a _test.go file) so mesh's and
+// restic's own tests can construct one directly, the same precedent as
+// pkg/mtls.TestCA living in its own package rather than a separate
+// test-only package.
 type Fake struct {
 	// Calls records every invocation, in order, as "name arg1 arg2 ...".
 	Calls [][]string

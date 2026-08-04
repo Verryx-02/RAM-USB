@@ -11,10 +11,10 @@ import (
 	"os"
 )
 
-// pepperEnvVar is the configurable source DV-F-06 requires. Per SRS §2.6
-// ("Assumptions and dependencies"), the pepper is assumed to reside in an
-// environment variable for now; no other source (file, KMS, secrets
-// manager) is in scope until the SRS says otherwise.
+// pepperEnvVar is the configurable source DV-F-06 requires. Per SRS
+// section 2.6 ("Assumptions and dependencies"), the pepper is assumed to
+// reside in an environment variable for now; no other source (file, KMS,
+// secrets manager) is in scope until the SRS says otherwise.
 const pepperEnvVar = "RAM_USB_PASSWORD_PEPPER"
 
 // ErrPepperMissing means pepperEnvVar is unset or empty.

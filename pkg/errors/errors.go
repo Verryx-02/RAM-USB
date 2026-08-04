@@ -1,5 +1,5 @@
 // Package errors provides the structured error type every RAM-USB HTTP
-// boundary uses to respond to a client. Per CONTRIBUTING.md §7.3
+// boundary uses to respond to a client. Per CONTRIBUTING.md section 7.3
 // (EH-F-09, SS-F-06, DV-F-20, ST-F-*), a client must only ever see a
 // fixed, safe public message bound to the response's HTTP status code —
 // never the internal error detail (which field failed validation, which
@@ -171,7 +171,7 @@ func WriteJSON(w http.ResponseWriter, status int, body any) {
 
 // WriteAppError writes appErr's Status and Public fields to w as JSON,
 // via WriteJSON — Internal is never written to the response body
-// (CONTRIBUTING.md §7.3, EH-F-09, SS-F-06, DV-F-20).
+// (CONTRIBUTING.md section 7.3, EH-F-09, SS-F-06, DV-F-20).
 func WriteAppError(w http.ResponseWriter, appErr *AppError) {
 	WriteJSON(w, appErr.Status, ErrorResponse{Error: appErr.Public})
 }

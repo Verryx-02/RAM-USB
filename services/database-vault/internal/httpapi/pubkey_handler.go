@@ -80,8 +80,8 @@ var errMalformedPosixUsername = errors.New("public-key: malformed posix username
 // PublicKeyStore is the minimal interface PublicKeyHandler needs: one
 // lookup by posix_username. Depending on this narrow interface, instead of
 // storage.Querier or *pgxpool.Pool directly, lets unit tests substitute a
-// hand-written fake per CONTRIBUTING.md §7.5 — same "narrow interface +
-// adapter over a free function" shape as registration.Storage/
+// hand-written fake per CONTRIBUTING.md section 7.5 — same "narrow
+// interface + adapter over a free function" shape as registration.Storage/
 // login.Storage's own adapters.
 type PublicKeyStore interface {
 	GetSSHPublicKey(ctx context.Context, posixUsername string) (string, error)

@@ -3,7 +3,7 @@
 // later, separately, backup/restore): the POSIX username Storage-Service
 // created for this user at registration (DV-F-08/ST-F-06), which CL-F-06/
 // CL-F-07's restic invocation needs to address the user's own chroot
-// (SRS §4.5: /storage/user<xxxxxx>/data/).
+// (SRS section 4.5: /storage/user<xxxxxx>/data/).
 //
 // DESIGN DECISION FLAGGED FOR REVIEW: the SRS does not say the Client must
 // persist anything between commands - CL-F-02/CL-F-06/CL-F-07 are each

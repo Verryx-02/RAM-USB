@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-// fakeService is a hand-written fake of Service (CONTRIBUTING.md §7.5,
-// docs/Test_Plan.md §2.1: table-driven unit tests use hand-written fakes,
-// no real Headscale server).
+// fakeService is a hand-written fake of Service (CONTRIBUTING.md
+// section 7.5, docs/Test_Plan.md section 2.1: table-driven unit tests use
+// hand-written fakes, no real Headscale server).
 type fakeService struct {
 	createUserErr error
 	createUserID  uint64

@@ -10,7 +10,7 @@ Requirements come from [`docs/Software_Requirements_Specification.md`](Software_
 
 **In scope:** every `*-F-*`, `RNF-*`, `RD-*` requirement and every `UC-*` use case in the SRS.
 
-**Out of scope:** anything the SRS itself marks out of scope (§1.2): credential revocation, backup tamper-protection, GDPR compliance. No test gets written for a requirement that doesn't exist.
+**Out of scope:** anything the SRS itself marks out of scope (section 1.2): credential revocation, backup tamper-protection, GDPR compliance. No test gets written for a requirement that doesn't exist.
 
 ---
 
@@ -37,7 +37,7 @@ Four levels, each tied to a granularity of specification, not to a project phase
 ### 2.2 Integration tests
 
 - **What they cover:** a full use case (`UC-01`..`UC-05`), crossing multiple components.
-- **Technique:** bottom-up, driver/stub. See §3.
+- **Technique:** bottom-up, driver/stub. See section 3.
 - **Traceability:** one integration test suite per use case, named after the `UC-*` ID.
 
 ### 2.3 System tests
@@ -55,8 +55,8 @@ Four levels, each tied to a granularity of specification, not to a project phase
 ### 2.4 Acceptance checklist
 
 - **What it covers:** one `RU-*` user requirement.
-- **Technique:** manual walkthrough of the use case(s) that requirement traces to (SRS §9), checked off once observed to behave as specified.
-- **Why manual:** an `RU-*` requirement describes a user-perceived outcome ("I want the guarantee that..."). The system tests in §2.3 already exercise the mechanics; the acceptance checklist is the final sign-off that ties those results back to the original user-facing promise.
+- **Technique:** manual walkthrough of the use case(s) that requirement traces to (SRS section 9), checked off once observed to behave as specified.
+- **Why manual:** an `RU-*` requirement describes a user-perceived outcome ("I want the guarantee that..."). The system tests in section 2.3 already exercise the mechanics; the acceptance checklist is the final sign-off that ties those results back to the original user-facing promise.
 
 ---
 
@@ -72,7 +72,7 @@ Integration starts from the innermost component and works outward:
 
 **Why bottom-up:** Database-Vault has the fewest outbound dependencies (only Storage-Service) and the highest concentration of SRS requirements (`DV-F-01` through `DV-F-20`). Building it first, stubbing everything above it, means the component with the most to get right is also the one that gets tested the most before anything else depends on it.
 
-Driver and stub are hand-written fakes implementing the relevant Go interface (`CONTRIBUTING.md` §7).
+Driver and stub are hand-written fakes implementing the relevant Go interface (`CONTRIBUTING.md` section 7).
 
 ---
 
@@ -80,8 +80,8 @@ Driver and stub are hand-written fakes implementing the relevant Go interface (`
 
 - **Unit tests:** `go test ./...`. No external dependency, no Docker.
 - **Integration and system tests:** run against the per-container `deployments/compose/*.yml` stack (one Docker Compose file per service, joined via the external `ramusb-net` Docker network), brought up one terminal per service per `MANUAL-DISTRIBUTED-RUN.md` — deliberately mirroring how these services are actually distributed across separate Proxmox VMs/hosts in production (RNF-ORG-04), rather than one merged multi-service file that made every service look co-located. Real mTLS certificates are issued by the local Certificate-Authority container.
-- **Linting:** `golangci-lint` (`CONTRIBUTING.md` §7.1) runs before any test suite. Only lint-clean files proceed to testing.
-- **Coverage:** `go test -cover`, tracked per package. See §5 for the exit criterion this protects.
+- **Linting:** `golangci-lint` (`CONTRIBUTING.md` section 7.1) runs before any test suite. Only lint-clean files proceed to testing.
+- **Coverage:** `go test -cover`, tracked per package. See section 5 for the exit criterion this protects.
 
 ---
 
@@ -102,7 +102,7 @@ Driver and stub are hand-written fakes implementing the relevant Go interface (`
 
 ## 6. Traceability
 
-Every test traces to exactly one requirement ID, via the doc comment convention in `CONTRIBUTING.md` §7.5. This is what makes traceability (`CONTRIBUTING.md` §2, SRS §9) checkable in both directions:
+Every test traces to exactly one requirement ID, via the doc comment convention in `CONTRIBUTING.md` section 7.5. This is what makes traceability (`CONTRIBUTING.md` section 2, SRS section 9) checkable in both directions:
 
 - **Requirement to test:** grep the test suite for the ID.
 - **Test to requirement:** read the doc comment above the failing test.
@@ -111,5 +111,5 @@ Every test traces to exactly one requirement ID, via the doc comment convention 
 
 ## 7. Known gaps
 
-- **RISK-01 / RISK-02 (SRS §8):** no test exists for backup tamper-protection (out of scope) or master-key rotation (no rotation procedure exists yet to test).
-- **Load and stress testing:** planned for a later iteration. The p50/p95/p99 thresholds in §2.3 are measured under normal load, matching this thesis's case-study scope.
+- **RISK-01 / RISK-02 (SRS section 8):** no test exists for backup tamper-protection (out of scope) or master-key rotation (no rotation procedure exists yet to test).
+- **Load and stress testing:** planned for a later iteration. The p50/p95/p99 thresholds in section 2.3 are measured under normal load, matching this thesis's case-study scope.

@@ -16,7 +16,7 @@ import (
 )
 
 // fakePublicKeyStore is a hand-written fake implementing PublicKeyStore
-// (CONTRIBUTING.md §7.5).
+// (CONTRIBUTING.md section 7.5).
 type fakePublicKeyStore struct {
 	key string
 	err error

@@ -283,7 +283,7 @@ func setUpRealDatabase(ctx context.Context, t *testing.T, databaseURL string) *p
 // package's own collector.Handler and a real store.Store bound to the
 // real TimescaleDB, receives it. Success here is a row actually landing
 // in the "metrics" table with the published fields, not merely "no error
-// was returned" - the same standard docs/Test_Plan.md §2.3 names for a
+// was returned" - the same standard docs/Test_Plan.md section 2.3 names for a
 // functional system test ("a registration request ... producing a metric
 // in TimescaleDB").
 func TestMetricsPipeline_RealBroker_RealTimescaleDB_AcceptsMatchingPayload(t *testing.T) {

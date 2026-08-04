@@ -7,7 +7,7 @@ import "errors"
 // itself - only in the wrapping fmt.Errorf's %w chain, which is a
 // programming-error/operational detail for server-side logging, never
 // echoed back to a caller as-is (internal/httpapi maps these to a fixed
-// public AppError message, per CONTRIBUTING.md §7.3).
+// public AppError message, per CONTRIBUTING.md section 7.3).
 var (
 	// ErrHeadscaleRequestFailed means a call to the real Headscale gRPC
 	// API returned an error - unreachable server, an explicit RPC

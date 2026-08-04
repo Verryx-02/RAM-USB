@@ -10,7 +10,7 @@ import (
 // DirMaker abstracts the filesystem/ownership half of POSIX-user creation
 // (ST-F-08's chroot-root/data-directory ownership) behind a small seam, so
 // Creator's ordering and fail-secure logic can be unit-tested
-// (docs/Test_Plan.md §2.1: "no network, no other service") without
+// (docs/Test_Plan.md section 2.1: "no network, no other service") without
 // touching a real filesystem or running as root.
 type DirMaker interface {
 	// Mkdir creates path (and any necessary parents) if it does not

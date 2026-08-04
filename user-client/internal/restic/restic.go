@@ -41,7 +41,7 @@ type Config struct {
 
 	// PosixUsername is the per-user POSIX account Storage-Service created
 	// at registration (DV-F-08/ST-F-06), and the chroot this repository
-	// lives inside (SRS §4.5: /storage/user<xxxxxx>/data/).
+	// lives inside (SRS section 4.5: /storage/user<xxxxxx>/data/).
 	PosixUsername string
 
 	// PrivateKeyPath is the path to the SSH private key CL-F-01 generated
@@ -70,7 +70,7 @@ const alreadyInitializedMarker = "already initialized"
 
 // repository returns the sftp: repository URL this Config addresses -
 // the user's writable data/ subdirectory inside their own chroot (ST-F-06/
-// ST-F-08, SRS §4.5).
+// ST-F-08, SRS section 4.5).
 func (c Config) repository() string {
 	return fmt.Sprintf("sftp:%s@%s:/data", c.PosixUsername, c.Host)
 }
