@@ -7,6 +7,7 @@ title Container Diagram
 skinparam nodesep 30
 skinparam ranksep 55
 skinparam ArrowFontSize 11
+skinparam linetype polyline
 
 ' meshCoordinator: Headscale's own dedicated identity, modeled on how
 ' Certificate-Authority gets its own <<certAuthority>> stereotype rather
@@ -25,8 +26,8 @@ actor "Admin\n[Person]" as Admin
 
 rectangle "RAM-USB System" {
 
-  component "**Entry-Hub**\n[Go]\nPublic API gateway" as EntryHub <<service>>
-  component "**Security-Switch**\n[Go]\nRequest re-validation" as SecuritySwitch <<service>>
+  component "**Entry-Hub**\n[Go]\nPublic API gateway             " as EntryHub <<service>>
+  component "**Security-Switch**\n[Go]\nRequest re-validation         " as SecuritySwitch <<service>>
   component "**Database-Vault**\n[Go]\nRe-validation, identity\nstorage & crypto" as DatabaseVault <<service>>
   component "**Storage-Service**\n[Go, SFTP]\nEncrypted backup storage" as StorageService <<service>>
   component "**Network-Manager**\n[Go]\nMesh & ACL orchestration" as NetworkManager <<service>>
@@ -34,21 +35,68 @@ rectangle "RAM-USB System" {
   database "<$postgresql>\n**PostgreSQL**\nUser identity records" as Postgres
 
   component "**Certificate-Authority**\n[smallstep/certificates]\nmTLS issuance & rotation" as CA <<certAuthority>>
-  component "**Observability**\n[Mosquitto, Metrics-Collector,\nGrafana, TimescaleDB]\nMetrics pipeline & dashboards" as Observability <<infra>>
   component "**Headscale**\nMesh coordination server\n(own public VPS, NM-F-14)" as Headscale <<meshCoordinator>>
+  component "**Observability**\n[Mosquitto, Metrics-Collector,\nGrafana, TimescaleDB]\nMetrics pipeline & dashboards" as Observability <<infra>>
 }
 
-User -down-> EntryHub : **HTTPS**\nregister / login / health
+' Headscale/Certificate-Authority positions swapped per user request:
+' Headscale now sits top row (beside Entry-Hub), CA now sits where
+' Headscale used to be (with Observability still anchored below it).
+CA -[hidden]down-> Observability
+
+' The two User->Entry-Hub HTTPS edges (public register/health, mesh-only
+' login) are hand-drawn instead, in `draw-user-arrows-01.py` - parallel
+' vertical lines landing on Entry-Hub's top edge at its first and third
+' quarter marks, per explicit user request.
+' User has NO remaining real edges (SFTP, Tailscale, and both HTTPS lines
+' are all hand-drawn now) - without this hidden anchor, `dot` has nothing
+' to rank User against and drifts it far from the RAM-USB System box.
+User -[hidden]down-> EntryHub
 EntryHub -down-> SecuritySwitch : **mTLS**
-SecuritySwitch -down-> DatabaseVault : **mTLS**
+' SecuritySwitch->DatabaseVault and DatabaseVault->StorageService are
+' hand-drawn instead, in `draw-mtls-chain-01.py`: PlantUML rendered them
+' visibly oblique (their real x drifted several px along the path) despite
+' EntryHub->SecuritySwitch, directly above, rendering perfectly vertical -
+' per explicit user request, all three should share EntryHub-
+' SecuritySwitch's own x. Kept as hidden edges here (not removed outright)
+' so the vertical RANK ordering they provide doesn't disappear along with
+' their visible line - same rationale as User's hidden anchor above.
+SecuritySwitch -[hidden]down-> DatabaseVault
+SecuritySwitch -[hidden]down-> DatabaseVault
 DatabaseVault -right-> Postgres : **SQL**
-DatabaseVault <-down-> StorageService : **mTLS**\ncreate POSIX user / fetch public key
+DatabaseVault -[hidden]down-> StorageService
+DatabaseVault -[hidden]down-> StorageService
 SecuritySwitch -right-> NetworkManager : **mTLS**\nACL grant / pre-auth key
-NetworkManager -down-> Headscale : **REST API** (mTLS + token)\npre-auth key / ACL policy
+NetworkManager -[hidden]down- CA
+' REST API (NetworkManager -> Headscale) is hand-drawn instead, in
+' `draw-mtls-chain-01.py`: PlantUML renders this edge as an internal
+' "back edge" (dot's own generated id literally reads "Headscale-backto-
+' NetworkManager") since Headscale sits at a higher rank than
+' NetworkManager despite the -up-> hint, and its tail didn't land on
+' NetworkManager's true center - confirmed: 486.68 vs the box's actual
+' center-x 491.0 - per explicit user report ("la punta della freccia e'
+' nel posto giusto, ma la coda no"). Kept hidden here for the rank pull.
+NetworkManager -[hidden]up-> Headscale
 
-User --> StorageService : **SFTP**\nbackup / restore
-User -right-> Headscale : **Tailscale coordination**\n(public, CL-F-04)
+' SFTP (User -> Storage-Service) is deliberately NOT a PlantUML edge here:
+' every attempt to route it under `dot` (norank+hint, plain ranked edge,
+' invisible waypoint) either had no effect or triggered a full column
+' reorder elsewhere in the diagram (see .claude/agent-memory/
+' diagram-agent.md). It's hand-drawn instead, in the rendered SVG, by
+' `draw-sftp-arrow-01.py` - same pattern as `center-legend-01.py` and
+' 09-security-trust-zones.puml's `inject-cl-f-04-arc.py`.
+' Tailscale coordination (User -> Headscale) is hand-drawn instead, in the
+' rendered SVG, by `draw-user-arrows-01.py` - right angle from User's
+' right side down into Headscale, per explicit user request. Same
+' rationale as the SFTP arrow above: PlantUML/dot routing control over
+' individual edge shape/side is unreliable in this file without side
+' effects elsewhere.
 
-Admin -down-> Observability : **HTTPS**\ndashboards
+Observability <-right- Admin : **HTTPS**\ndashboards
+
+legend
+  Entry-Hub exposes two listeners (EH-F-03): register/health are public (solid arrow);
+  login is mesh-only (dashed arrow) and reachable only after the User to Headscale mesh join (CL-F-04).
+end legend
 
 @enduml
