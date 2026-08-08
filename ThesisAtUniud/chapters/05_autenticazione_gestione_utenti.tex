@@ -1,2 +1,16 @@
-\chapter{Autenticazione e gestione utenti}
-%% TODO: Entry-Hub e Security-Switch.
+\chapter{Autenticazione e gestione delle identità}
+
+\section{Ciclo di vita della richiesta: validazione e mapping degli errori}
+%% TODO: regole concrete di Entry-Hub (EH-F-04/05: formato email, complessità password, chiave SSH ben formata), fallimento (400 senza dettagli, EH-F-06) vs successo (inoltro via mTLS), ri-validazione indipendente di Security-Switch (SS-F-02..04), mapping errori (400/401/403/500/502/503/504, SS-F-06).
+
+\section{Cifratura e hashing delle credenziali}
+%% TODO: hashing SHA-256 dell'email (DV-F-03), cifratura email con HKDF-SHA256+AES-256-GCM (DV-F-04), hashing password Argon2id salted+peppered (DV-F-06/07), gestione master key.
+
+\section{Registrazione: transazione atomica e creazione utente POSIX}
+%% TODO: transazione atomica e richiesta a Storage-Service di creare l'utente POSIX con rollback su fallimento (DV-F-08..12) — qui solo cosa viene richiesto, il come lo fa Storage-Service resta nel cap. 6.
+
+\section{Login: verifica delle credenziali e prevenzione degli oracoli di enumerazione}
+%% TODO: recupero salt e ricalcolo Argon2id (DV-F-13/14), stesso 401 per email inesistente e password errata, nessuna distinzione nemmeno nei log (DV-F-15).
+
+\section{Orchestrazione post-autenticazione: grant di accesso}
+%% TODO: SS-F-05 (concessione ACL di 12h dopo il login) e SS-F-09 (creazione utente Headscale + pre-auth key alla registrazione) — cosa Security-Switch richiede a Network-Manager, non come lo soddisfa (cap. 7).

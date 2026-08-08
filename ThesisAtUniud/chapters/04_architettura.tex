@@ -1,7 +1,7 @@
 \chapter{Architettura generale e trust zones}
 
 \section{Overview architetturale}
-%% TODO: i container del sistema, cosa fa ciascuno ad alto livello (diagramma 01-architecture-container).
+%% TODO: i container del sistema, cosa fa ciascuno ad alto livello (diagramma 01-architecture-container) — attenzione: la SRS dichiara "11 container" e distroless come default, ma la topologia reale si è consolidata (Database-Vault include Postgres, Metrics-Collector include TimescaleDB, Certificate-Authority include il metrics-sidecar) e solo Entry-Hub usa davvero distroless (dettaglio completo delle immagini nel cap. 10); qui racconta la topologia reale, non quella dichiarata dalla SRS.
 
 \section{Modello di comunicazione inter-servizio}
 %% TODO: HTTP/JSON su net/http, perché non gRPC nonostante disponibile come dipendenza transitiva.
