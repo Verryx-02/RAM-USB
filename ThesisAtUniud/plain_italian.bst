@@ -1067,7 +1067,8 @@ FUNCTION {presort}
 
 ITERATE {presort}
 
-SORT
+% SORT rimosso deliberatamente: le citazioni devono comparire in bibliografia
+% nell'ordine in cui compaiono nel testo, non in ordine alfabetico per autore.
 
 STRINGS { longest.label }
 

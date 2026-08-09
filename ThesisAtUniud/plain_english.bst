@@ -1048,7 +1048,8 @@ FUNCTION {presort}
 
 ITERATE {presort}
 
-SORT
+% SORT deliberately removed: citations should appear in the bibliography
+% in the order they first appear in the text, not alphabetically by author.
 
 STRINGS { longest.label }
 

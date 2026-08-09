@@ -1,13 +1,107 @@
-\chapter{Analisi dei requisiti}
+\chapter{Requisiti: metodologia e casi d'uso}
 
 \section{Metodologia dei requisiti}
-%% TODO: modello a spirale della SRS, tracciabilità requisito-permalink di codice.
+
+I requisiti di RAM-USB sono raccolti in un documento unico chiamato Software Requirements
+Specification (SRS) \cite{ramusb-srs},
+che costituisce l'unica fonte di verità su cosa il sistema debba fare.
+La scrittura di tale documento segue un modello a spirale dell'ingegneria del software \cite{Boehm88},
+guidato dalla progressiva risoluzione del rischio, inteso come le fonti di incertezza più significative
+del progetto.  
+Il livello di dettaglio della SRS aumenta di conseguenza ad ogni iterazione.
+Si è scelto questo approccio perché, sebbene gli obiettivi e i requisiti di alto livello del sistema
+fossero ben chiari fin dalle fasi iniziali, la conoscenza degli strumenti e delle tecnologie di 
+terze parti impiegate non era sufficiente a prevederne con certezza il loro comportamento a basso livello. 
+Molti vincoli concreti sono infatti emersi solo nel momento dell'implementazione, quando l'interazione 
+diretta con questi strumenti ha rivelato dettagli che una fase di analisi puramente teorica, non avrebbe 
+potuto anticipare.
+Un caso concreto di questa dinamica è il requisito \texttt{NM-F-12}, rivisitato in tre round successivi:  
+
+nella versione 1.0 della SRS \cite{ramusb-commit-nm-f-12-v1} assumeva che Network-Manager (il
+componente responsabile della rete privata del sistema) dovesse costruire da zero un proprio meccanismo
+per autorizzare l'accesso di nuovi dispositivi;
+
+nella versione 1.4 \cite{ramusb-commit-nm-f-12-cli} è emerso che Headscale, lo strumento di
+coordinamento della rete impiegato dal sistema, offriva già questa funzionalità tramite la propria
+CLI, eliminando la necessità di scriverla;
+
+nella versione 1.7 \cite{ramusb-commit-nm-f-12-14-rework} è emerso un limite più profondo dello stesso
+Headscale (non può coordinare una rete di cui fa parte) approfondito nella
+\autoref{sec:paradosso-coordinatore}, richiedendo una riformulazione più ampia del requisito.
+
+\section{Tracciabilità dei requisiti}
+
+Un aspetto metodologico distintivo del progetto è la tracciabilità, intesa come vincolo tecnico
+verificabile in tre direzioni indipendenti.
+Questo approccio privilegia la semplicità di un audit di sicurezza a scapito della complessità della 
+gestione dell'implementazione.
+
+\begin{itemize}
+    \item \textbf{Dal requisito alla sua implementazione}: ogni requisito della SRS che ha già un'implementazione è collegato 
+    a un permalink GitHub che punta a un commit specifico e ad un intervallo di righe preciso. 
+    
+    \item \textbf{Dal test al requisito e viceversa}: ogni funzione di test porta, come commento di documentazione
+    nella riga immediatamente precedente, l'identificativo del requisito che verifica. Si noti che la 
+    relazione non è necessariamente 1-a-1 visto che un requisito puo' avere più test che lo verificano.
+    Si noti inltre che la tracciabilità vale in entrambe le direzioni: si può infatti passare dal requisito 
+    ai test, cercando l'ID nella codebase; e dal test al requisito, leggendo il commento sovrastante la funzione.
+    \item \textbf{Dal commit al requisito}: ogni commit del repository segue una grammatica fissa,
+    descritta nel
+    \texttt{CONTRIBUTING.md} \cite{ramusb-contributing-commit-structure}
+     e qui sintetizzata come tipo, area, descrizione del cambiamento,
+    seguiti dall'elenco degli identificativi dei requisiti che copre.
+    Come per il collegamento test-requisito, anche questo vale in entrambe le direzioni:
+    dal requisito, se ne cerca l'ID nella storia del repository; nella direzione opposta,
+    l'elenco finale della descrizione di ogni commit indica subito quali requisiti sono coperti.
+\end{itemize}
+
 
 \section{Requisiti utente e casi d'uso}
-%% TODO: i 10 RU e i 5 UC della SRS, trattabili per intero.
 
-\section{Requisiti funzionali: pattern trasversali}
-%% TODO: pattern ricorrenti (validazione ridondante, mTLS punto-a-punto, mapping errori) con esempi, non elenco esaustivo.
+I requisiti utente (RU) esprimono, dal punto di vista di chi usa il sistema, cosa RAM-USB deve garantire. 
+Sono gli unici requisiti riportati integralmente nel corpo della tesi; i requisiti di sistema che li
+realizzano (funzionali, non funzionali e di dominio) sono troppo numerosi per un elenco completo, e sono 
+raccolti in \autoref{app:elenco-requisiti}.
 
-\section{Requisiti non funzionali e di dominio}
-%% TODO: §5-6 della SRS, pochi punti, trattabili per intero.
+\begin{enumerate}
+    \item[RU-01] Registrarsi al servizio fornendo la quantità minima di dati necessaria.
+    \item[RU-02] Potersi autenticare in sessioni successive alla registrazione.
+    \item[RU-03] Poter caricare backup cifrati verso il servizio da qualsiasi luogo.
+    \item[RU-04] Poter accedere al proprio backup solo dopo essersi autenticato.
+    \item[RU-05] Avere la garanzia che nessuno, amministratori inclusi, possa leggere i propri backup.
+    \item[RU-06] Avere la garanzia che nessuno, amministratori inclusi, possa leggere le proprie 
+    credenziali di accesso.
+    \item[RU-07] Poter recuperare i propri file in qualsiasi momento.
+    \item[RU-08] Avere la certezza che i propri dati siano isolati da quelli degli altri utenti.
+    \item[RU-09] \textit{(Fuori perimetro)} Che nessuno, amministratori inclusi, possa modificare o 
+    cancellare i propri backup.
+    \item[RU-10] (Amministratore) Poter osservare la salute e le prestazioni del sistema senza 
+    compromettere i dati degli utenti.
+\end{enumerate}
+
+
+I requisiti utente si traducono nei seguenti casi d'uso:
+
+\begin{description}
+    \item[UC-01 (Registrazione)] Un nuovo utente fornisce email, password e chiave pubblica SSH, e
+    ottiene un account attivo.
+    \item[UC-02 (Autenticazione)] Un utente registrato fornisce email e password, e ottiene un accesso
+    temporaneo al proprio spazio di backup.
+    \item[UC-03 (Backup di un file)] Un utente autenticato carica un file, già cifrato sul proprio
+    dispositivo, nel proprio spazio isolato.
+    \item[UC-04 (Restore di un file)] Un utente autenticato recupera un proprio file precedentemente
+    caricato, decifrandolo localmente.
+    \item[UC-05 (Consultazione delle metriche operative)] Un amministratore consulta lo stato di salute
+    e le prestazioni del sistema, senza accedere ai dati dei singoli utenti.
+\end{description}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\textwidth]{figures/00-usecases-overview.pdf}
+    \caption{Diagramma dei casi d'uso principali di RAM-USB.}
+    \label{fig:usecases-overview}
+\end{figure}
+
+I capitoli successivi descrivono come l'architettura del sistema realizzi questi casi d'uso: il
+capitolo 4 introduce la struttura generale dei componenti e i confini di sicurezza tra di essi, mentre
+i capitoli 5-8 approfondiscono ciascun dominio funzionale nel dettaglio.
