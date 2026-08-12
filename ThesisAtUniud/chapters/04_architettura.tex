@@ -1,13 +1,71 @@
 \chapter{Architettura generale e trust zones}
 
 \section{Overview architetturale}
-%% TODO: i container del sistema, cosa fa ciascuno ad alto livello (diagramma 01-architecture-container) — attenzione: la SRS dichiara "11 container" e distroless come default, ma la topologia reale si è consolidata (Database-Vault include Postgres, Metrics-Collector include TimescaleDB, Certificate-Authority include il metrics-sidecar) e solo Entry-Hub usa davvero distroless (dettaglio completo delle immagini nel cap. 10); qui racconta la topologia reale, non quella dichiarata dalla SRS.
+
+RAM-USB è un'architettura a microservizi n-tier in cui ogni componente ha una responsabilità specifica. 
+Questa separazione riduce il rischio che la compromissione di un componente comprometta l'intero sistema.
+
+
+RAM-USB ha dieci componenti interni, organizzati in tre gruppi funzionali: 
+\begin{itemize}
+    \item \textbf{Accesso e registrazione}: Entry-Hub, Security-Switch, Database-Vault, Network-Manager, Certificate-Authority, Headscale.
+    \item \textbf{Backup e restore}: Storage-Service.
+    \item \textbf{Osservabilità}: Mosquitto, Metrics-Collector, Grafana.
+\end{itemize}
+
+La \autoref{fig:architecture-container} mostra questi dieci componenti e il protocollo con cui interagiscono.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/01-architecture-container.pdf}
+    \caption{Diagramma dei container di RAM-USB.}
+    \label{fig:architecture-container}
+\end{figure}
+
+\subsection{Entry-Hub}
+
+Entry-Hub è il gateway pubblico del sistema, ovvero l'unico esposto a chiunque su internet. Per questo 
+il sistema non gli concede fiducia implicita. Il suo processo gira quindi in un container distroless 
+\cite{distroless-github}, seguendo il principio di riduzione dell'attack surface raccomandato da 
+NIST SP 800-190 \cite{nist-sp-800-190}. 
+Senza shell, infatti, la maggior parte delle vulnerabilità critiche note nei container non è sfruttabile 
+\cite{wager2024distroless}
+
+Entry-Hub espone tre endpoint HTTPS: \texttt{POST /api/health} e \texttt{POST /api/register} sono
+raggiungibili da chiunque su internet, con certificato firmato dalla CA pubblica Let's Encrypt
+\cite{aas2019letsencrypt}. \texttt{POST /api/login} usa lo stesso certificato ma un listener separato,
+raggiungibile solo da utenti con accesso alla rete privata di cui parleremo in dettaglio nel
+\autoref{chap:rete}.
+
+
+Entry-Hub valida email, password e chiave SSH. Se la validazione fallisce,
+risponde HTTP 400 senza specificare quale sia il problema. 
+Se la validazione riesce, inoltra la richiesta a Security-Switch via mTLS e verifica che il certificato ricevuto appartenga
+davvero a un Security-Switch. Rilancia al client la risposta di Security-Switch e
+mappa ogni errore interno su un codice HTTP sanitizzato.
+
+\subsection{Security-Switch}
+
+
+\subsection{Database-Vault}
+
+
+\subsection{Storage-Service}
+
+\subsection{Network-Manager}
+
+\subsection{Certificate-Authority}
+
+
+\subsection{Headscale}
+
+\subsection{Mosquitto}
+
+\subsection{Metrics-Collector}
+
+\subsection{Grafana}
 
 \section{Modello di comunicazione inter-servizio}
-%% TODO: HTTP/JSON su net/http, perché non gRPC nonostante disponibile come dipendenza transitiva.
 
 \section{Trust zones e confini di sicurezza}
-%% TODO: zone pubbliche/mesh-only/interne, cosa attraversa ogni confine (diagramma 09-security-trust-zones); breve cenno a difesa in profondità.
-
-\section{PKI e gestione dei certificati}
-%% TODO: Certificate-Authority, bootstrap token (CA-F-04), rinnovo mTLS — servizio trasversale senza un capitolo-dominio proprio.
+\label{sec:trust-zones}
