@@ -33,6 +33,18 @@
 \usepackage[pdfa]{hyperref}
 \usepackage{float}
 \usepackage{longtable}
+%% enumitem: la classe thud applica setstretch{1.3} a tutto il corpo, che gonfia anche la
+%% spaziatura di default di itemize/enumerate. Questi valori la riportano a qualcosa di leggibile.
+\usepackage{enumitem}
+\setlist{itemsep=2pt, topsep=4pt, parsep=0pt, partopsep=0pt}
+%% La classe book, in modalità twoside (usata da thud.cls), usa flushbottom di default: LaTeX
+%% allunga gli spazi elastici (dopo i \section, tra i paragrafi, prima delle liste) per far
+%% arrivare il testo esattamente al margine inferiore, anche quando la pagina ha poco contenuto —
+%% è la vera causa dei grandi vuoti "a caso" osservati. raggedbottom lo disattiva.
+\raggedbottom
+%% Margine di sicurezza per righe che altrimenti andrebbero overfull (es. un \item in grassetto
+%% seguito da un lungo elenco di nomi propri, senza molti punti di interruzione naturali).
+\setlength{\emergencystretch}{2em}
 \hypersetup{hidelinks}
 %% tocbibind: Inserisce nell'indice anche la lista delle figure, la bibliografia, ecc.
 
