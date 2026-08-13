@@ -63,3 +63,7 @@ ThesisAtUniud/pdfa.xmpi
 # kept out of the public commit history.
 ThesisAtUniud/chapters/00_dedica.tex
 ThesisAtUniud/chapters/00_ringraziamenti.tex
+
+# ThesisAtUniud/references/: local copies of copyrighted papers kept for
+# personal citation-verification, never redistributed in a public repo.
+ThesisAtUniud/references/
