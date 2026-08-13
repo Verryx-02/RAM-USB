@@ -7,10 +7,10 @@
 %% TODO: perché si parte da Database-Vault (meno dipendenze uscenti, più requisiti concentrati DV-F-01..20), driver/stub scritti a mano.
 
 \section{TDD: criteri di ingresso e uscita}
-%% TODO: test scritto e fallito prima dell'implementazione, decision coverage sulle funzioni di validazione, tracciabilità bidirezionale via doc comment.
+%% TODO: test scritto e fallito prima dell'implementazione, decision coverage sulle funzioni di validazione, tracciabilità bidirezionale via doc comment. Pipeline di verifica automatizzata prima di ogni commit come meccanismo che applica questi criteri: golangci-lint con set esteso (gosec per la sicurezza, poi bodyclose/sqlclosecheck/contextcheck/errorlint aggiunti per resource leak e gestione errori), go test -race (ha già trovato un bug reale in un fake di test), govulncheck (vulnerabilità code-path-aware), gitleaks (ha già intercettato una chiave dev committata per errore), trivy (secondo scanner indipendente, ridondante di proposito) — lo stesso principio di defense-in-depth dell'architettura, applicato al processo di sviluppo stesso.
 
 \section{Copertura e lacune del piano di test}
 %% TODO: cosa il Test Plan dichiara non coperto (load/stress testing rimandato, nessun test per RISK-01/02) — solo lacune di test, i rischi di progetto più ampi restano nel cap. 11.
 
 \section{Risultati: verifiche completate}
-%% TODO: copertura raggiunta, soglie di latenza misurate p50/p95/p99 (RNF-PERF-01), isolamento verificato spegnendo un container (RNF-REL-01), esposizione di rete verificata dall'esterno della mesh (NET-F-01).
+%% TODO: copertura raggiunta, soglie di latenza misurate p50/p95/p99 (RNF-PERF-01), isolamento verificato spegnendo un container (RNF-REL-01), esposizione di rete verificata dall'esterno della mesh (NET-F-01). La verifica di Storage-Service (chroot/SFTP) è un registro vivo, non un controllo una tantum: procedura in un file dedicato con una data di ultima verifica aggiornata ogni volta che viene rieseguita.

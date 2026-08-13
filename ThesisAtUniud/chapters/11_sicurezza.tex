@@ -1,7 +1,8 @@
 \chapter{Analisi delle proprietà di sicurezza}
+\label{chap:sicurezza}
 
 \section{Scenari di attacco e mitigazioni}
-%% TODO: walkthrough concreto dal punto di vista dell'attaccante — compromissione isolata di un componente, credenziali rubate, tentativo di replay di una pre-auth key, richiesta falsificata a un servizio interno — e come le difese già descritte nei cap. 4-8 rispondono a ciascuno scenario.
+%% TODO: walkthrough concreto dal punto di vista dell'attaccante — compromissione isolata di un componente, credenziali rubate, tentativo di replay di una pre-auth key, richiesta falsificata a un servizio interno — e come le difese già descritte nei cap. 4-8 rispondono a ciascuno scenario. Esempi concreti di requisiti non funzionali imposti a livello di tipo, non di convenzione: pkg/errors lega un costruttore al codice HTTP, garantendo che il messaggio pubblico sia sempre quello sanitizzato (impossibile far trapelare un dettaglio interno per errore); pkg/logging tipizza i campi email/password come un tipo dedicato che implementa slog.LogValuer e stampa sempre REDACTED — DV-F-03/RD-01 (niente credenziali nei log) garantito dal type system, non dalla disciplina del singolo sviluppatore.
 
-\section{Isolamento dei fallimenti: RNF-REL-01 in pratica}
+\section{Isolamento dei fallimenti}
 %% TODO: perché la compromissione di un componente non si propaga agli altri, sintesi di trust zones (cap. 4) + mTLS + ri-validazione indipendente (cap. 3/5) + isolamento a livello di deployment (container/Proxmox, cap. 10), vista dalla lente "cosa succede se X viene compromesso" — non ripetere l'elenco dei limiti noti, quello resta nel cap. 12.

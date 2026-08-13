@@ -9,12 +9,12 @@ La scrittura di tale documento segue un modello a spirale dell'ingegneria del so
 guidato dalla progressiva risoluzione del rischio, inteso come le fonti di incertezza più significative
 del progetto.  
 Il livello di dettaglio della SRS aumenta di conseguenza ad ogni iterazione.
-Si è scelto questo approccio perché, sebbene gli obiettivi e i requisiti di alto livello del sistema
-fossero ben chiari fin dalle fasi iniziali, la conoscenza degli strumenti e delle tecnologie di 
-terze parti impiegate non era sufficiente a prevederne con certezza il loro comportamento a basso livello. 
+Gli obiettivi e i requisiti di alto livello erano chiari fin dalle fasi iniziali. La conoscenza degli 
+strumenti e delle tecnologie di terze parti, però, non bastava a prevederne con certezza il comportamento 
+a basso livello. La scelta del modello a spirale nasce da questo squilibrio.
 Molti vincoli concreti sono infatti emersi solo nel momento dell'implementazione, quando l'interazione 
-diretta con questi strumenti ha rivelato dettagli che una fase di analisi puramente teorica, non avrebbe 
-potuto anticipare.
+diretta con questi strumenti ha rivelato dettagli che una fase di analisi puramente teorica, non è stata 
+in grado di anticipare.
 Un caso concreto di questa dinamica è il requisito \texttt{NM-F-12}, rivisitato in tre round successivi:  
 
 nella versione 1.0 della SRS \cite{ramusb-commit-nm-f-12-v1} assumeva che Network-Manager (il
@@ -41,9 +41,9 @@ gestione dell'implementazione.
     a un permalink GitHub che punta a un commit specifico e ad un intervallo di righe preciso. 
     
     \item \textbf{Dal test al requisito e viceversa}: ogni funzione di test porta, come commento di documentazione
-    nella riga immediatamente precedente, l'identificativo del requisito che verifica. Si noti che la 
-    relazione non è necessariamente 1-a-1 visto che un requisito puo' avere più test che lo verificano.
-    Si noti inltre che la tracciabilità vale in entrambe le direzioni: si può infatti passare dal requisito 
+    nella riga immediatamente precedente, l'identificativo del requisito che verifica. 
+    La relazione non è necessariamente 1-a-1 visto che un requisito può avere più test che lo verificano.
+    Inoltre, la tracciabilità vale in entrambe le direzioni: si può infatti passare dal requisito 
     ai test, cercando l'ID nella codebase; e dal test al requisito, leggendo il commento sovrastante la funzione.
     \item \textbf{Dal commit al requisito}: ogni commit del repository segue una grammatica fissa,
     descritta nel
