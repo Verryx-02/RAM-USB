@@ -39,23 +39,43 @@ skinparam node<<meshCoordinator>> {
   FontColor #F0F0F0
 }
 
+' invisibleSpacer: an unstyled, unshaded white-on-white interface used
+' purely to reserve horizontal layout room without being visible (same
+' idiom proven on this file's CL-F-04 waypoint node) - `interface`, not
+' `node`, because a plain `node`'s isometric-box minimum footprint
+' (~105px) is too coarse to tune finely; `interface`'s small default
+' circle footprint allows much finer width control via its label.
+skinparam interface<<invisibleSpacer>> {
+  BackgroundColor #FFFFFF
+  BorderColor #FFFFFF
+  FontColor #FFFFFF
+}
+skinparam Shadowing<<invisibleSpacer>> false
+' FontColor alone does NOT suppress the "<<invisibleSpacer>>" guillemet
+' label itself (verified: it rendered in solid black regardless of
+' FontColor, a PlantUML interface-stereotype-text rendering quirk) - this
+' hides that one stereotype's guillemet text specifically, leaving every
+' other stereotype's guillemets (<<service>>, <<userLimited>>, etc.)
+' untouched.
+hide <<invisibleSpacer>> stereotype
+
 package "Unauthenticated User Zone" {
-  ' Trailing blank padding on the last label line is a deliberate spacer
-  ' (same idiom as the blank quoted edge labels below, applied to a node
-  ' label instead): it widens UnauthUser just enough to pull this
-  ' package's left border into line with Authenticated User Zone's left
-  ' border. AuthUser (below) carries an analogous, smaller trailing-space
-  ' pad on its own last line: without it, UnauthUser filled ~92% of its
-  ' zone's width while AuthUser filled only ~59% of its own, an
-  ' inconsistent look the user flagged. Padding AuthUser too (verified via
-  ' a joint grid search over both nodes' pad lengths, since growing either
-  ' node measurably shifts UnauthUser's zone's left border) reaches ~93%
-  ' vs ~88% fill, a close and visually consistent match, while ALSO
-  ' landing both zones' left borders pixel-identical (0px gap, better than
-  ' the previous 1px). Costs a small, verified increase in the
-  ' zone-to-mesh gap (~2.0cm -> ~2.6cm, unchanged from prior rounds, not a
-  ' new cost of this fix); every other invariant (row alignment, node
-  ' centering, Internal Mesh internal grid) was re-verified unaffected.
+  ' Per explicit user request, UnauthUser's own rectangle was shrunk back
+  ' to its natural (unpadded) size - it previously carried ~25 trailing
+  ' blank spaces as a deliberate width spacer (see git history), which
+  ' made its own colored box noticeably bigger than its text needed. That
+  ' spacer is gone: UnauthUser's box is now purely text-driven width. This
+  ' shrinks Unauthenticated User Zone's own package width too (it no
+  ' longer left-border-aligns with Authenticated User Zone below it the
+  ' way it used to - an accepted, disclosed tradeoff of the shrink, not a
+  ' bug: font size was explicitly NOT to be touched, and a same-package
+  ' invisible spacer node was tried first to reserve the old width without
+  ' the box's own visible size growing back, but reproduced the exact
+  ' "spacer nodes are unreliable under smetana" instability documented in
+  ' .claude/agent-memory/diagram-agent.md - reverted). UnauthUser's
+  ' package LEFT border still matches its pre-shrink baseline position
+  ' (14px) via the UnauthUser->Entry-Hub blank-label spacer below, tuned
+  ' to hold that one anchor.
   ' Attempted swapping this package's declaration order with Authenticated
   ' User Zone below (user wanted Authenticated on top) - even though Mesh
   ' VPN Zone's own declaration position didn't change, swapping just the
@@ -63,7 +83,7 @@ package "Unauthenticated User Zone" {
   ' canvas under smetana (Mesh VPN Zone moved to canvas-left, its internal
   ' columns reversed, both User Zones moved to canvas-right). Reverted;
   ' order swap is not safe here, at least not via declaration order alone.
-  node "**User**\nregistered,\nnot logged in                         " as UnauthUser <<userLimited>>
+  node "**User**\nregistered,\nnot logged in" as UnauthUser <<userLimited>>
 }
 
 package "Authenticated User Zone" {
@@ -128,6 +148,12 @@ package "Mesh VPN Zone" {
 ' mesh placement (NM-F-12) - this package exists to make that exception
 ' visible rather than misrepresenting Headscale as mesh-reachable.
 package "Public Zone" {
+  ' The 0.5cm-per-side spacer previously here made the package
+  ' asymmetric in practice (all the extra width landed on Headscale's
+  ' right, none on its left - PlantUML's own package-to-node padding is
+  ' otherwise symmetric by default). Per explicit user correction,
+  ' removed: Headscale's own node now sits at the package's natural,
+  ' symmetric padding on both sides.
   node "**Headscale**" as Headscale <<meshCoordinator>>
 }
 
@@ -143,7 +169,7 @@ UnauthUser -[hidden]down- AuthUser
 ' zone package (previously hugging the package's right edge). The
 ' relative width between this label and the one below controls both
 ' zones' centering jointly, not just their own zone; tune both together.
-UnauthUser -right-> EntryHub : "                  "
+UnauthUser -right-> EntryHub : "                                  "
 ' Authenticated Zone row-aligned with Storage-Service (row 2); the
 ' relationship to Entry-Hub still targets row 1, so it renders as an
 ' upward/diagonal arrow. See the spacer-label note above: this label
@@ -152,11 +178,25 @@ UnauthUser -right-> EntryHub : "                  "
 ' coordinates; the two labels' relative width, not the absolute size,
 ' is what balances the centering).
 AuthUser -[hidden]right- StorageService
+' AuthUser -> Entry-Hub's native rendering is REPLACED at the SVG level by
+' align-authuser-arrows-01.py (per explicit user request: both of
+' AuthUser's outgoing arrows must leave from the same point on its box;
+' PlantUML picks a different attachment point per edge and no skinparam
+' controls this - changing this edge's own hint to force a matching point
+' triggered a full-canvas mirror under smetana, reverted immediately).
+' Keep this edge declared as-is for rank-ordering purposes; run that
+' script after every `make diagrams` for this file.
 AuthUser -up-> EntryHub
 AuthUser -right-> StorageService : "             "
 
-' Row 1, column 1 -> column 2.
-EntryHub -right-> SecuritySwitch
+' Row 1, column 1 -> column 2. Blank label widens the Entry-Hub<->
+' Security-Switch gap: per explicit user request, Mesh VPN Zone is 1cm
+' wider (0.5cm per side) than its natural node-grid-driven width. Small
+' blank labels get absorbed into existing nodesep with zero effect - this
+' needed real width before the layout actually reserved extra room, tuned
+' empirically against the rendered package bbox (not derivable from
+' character count alone).
+EntryHub -right-> SecuritySwitch : "                               "
 ' Column 1, row 1 -> row 2 (DV-F-09 / ST-F-11, bidirectional per KI-07).
 StorageService <-down-> DatabaseVault
 ' Security-Switch (row 1, column 2) to Database-Vault (row 3, column 1):
