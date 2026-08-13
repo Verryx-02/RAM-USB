@@ -46,12 +46,13 @@ Attende la risposta del Security-Switch e la rilancia al client.
 
 \subsection{Security-Switch}
 
-Security-Switch è lo smistatore di richieste del sistema. Si occupa di ricevere le richieste da Entry-Hub e 
-contattare i servizi interni. In questo modo la responsabilità di comunicare con i gestori del database e 
-della rete non è in mano al punto di ingresso del sistema. 
+Security-Switch è lo smistatore delle richieste del sistema. Si occupa di ricevere le richieste da Entry-Hub 
+e contattare Database-Vault e Network-Manager. 
+Il suo scopo prinicipale è quindi evitare che tali responsabilità siano in mano al punto di ingresso del 
+sistema. 
 
-Accetta connessioni in ingresso solo da Entry-Hub, autenticato via mTLS e, visto che il sistema tratta 
-tutti i componenti come non fidati, ri-valida l'input in modo indipendente. 
+Accetta infatti connessioni in ingresso solo da Entry-Hub, autenticato via mTLS ri-validando l'input in 
+modo indipendente. 
 Lo scopo di questa rivalidazione è l'applicazione del principio di defence in depth \cite{nist-sp-800-207}.
 
 Se la validazione riesce, inoltra la richiesta a Database-Vault via mTLS. 
@@ -60,14 +61,71 @@ Nel caso di una richiesta di registrazione, chiede al Network-Manager di creare 
 sulla rete mesh e la credenziale (pre-auth key) con cui il suo dispositivo potrà unirvisi. 
 
 Nel caso di una richiesta di login, chiede al Network-Manager di concedere un accesso temporaneo di 12 ore 
-per quell'utente verso Storage-Service. 
-Solo quando l'utente avrà ottenuto l'accesso allo Storage-Service, potrà contattarlo e gestire i propri backup.
-
+per quell'utente verso Storage-Service. Solo quando l'utente avrà ottenuto l'accesso allo Storage-Service, 
+potrà contattarlo e gestire i propri backup.
 
 \subsection{Database-Vault}
+Database-Vault è il componente che si occupa di memorizzare le credenziali degli utenti in un database 
+PostgreSQL. È l'unico in grado di accedere al database, ma non ha tuttavia accesso ai file degli utenti, 
+i quali si trovano persistiti sullo Storage-Service. Questa separazione limita l'impatto della 
+compromissione di un singolo componente.
+
+Il diagramma Entità-Relazioni è illustrato in \autoref{fig:er-database-vault}.
+Visto che il database deve contenere solo i dati degli utenti e non vi è alcuna relazione significativa da 
+salvare, l'ER è piuttosto semplice. 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/06-data-er-database-vault.pdf}
+    \caption{Diagramma Entità-Relazioni del record utente in Database-Vault.}
+    \label{fig:er-database-vault}
+\end{figure}
+
+L'email è cifrata, recuperabile solo con la master key, mentre la password non è mai recuperabile, poiché
+viene hashata con Argon2id. Il furto o l'accesso non autorizzato al database non bastano quindi a leggere né
+l'una né l'altra.
+
+In fase di registrazione di un nuovo utente, in seguito alla rivalidazione dell'input, Database-Vault tenta
+di salvare i dati in una transazione atomica, rifiutando la richiesta se l'email o la chiave SSH sono già
+registrate, ma senza specificare quale delle due sia errata. 
+Se il salvataggio riesce, richiede a Storage-Service la
+creazione dello spazio POSIX dell'utente. In caso di fallimento dello Storage-Service, elimina il record 
+appena creato, altrimenti informa Security-Switch che la registrazione è andata a buon fine.
+
+Al login, ricalcola l'hash della password ricevuta e lo confronta con quello salvato, poi risponde a 
+Security-Switch. 
+
+Un'email inesistente e una password sbagliata producono la stessa risposta: in questo modo,
+chi tenta l'accesso non può usarla per scoprire quali email sono registrate.
+Il \autoref{chap:sicurezza}, tuttavia, spiega come un utente esterno può tentare di capire se 
+un'email è già registrata nel sistema e anche come un amministratore può ottenere le credenziali 
+di accesso di un utente.
 
 
 \subsection{Storage-Service}
+
+Storage-Service ospita i file di backup degli utenti.
+Non elabora mai contenuto in chiaro poiché per design, non è in grado di farlo. Riceve infatti soltanto
+file deduplicati, compressi e cifrati lato client con Restic \cite{restic-github}.
+
+Su richiesta di Database-Vault, crea un utente POSIX dedicato, senza shell interattiva nè home directory
+tradizionale. Ogni utente ha infatti uno spazio scrivibile in una sua sottodirectory dentro un chroot.
+La struttura del file system è illustrata in \autoref{fig:filesystem-storage}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\textwidth]{figures/07-data-filesystem-storage.pdf}
+    \caption{Struttura del filesystem di Storage-Service.}
+    \label{fig:filesystem-storage}
+\end{figure}
+
+L'accesso allo Storage-Service può avvenire solo via SFTP, con la chiave pubblica SSH inviata
+dall'utente in fase di registrazione. Non sono quindi permessi né l'autenticazione con username e password, 
+né altre forme di accesso SSH al di fuori della SFTP.
+
+Ad ogni connessione, un binario \texttt{AuthorizedKeysCommand} dedicato interroga Database-Vault per 
+ottenere la chiave pubblica corrente dell'utente.
+Qualunque errore in quella chiamata, nega la connessione secondo il principio fail-secure \cite{owasp-fail-securely}.
 
 \subsection{Network-Manager}
 
