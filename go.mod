@@ -1,6 +1,6 @@
 module github.com/Verryx-02/RAM-USB
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
