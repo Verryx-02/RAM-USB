@@ -32,7 +32,7 @@ import (
 // internal-package visibility rule makes unreachable from user-client)
 // exactly as UC-01/UC-02 name them.
 const (
-	RegisterPath = "/api/register"
+	RegisterPath = "/api/users"
 	LoginPath    = "/api/login"
 )
 
@@ -112,7 +112,7 @@ type appErrorResponse struct {
 
 // Register implements CL-F-02: locally pre-validate req (CL-F-09) using
 // the exact rules Entry-Hub enforces (EH-F-04), and only if that passes,
-// send POST /api/register. On a local validation failure, no request is
+// send POST /api/users. On a local validation failure, no request is
 // sent at all.
 func (c *Client) Register(ctx context.Context, req validation.RegisterRequest) (RegisterResult, error) {
 	if err := validation.ValidateRegister(req); err != nil {

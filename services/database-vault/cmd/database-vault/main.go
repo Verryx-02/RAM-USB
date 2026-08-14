@@ -231,6 +231,16 @@ func main() {
 	}
 }
 
+// newMux builds Database-Vault's internal register/login mux. Both routes
+// are method-prefixed ("POST /path") so net/http.ServeMux itself rejects any
+// other verb with a 405 before the request ever reaches handler code.
+func newMux(handler *httpapi.Handler) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST "+httpapi.RegisterPath, handler.Register)
+	mux.HandleFunc("POST "+httpapi.LoginPath, handler.Login)
+	return mux
+}
+
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -322,9 +332,7 @@ func run() error {
 		Metrics: counters,
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc(httpapi.RegisterPath, handler.Register)
-	mux.HandleFunc(httpapi.LoginPath, handler.Login)
+	mux := newMux(handler)
 
 	httpServer := &http.Server{
 		Addr: listenAddr,

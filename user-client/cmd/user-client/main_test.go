@@ -403,8 +403,8 @@ func TestRunRegister_MapsEntryHubErrorStatus(t *testing.T) {
 func TestRunRegister_Success_PersistsPosixUsername(t *testing.T) {
 	isolateConfigDir(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/register" {
-			t.Errorf("request path = %q, want /api/register", r.URL.Path)
+		if r.URL.Path != "/api/users" {
+			t.Errorf("request path = %q, want /api/users", r.URL.Path)
 		}
 		var body map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

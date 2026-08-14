@@ -5,7 +5,7 @@
 // subcommands, one per "following a user command" requirement:
 //
 //   - register: CL-F-01 (generate an SSH key pair), CL-F-09 (locally
-//     pre-validate), CL-F-02 (POST /api/register), CL-F-04 (join the mesh
+//     pre-validate), CL-F-02 (POST /api/users), CL-F-04 (join the mesh
 //     with the returned pre-auth key, if Entry-Hub's response carries one -
 //     see internal/entryhub's own doc note on this field's current
 //     server-side gap).

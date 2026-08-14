@@ -41,7 +41,7 @@ import (
 // services/security-switch/internal/httpapi.RegisterPath/LoginPath
 // exactly.
 const (
-	RegisterPath = "/internal/v1/register"
+	RegisterPath = "/internal/v1/users"
 	LoginPath    = "/internal/v1/login"
 )
 

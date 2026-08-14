@@ -342,7 +342,7 @@ func writeSelfSignedKeyPair(t *testing.T) (certPath, keyPath string) {
 //
 // This is a deliberate, documented EXCEPTION check, not a bug hunt:
 // EH-F-03 requires Entry-Hub's login listener (like /api/health and
-// /api/register) to be reachable by ordinary registered users holding a
+// /api/users) to be reachable by ordinary registered users holding a
 // certificate signed by the PUBLIC Let's Encrypt CA - end users are never
 // enrolled in RAM-USB's internal PKI (CA-F-01..04) and so can never
 // present an mTLS client certificate. buildServerTLSConfig's own doc
