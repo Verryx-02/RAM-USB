@@ -41,7 +41,7 @@ import (
 // tests too.
 const (
 	HealthPath   = "/api/health"
-	RegisterPath = "/api/register"
+	RegisterPath = "/api/users"
 	LoginPath    = "/api/login"
 )
 

@@ -11,8 +11,8 @@
 //
 // No literal path is specified anywhere in the SRS or design docs for
 // Security-Switch's own internal endpoints (only Entry-Hub's public-facing
-// /api/register and /api/login, and Database-Vault's own invented
-// /internal/v1/register and /internal/v1/login, are named).
+// /api/users and /api/login, and Database-Vault's own invented
+// /internal/v1/users and /internal/v1/login, are named).
 // RegisterPath and LoginPath below are this session's invented judgment
 // call - conceptually matching Entry-Hub's public path names, since
 // Entry-Hub is the caller here, but naming Security-Switch's own,
@@ -38,7 +38,7 @@ import (
 // paths. See the package doc comment: these are invented, not sourced
 // from the SRS or a design doc.
 const (
-	RegisterPath = "/internal/v1/register"
+	RegisterPath = "/internal/v1/users"
 	LoginPath    = "/internal/v1/login"
 )
 

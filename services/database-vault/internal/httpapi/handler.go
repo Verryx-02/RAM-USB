@@ -12,7 +12,7 @@
 //
 // No literal path is specified anywhere in the SRS or design docs for
 // Database-Vault's own internal endpoints (only Entry-Hub's
-// public-facing /api/register and /api/login are named). RegisterPath and
+// public-facing /api/users and /api/login are named). RegisterPath and
 // LoginPath below are this session's invented judgment call, the same
 // pattern as DV-F-09's invented Storage-Service HTTP contract — revisit if
 // Security-Switch's eventual client (SS-F-04) fixes different values.
@@ -38,7 +38,7 @@ import (
 // paths. See the package doc comment: these are invented, not sourced
 // from the SRS or a design doc.
 const (
-	RegisterPath = "/internal/v1/register"
+	RegisterPath = "/internal/v1/users"
 	LoginPath    = "/internal/v1/login"
 )
 

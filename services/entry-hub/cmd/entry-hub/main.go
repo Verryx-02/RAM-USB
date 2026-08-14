@@ -324,7 +324,7 @@ func run() error {
 	}
 
 	publicMux := http.NewServeMux()
-	publicMux.HandleFunc("POST "+httpapi.HealthPath, handler.Health)
+	publicMux.HandleFunc("GET "+httpapi.HealthPath, handler.Health)
 	publicMux.HandleFunc("POST "+httpapi.RegisterPath, handler.Register)
 
 	loginMux := http.NewServeMux()

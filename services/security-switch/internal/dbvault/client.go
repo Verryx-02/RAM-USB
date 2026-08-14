@@ -38,7 +38,7 @@ import (
 // RegisterPath and LoginPath must match
 // services/database-vault/internal/httpapi.RegisterPath/LoginPath exactly.
 const (
-	RegisterPath = "/internal/v1/register"
+	RegisterPath = "/internal/v1/users"
 	LoginPath    = "/internal/v1/login"
 )
 
