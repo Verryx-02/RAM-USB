@@ -28,7 +28,7 @@ il sistema non gli concede fiducia implicita. Il suo processo gira quindi in un 
 \cite{distroless-github}, seguendo il principio di riduzione dell'attack surface raccomandato da 
 NIST SP 800-190 \cite{nist-sp-800-190}. 
 Senza shell, infatti, la maggior parte delle vulnerabilità critiche note nei container non è sfruttabile 
-\cite{wager2024distroless}
+\cite{wager2024distroless}.
 
 Entry-Hub espone tre endpoint HTTPS: \texttt{POST /api/health} e \texttt{POST /api/register} sono
 raggiungibili da chiunque su internet, con certificato firmato dalla CA pubblica Let's Encrypt
@@ -46,14 +46,11 @@ Attende la risposta del Security-Switch e la rilancia al client.
 
 \subsection{Security-Switch}
 
-Security-Switch è lo smistatore delle richieste del sistema. Si occupa di ricevere le richieste da Entry-Hub 
-e contattare Database-Vault e Network-Manager. 
-Il suo scopo prinicipale è quindi evitare che tali responsabilità siano in mano al punto di ingresso del 
-sistema. 
+Security-Switch esiste per evitare che le responsabilità di contattare Database-Vault e Network-Manager
+siano in mano al punto di ingresso del sistema: riceve le richieste in ingresso solo da Entry-Hub, 
+autenticato via mTLS, le rivalida in modo indipendente e contatta i servizi interni. 
 
-Accetta infatti connessioni in ingresso solo da Entry-Hub, autenticato via mTLS ri-validando l'input in 
-modo indipendente. 
-Lo scopo di questa rivalidazione è l'applicazione del principio di defence in depth \cite{nist-sp-800-207}.
+Lo scopo della rivalidazione è l'applicazione del principio di defence in depth \cite{nist-sp-800-207}.
 
 Se la validazione riesce, inoltra la richiesta a Database-Vault via mTLS. 
 
@@ -108,7 +105,7 @@ Storage-Service ospita i file di backup degli utenti.
 Non elabora mai contenuto in chiaro poiché per design, non è in grado di farlo. Riceve infatti soltanto
 file deduplicati, compressi e cifrati lato client con Restic \cite{restic-github}.
 
-Su richiesta di Database-Vault, crea un utente POSIX dedicato, senza shell interattiva nè home directory
+Su richiesta di Database-Vault, crea un utente POSIX dedicato, senza shell interattiva né home directory
 tradizionale. Ogni utente ha infatti uno spazio scrivibile in una sua sottodirectory dentro un chroot.
 La struttura del file system è illustrata in \autoref{fig:filesystem-storage}.
 
@@ -129,15 +126,68 @@ Qualunque errore in quella chiamata, nega la connessione secondo il principio fa
 
 \subsection{Network-Manager}
 
+Network-Manager è l'amministratore delle regole di rete. Si occupa di definire, modificare ed eliminare le 
+regole che permettono ad un utente della rete privata mesh di raggiungere gli altri membri.
+
+In fase di registrazione, crea un utente Headscale dedicato e la pre-auth key con cui il dispositivo 
+dell'utente si unirà alla rete.
+
+Durante il login, assegna al nodo dell'utente il tag ACL (Access Control List) che abilita l'accesso 
+temporaneo di 12 ore allo Storage-Service.
+Un processo periodico controlla le scadenze e rimuove il tag dai nodi scaduti.
+
 \subsection{Certificate-Authority}
+
+Certificate-Authority è la CA privata del sistema, basata su \texttt{smallstep/certificates}
+\cite{smallstep-certificates-github}. 
+
+Emette, rinnova e revoca i certificati mTLS di ogni servizio interno, il che lo rende un componente 
+particolarmente critico del sistema, nonché l'unico raggiungibile da tutti i servizi interni: 
+un malintenzionato che riuscisse a comprometterla, infatti, potrebbe emettere certificati falsificati 
+per qualunque organizzazione.
+
+Ogni servizio ottiene il suo primo certificato contattando la CA sfruttando un token di bootstrap distribuito 
+manualmente da un operatore fuori banda. Una spiegazione dettagliata si trova nella \autoref{sec:pki}.
+
 
 \subsection{Headscale}
 
+Headscale è un'implementazione self-hosted del Tailscale control server \cite{headscale-github}. 
+
+Svolge il ruolo di coordinatore della rete privata mesh: ad ogni tentativo di connessione tra due nodi,
+fa rispettare le regole di raggiungibilità decise da Network-Manager. Distribuisce inoltre, tramite
+MagicDNS, i nomi host con cui i nodi si risolvono reciprocamente, permettendo al client di individuare
+Storage-Service senza conoscerne l'indirizzo IP.
+
+Valida inoltre la pre-auth key di un nuovo dispositivo al momento dell'ingresso nella mesh.
+
+A differenza di ogni altro componente interno, Headscale non risiede nella rete privata, ma è raggiungibile 
+da chiunque su internet. Il \autoref{sec:paradosso-coordinatore} ne approfondisce le ragioni.
+
 \subsection{Mosquitto}
+
+Mosquitto è il broker MQTT su cui ogni servizio pubblica le proprie metriche operative. 
+
+Applica una ACL in cui ogni servizio può solo scrivere sul proprio topic, mai leggerlo, mentre 
+Metrics-Collector può solo leggere l'intero spazio \texttt{metrics/*}, senza mai scrivervi.
 
 \subsection{Metrics-Collector}
 
+Metrics-Collector è il componente che riceve, valida e rende persistenti le metriche operative
+pubblicate da ogni servizio.
+
+Scarta ogni metrica ricevuta il cui campo \texttt{service} non corrisponde al topic da cui arriva e 
+persiste le metriche accettate come hypertable in TimescaleDB \cite{timescaledb-github}, con ritenzione di 
+trenta giorni e compressione dopo sette giorni.
+
 \subsection{Grafana}
+
+Grafana è la piattaforma di visualizzazione con cui un amministratore consulta lo stato di salute e le
+prestazioni del sistema \cite{grafana-github}.
+
+Legge da TimescaleDB direttamente, senza passare per Metrics-Collector.
+La dashboard di Grafana mostra tempi di risposta, throughput e connessioni attive. 
+Il \autoref{chap:osservabilita} tratta questa pipeline di osservabilità nel dettaglio.
 
 \section{Modello di comunicazione inter-servizio}
 
