@@ -25,8 +25,8 @@ POSIX-user provisioning, no chroot): it binds two TLS listeners on the
 SAME public-Let's-Encrypt-issued certificate/key pair -
 
 - a real host-level public socket (`RAM_USB_ENTRY_HUB_LISTEN_ADDR`,
-  NET-F-01) serving EH-F-01 (`POST /api/health`) and EH-F-02
-  (`POST /api/register`), reachable by anyone, since unauthenticated
+  NET-F-01) serving EH-F-01 (`GET /api/health`) and EH-F-02
+  (`POST /api/users`), reachable by anyone, since unauthenticated
   registration must be reachable before a client has ever joined the
   private mesh, and
 - a mesh-only listener (`RAM_USB_ENTRY_HUB_LOGIN_LISTEN_ADDR`, bound

@@ -18,7 +18,7 @@ ssh-keygen -t ed25519 -N "" -f "$KEYFILE" -C "test@ramusb" -q
 TESTKEY=$(cat "$KEYFILE.pub")
 TESTEMAIL="test-$(date +%s)@example.com"
 
-REGISTER_RAW=$(curl -sk -w "\n%{http_code}" -X POST https://localhost:8443/api/register \
+REGISTER_RAW=$(curl -sk -w "\n%{http_code}" -X POST https://localhost:8443/api/users \
   -H "Content-Type: application/json" \
   --data-binary @- <<EOF
 {"email":"$TESTEMAIL","password":"Sup3rSecretPass123","ssh_public_key":"$TESTKEY"}

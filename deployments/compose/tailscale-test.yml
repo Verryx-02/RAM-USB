@@ -15,7 +15,7 @@ services:
     volumes:
       - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
     environment:
-      TS_AUTHKEY: "${TS_AUTHKEY:?mint a pre_auth_key by registering a user via /api/register and pass it here}"
+      TS_AUTHKEY: "${TS_AUTHKEY:?mint a pre_auth_key by registering a user via /api/users and pass it here}"
       TS_EXTRA_ARGS: "--login-server=https://headscale:8080 --hostname=ramusb-test"
     entrypoint: ["/bin/sh", "-c", "update-ca-certificates && exec /usr/local/bin/containerboot"]
     networks:
