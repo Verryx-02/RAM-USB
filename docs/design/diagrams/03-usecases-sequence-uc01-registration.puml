@@ -15,7 +15,7 @@ note over User
   the private key never leaves the client (CL-F-01)
 end note
 
-User -> EH : POST /api/register (HTTPS)\nemail, password, SSH public key
+User -> EH : POST /api/users (HTTPS)\nemail, password, SSH public key
 EH -> SS : forward request (mTLS)
 SS -> DV : forward request (mTLS)
 
