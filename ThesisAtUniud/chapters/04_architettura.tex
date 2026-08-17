@@ -30,7 +30,7 @@ NIST SP 800-190 \cite{nist-sp-800-190}.
 Senza shell, infatti, la maggior parte delle vulnerabilità critiche note nei container non è sfruttabile 
 \cite{wager2024distroless}.
 
-Entry-Hub espone tre endpoint HTTPS: \texttt{POST /api/health} e \texttt{POST /api/register} sono
+Entry-Hub espone tre endpoint HTTPS: \texttt{GET /api/health} e \texttt{POST /api/users} sono
 raggiungibili da chiunque su internet, con certificato firmato dalla CA pubblica Let's Encrypt
 \cite{aas2019letsencrypt}. \texttt{POST /api/login} usa lo stesso certificato, ma ha un listener separato,
 raggiungibile solo da utenti con accesso alla rete privata di cui parleremo in dettaglio nel
@@ -51,6 +51,8 @@ siano in mano al punto di ingresso del sistema: riceve le richieste in ingresso 
 autenticato via mTLS, le rivalida in modo indipendente e contatta i servizi interni. 
 
 Lo scopo della rivalidazione è l'applicazione del principio di defence in depth \cite{nist-sp-800-207}.
+La logica di validazione, gestione degli errori e logging viene riutilizzata da tutti i servizi principali 
+e vive in librerie interne condivise \cite{ramusb-pkg}.
 
 Se la validazione riesce, inoltra la richiesta a Database-Vault via mTLS. 
 
@@ -166,7 +168,7 @@ da chiunque su internet. Il \autoref{sec:paradosso-coordinatore} ne approfondisc
 
 \subsection{Mosquitto}
 
-Mosquitto è il broker MQTT su cui ogni servizio pubblica le proprie metriche operative. 
+Mosquitto è il broker MQTT su cui ogni servizio, una volta al minuto, pubblica le proprie metriche operative. 
 
 Applica una ACL in cui ogni servizio può solo scrivere sul proprio topic, mai leggerlo, mentre 
 Metrics-Collector può solo leggere l'intero spazio \texttt{metrics/*}, senza mai scrivervi.
@@ -191,5 +193,77 @@ Il \autoref{chap:osservabilita} tratta questa pipeline di osservabilità nel det
 
 \section{Modello di comunicazione inter-servizio}
 
+Ogni servizio espone la propria API HTTPS sulla libreria standard di Go, \texttt{net/http}.
+Le richieste e le risposte sono corpi JSON ed ogni endpoint è registrato su un router minimale, 
+\texttt{http.ServeMux}.
+
+Gli endpoint qui elencati seguono le convenzioni REST \cite{fielding2000rest}.
+\begin{itemize}
+    \item \texttt{GET /api/health}, \texttt{POST /api/users} di Entry-Hub,
+    \item \texttt{GET /internal/v1/public-key/\symbol{123}posix\_username\symbol{125}} di Database-Vault,
+    \item \texttt{POST /internal/v1/posix-users} di Storage-Service e
+    \item \texttt{POST /internal/v1/mesh-users}, \texttt{POST /internal/v1/grants} di Network-Manager
+\end{itemize}
+
+\texttt{POST /api/login} è l'unica eccezione, perchè un login riuscito restituisce solo la conferma che 
+un'azione è avvenuta ma manca l'identificativo che una vera risorsa \texttt{sessions} richiederebbe per 
+essere letta con GET o cancellata con DELETE. Il token ACL di 12 ore che il login concede, infatti, resta 
+interno a Network-Manager e scade autonomamente.
+
+La pubblicazione delle metriche inoltre, è asincrona: ogni servizio, infatti, pubblica i propri messaggi su
+un topic MQTT dedicato, e non c'è alcun bisogno di attendere una risposta.
+
 \section{Trust zones e confini di sicurezza}
 \label{sec:trust-zones}
+
+La \autoref{fig:trust-zones} mostra le regole di raggiungibilità che Network-Manager applica alla rete mesh.
+
+Le due zone più esterne appartengono all'utente, prima e dopo l'autenticazione. Un utente registrato ma
+non ancora autenticato, che appartiene quindi alla \emph{Unauthenticated User Zone} vede e può contattare 
+solo Entry-Hub. Dopo il login, lo stesso nodo entra nella \emph{Authenticated User Zone} e ottiene la 
+raggiungibilità temporanea verso lo Storage-Service.
+
+Solo la Certificate-Authority ha un accesso davvero universale: raggiunge, ed è raggiunta da, ogni altro
+componente interno, per permettergli di rinnovare il proprio certificato X.509 senza un intermediario.
+
+La quarta zona, \emph{Public Zone}, contiene soltanto Headscale, il quale è raggiungibile dalla rete 
+pubblica. La (\autoref{sec:paradosso-coordinatore}) ne spiega il motivo nel dettaglio. Tuttavia, le 
+chiamate di Network-Manager verso Headscale sono comunque protette dall'autenticazione mTLS o dal token di 
+bootstrap.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.55\textwidth]{figures/09-security-trust-zones.pdf}
+    \caption{Trust zones e raggiungibilità sulla rete mesh.}
+    \label{fig:trust-zones}
+\end{figure}
+
+\section{PKI e gestione dei certificati}
+\label{sec:pki}
+
+RAM-USB usa due autorità di certificazione, come illustrato in \autoref{fig:pki-hierarchy}.
+
+Let's Encrypt, una CA pubblica, firma soltanto il certificato che Entry-Hub presenta sui propri endpoint 
+pubblici. Questo perchè il certificato deve essere verificabile da un client esterno che non ha ancora accesso
+alla rete interna del sistema. Un certificato firmato dalla Certificate-Authority privata di RAM-USB non 
+sarebbe attendibile.
+
+Ogni altra comunicazione usa invece una Certificate-Authority privata, basata su 
+\texttt{smallstep/certificates}.
+
+Ogni certificato privato segue lo stesso schema di bootstrap: ogni servizio riceve, fuori
+banda e una sola volta, un token di bootstrap monouso, e lo presenta alla Certificate-Authority 
+in cambio del proprio certificato iniziale. I rinnovi successivi presentano il certificato mTLS 
+già posseduto. Il token resta un segreto usa-e-getta e non necessita quindi di essere protetto una 
+volta consumato.
+
+Un certificato X.509 valido dimostra solo che la Certificate-Authority ha approvato quel client, non che sia 
+il client atteso per quella connessione. Per questo ogni servizio verifica anche il campo 
+\texttt{organization} del certificato.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/08-security-pki-hierarchy.pdf}
+    \caption{Gerarchia delle Certificate Authority e relazioni di firma.}
+    \label{fig:pki-hierarchy}
+\end{figure}

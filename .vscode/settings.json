@@ -1,0 +1,18 @@
+{
+  "latex-workshop.latex.outDir": "%DIR%/build/with-dedica",
+  "latex-workshop.latex.auxDir": "%DIR%/build/with-dedica",
+  "latex-workshop.latex.tools": [
+    {
+      "name": "make-thesis-both",
+      "command": "make",
+      "args": ["-C", "..", "thesis-both"]
+    }
+  ],
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "thesis-both (make)",
+      "tools": ["make-thesis-both"]
+    }
+  ],
+  "latex-workshop.latex.recipe.default": "thesis-both (make)"
+}

@@ -44,7 +44,22 @@ deployments/.env.local
 
 # ThesisAtUniud/: LaTeX build artifacts from pdflatex/bibtex/latexmk -
 # regenerated on every compile, never committed. Same convention as the
-# THUD template's own original .gitignore.
+# THUD template's own original .gitignore. The Makefile's thesis/thesis-no-dedica
+# targets put these under ThesisAtUniud/build/with-dedica/ and
+# ThesisAtUniud/build/no-dedica/ respectively; the patterns below also still catch
+# stray output from a manual, non-Makefile pdflatex/latexmk run in ThesisAtUniud/
+# itself. build/with-dedica/ is ignored wholesale — it never holds anything meant
+# to be shared. Inside build/no-dedica/, everything is ignored except
+# thesis_Verrengia_no-dedica.pdf itself, tracked deliberately so it can be shared
+# (e.g. with the thesis supervisor) without exposing the dedication/ringraziamenti.
+# Each directory on the path to that one exception must be explicitly un-ignored
+# ("!dir/") for git to even look inside it — a "dir/*" (not "dir/") ignore alone
+# stops git from descending into it at all, which is why this cascades one level
+# at a time instead of a single top-level pattern.
+ThesisAtUniud/build/*
+!ThesisAtUniud/build/no-dedica/
+ThesisAtUniud/build/no-dedica/*
+!ThesisAtUniud/build/no-dedica/thesis_Verrengia_no-dedica.pdf
 ThesisAtUniud/*.aux
 ThesisAtUniud/*.bbl
 ThesisAtUniud/*.blg
@@ -58,11 +73,15 @@ ThesisAtUniud/*.lot
 ThesisAtUniud/*.fls
 ThesisAtUniud/*.fdb_latexmk
 ThesisAtUniud/pdfa.xmpi
+ThesisAtUniud/no-dedica.flag
 
 # ThesisAtUniud/chapters/00_*: personal dedication and acknowledgements text,
 # kept out of the public commit history.
 ThesisAtUniud/chapters/00_dedica.tex
 ThesisAtUniud/chapters/00_ringraziamenti.tex
+
+# ThesisAtUniud/chapters/Bozze.tex: scratch/draft notes, not thesis content.
+ThesisAtUniud/chapters/Bozze.tex
 
 # ThesisAtUniud/references/: local copies of copyrighted papers kept for
 # personal citation-verification, never redistributed in a public repo.

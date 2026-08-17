@@ -1,6 +1,6 @@
 \chapter{Deployment}
 
-\section{Containerizzazione: build multi-stage e supervisione s6-overlay}
+\section{Containerizzazione e supervisione s6-overlay}
 %% TODO: pattern comune a più servizi, processi multipli supervisionati nello stesso container (es. tailscaled reale + binario Go).
 
 \section{Perché non tutti i container sono distroless}
@@ -9,7 +9,7 @@
 \section{Docker locale vs Proxmox VE: due livelli di isolamento}
 %% TODO: perché non sono alternativi (Docker per portabilità/isolamento per-servizio, Proxmox per isolamento più forte e HA potenziale), KVM per Storage-Service/Database-Vault/Network-Manager vs LXC per gli altri (RNF-ORG-04).
 
-\section{Topologia distribuita: un Compose file per servizio}
+\section{Topologia distribuita}
 %% TODO: perché non un unico file merged, ma tanti quanti i servizi, per rispecchiare la reale distribuzione su VM/host Proxmox separati.
 
 \section{Alta disponibilità e resilienza: stato attuale e limiti}
