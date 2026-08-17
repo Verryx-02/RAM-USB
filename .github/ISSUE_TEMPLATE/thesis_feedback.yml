@@ -1,0 +1,71 @@
+name: Feedback tesi
+description: Feedback del relatore sulla struttura o sul contenuto di uno o più capitoli della tesi.
+title: "[Tesi] "
+labels: ["thesis-feedback"]
+assignees:
+  - Verryx-02
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Può usare questo modulo per lasciare un feedback su struttura o contenuto della tesi. Per una correzione puntuale che hai già scritto lei, può usare invece una Pull Request.
+
+  - type: dropdown
+    id: capitoli
+    attributes:
+      label: Capitolo/i interessati
+      description: A quali capitoli si riferisce il feedback?
+      multiple: true
+      options:
+        - "1 - Introduzione"
+        - "2 - Stato dell'arte e contesto tecnologico"
+        - "3 - Requisiti: metodologia e casi d'uso"
+        - "4 - Architettura generale e trust zones"
+        - "5 - Autenticazione e gestione delle identità"
+        - "6 - Storage e backup dei file"
+        - "7 - Rete e coordinamento della mesh"
+        - "8 - Osservabilità e metriche"
+        - "9 - Testing e validazione"
+        - "10 - Deployment"
+        - "11 - Analisi delle proprietà di sicurezza"
+        - "12 - Conclusioni"
+        - Appendice
+        - Struttura generale della tesi
+    validations:
+      required: true
+
+  - type: input
+    id: sezione
+    attributes:
+      label: Sezione specifica (opzionale)
+      description: Se il feedback riguarda una sezione precisa, non l'intero capitolo.
+      placeholder: "es. 4.2 Modello di comunicazione inter-servizio"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: tipo
+    attributes:
+      label: Tipo di feedback
+      options:
+        - label: Struttura (ordine dei capitoli, cosa includere/togliere, organizzazione)
+        - label: Contenuto o correttezza tecnica
+        - label: Chiarezza espositiva
+        - label: Formattazione o layout
+        - label: Altro
+    validations:
+      required: true
+
+  - type: textarea
+    id: note
+    attributes:
+      label: Note
+      description: Descrivi il feedback nel dettaglio.
+      placeholder: "e.g. Il capitolo 4 anticipa troppi dettagli implementativi che poi si ripetono nei capitoli 5-8..."
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        Grazie per il tempo che dedica a questo feedback.
