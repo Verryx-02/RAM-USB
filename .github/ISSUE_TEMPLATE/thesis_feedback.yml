@@ -10,38 +10,28 @@ body:
       value: |
         Può usare questo modulo per lasciare un feedback su struttura o contenuto della tesi. Per una correzione puntuale che hai già scritto lei, può usare invece una Pull Request.
 
-  - type: dropdown
+  - type: checkboxes
     id: capitoli
     attributes:
       label: Capitolo/i interessati
       description: A quali capitoli si riferisce il feedback?
-      multiple: true
       options:
-        - "1 - Introduzione"
-        - "2 - Stato dell'arte e contesto tecnologico"
-        - "3 - Requisiti: metodologia e casi d'uso"
-        - "4 - Architettura generale e trust zones"
-        - "5 - Autenticazione e gestione delle identità"
-        - "6 - Storage e backup dei file"
-        - "7 - Rete e coordinamento della mesh"
-        - "8 - Osservabilità e metriche"
-        - "9 - Testing e validazione"
-        - "10 - Deployment"
-        - "11 - Analisi delle proprietà di sicurezza"
-        - "12 - Conclusioni"
-        - Appendice
-        - Struttura generale della tesi
+        - label: "1 - Introduzione"
+        - label: "2 - Stato dell'arte e contesto tecnologico"
+        - label: "3 - Requisiti: metodologia e casi d'uso"
+        - label: "4 - Architettura generale e trust zones"
+        - label: "5 - Autenticazione e gestione delle identità"
+        - label: "6 - Storage e backup dei file"
+        - label: "7 - Rete e coordinamento della mesh"
+        - label: "8 - Osservabilità e metriche"
+        - label: "9 - Testing e validazione"
+        - label: "10 - Deployment"
+        - label: "11 - Analisi delle proprietà di sicurezza"
+        - label: "12 - Conclusioni"
+        - label: Appendice
+        - label: Struttura generale della tesi
     validations:
       required: true
-
-  - type: input
-    id: sezione
-    attributes:
-      label: Sezione specifica (opzionale)
-      description: Se il feedback riguarda una sezione precisa, non l'intero capitolo.
-      placeholder: "es. 4.2 Modello di comunicazione inter-servizio"
-    validations:
-      required: false
 
   - type: checkboxes
     id: tipo
