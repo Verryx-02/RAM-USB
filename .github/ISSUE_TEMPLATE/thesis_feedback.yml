@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Può usare questo modulo per lasciare un feedback su struttura o contenuto della tesi. Per una correzione puntuale che hai già scritto lei, può usare invece una Pull Request.
+        Può usare questo modulo per lasciare un feedback su struttura o contenuto della tesi.
 
   - type: checkboxes
     id: capitoli
@@ -51,7 +51,7 @@ body:
     attributes:
       label: Note
       description: Descrivi il feedback nel dettaglio.
-      placeholder: "e.g. Il capitolo 4 anticipa troppi dettagli implementativi che poi si ripetono nei capitoli 5-8..."
+      placeholder: "es. Il capitolo 4 anticipa troppi dettagli implementativi che poi si ripetono nei capitoli 5-8..."
     validations:
       required: true
 
