@@ -1,4 +1,5 @@
 \chapter{Architettura generale e trust zones}
+\label{chap:architettura}
 
 \section{Overview architetturale}
 
@@ -33,7 +34,7 @@ Senza shell, infatti, la maggior parte delle vulnerabilità critiche note nei co
 Entry-Hub espone tre endpoint HTTPS: \texttt{GET /api/health} e \texttt{POST /api/users} sono
 raggiungibili da chiunque su internet, con certificato firmato dalla CA pubblica Let's Encrypt
 \cite{aas2019letsencrypt}. \texttt{POST /api/login} usa lo stesso certificato, ma ha un listener separato,
-raggiungibile solo da utenti con accesso alla rete privata di cui parleremo in dettaglio nel
+raggiungibile solo da utenti con accesso alla rete privata, descritta in dettaglio nel
 \autoref{chap:rete}.
 
 Quando riceve una richiesta, Entry-Hub valida il corpo JSON in due fasi: in decodifica, impone un
@@ -164,7 +165,7 @@ Storage-Service senza conoscerne l'indirizzo IP.
 Valida inoltre la pre-auth key di un nuovo dispositivo al momento dell'ingresso nella mesh.
 
 A differenza di ogni altro componente interno, Headscale non risiede nella rete privata, ma è raggiungibile 
-da chiunque su internet. Il \autoref{sec:paradosso-coordinatore} ne approfondisce le ragioni.
+da chiunque su internet. La \autoref{sec:paradosso-coordinatore} ne approfondisce le ragioni.
 
 \subsection{Mosquitto}
 
@@ -205,13 +206,26 @@ Gli endpoint qui elencati seguono le convenzioni REST \cite{fielding2000rest}.
     \item \texttt{POST /internal/v1/mesh-users}, \texttt{POST /internal/v1/grants} di Network-Manager
 \end{itemize}
 
-\texttt{POST /api/login} è l'unica eccezione, perchè un login riuscito restituisce solo la conferma che 
+\texttt{POST /api/login} è l'unica eccezione, perché un login riuscito restituisce solo la conferma che 
 un'azione è avvenuta ma manca l'identificativo che una vera risorsa \texttt{sessions} richiederebbe per 
 essere letta con GET o cancellata con DELETE. Il token ACL di 12 ore che il login concede, infatti, resta 
 interno a Network-Manager e scade autonomamente.
 
 La pubblicazione delle metriche inoltre, è asincrona: ogni servizio, infatti, pubblica i propri messaggi su
 un topic MQTT dedicato, e non c'è alcun bisogno di attendere una risposta.
+
+Questa struttura ha però un costo non indifferente: ogni registrazione e ogni login attraversano
+quattro processi distinti, ognuno con il proprio handshake mTLS e la propria rivalidazione. 
+La latenza è quindi ben più alta rispetto ad un sistema monolitico, e non è possibile ridurla saltando uno 
+dei passaggi qualora fosse necessario. Il servizio, inoltre, resta disponibile agli utenti solo finché 
+restano disponibili i sette componenti che partecipano al percorso di una richiesta, mentre la catena di 
+osservabilità può cadere senza che l'utente se ne accorga.
+
+I due costi non sono però dello stesso tipo. La latenza è definitiva, e si accetta insieme
+all'architettura; la disponibilità è invece un problema di deployment, e il
+\autoref{chap:deployment} discute fino a che punto l'infrastruttura sottostante possa attenuarlo.
+Il \autoref{chap:sicurezza} riprende invece il bilancio complessivo, mettendo accanto a ogni costo la
+proprietà che compra.
 
 \section{Trust zones e confini di sicurezza}
 \label{sec:trust-zones}
@@ -223,11 +237,11 @@ non ancora autenticato, che appartiene quindi alla \emph{Unauthenticated User Zo
 solo Entry-Hub. Dopo il login, lo stesso nodo entra nella \emph{Authenticated User Zone} e ottiene la 
 raggiungibilità temporanea verso lo Storage-Service.
 
-Solo la Certificate-Authority ha un accesso davvero universale: raggiunge, ed è raggiunta da, ogni altro
+Solo la Certificate-Authority ha un accesso davvero universale: raggiunge, ed è raggiunta da ogni altro
 componente interno, per permettergli di rinnovare il proprio certificato X.509 senza un intermediario.
 
 La quarta zona, \emph{Public Zone}, contiene soltanto Headscale, il quale è raggiungibile dalla rete 
-pubblica. La (\autoref{sec:paradosso-coordinatore}) ne spiega il motivo nel dettaglio. Tuttavia, le 
+pubblica. La \autoref{sec:paradosso-coordinatore} ne spiega il motivo nel dettaglio. Tuttavia, le 
 chiamate di Network-Manager verso Headscale sono comunque protette dall'autenticazione mTLS o dal token di 
 bootstrap.
 
@@ -244,12 +258,11 @@ bootstrap.
 RAM-USB usa due autorità di certificazione, come illustrato in \autoref{fig:pki-hierarchy}.
 
 Let's Encrypt, una CA pubblica, firma soltanto il certificato che Entry-Hub presenta sui propri endpoint 
-pubblici. Questo perchè il certificato deve essere verificabile da un client esterno che non ha ancora accesso
+pubblici. Questo perché il certificato deve essere verificabile da un client esterno che non ha ancora accesso
 alla rete interna del sistema. Un certificato firmato dalla Certificate-Authority privata di RAM-USB non 
 sarebbe attendibile.
 
-Ogni altra comunicazione usa invece una Certificate-Authority privata, basata su 
-\texttt{smallstep/certificates}.
+Ogni altra comunicazione usa invece una Certificate-Authority privata, basata su \texttt{smallstep/\allowbreak certificates}.
 
 Ogni certificato privato segue lo stesso schema di bootstrap: ogni servizio riceve, fuori
 banda e una sola volta, un token di bootstrap monouso, e lo presenta alla Certificate-Authority 

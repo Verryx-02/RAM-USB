@@ -1,4 +1,5 @@
 \chapter{Storage e backup dei file}
+\label{chap:storage}
 
 \section{Modello di accesso SFTP-only}
 %% TODO: accesso esclusivo via SFTP con chiave registrata (ST-F-03), contenuto già cifrato lato client (ST-F-02), divieto di ogni altra forma di SSH (ST-F-04).
@@ -8,4 +9,5 @@
 
 \section{Backup e restore}
 %% TODO: come lo user-client invoca restic via SFTP con la chiave SSH generata localmente (mai trasmessa), layout /storage/user<xxxxxx>/data/, UC-03/UC-04.
+%% TODO: inserire qui il diagramma di sequenza UC-03, gia' esportato in figures/05-usecases-sequence-uc03-backup.pdf: tre partecipanti (utente, Storage-Service, Database-Vault per il lookup della chiave via AuthorizedKeysCommand), proporzioni 751x580, sta bene a 0.8\textwidth.
  

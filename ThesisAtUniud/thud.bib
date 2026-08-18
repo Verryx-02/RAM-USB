@@ -177,6 +177,111 @@
   howpublished = {\url{https://github.com/Verryx-02/RAM-USB/tree/main/pkg}}
 }
 
+@misc{rfc9106,
+  author       = {Alex Biryukov and Daniel Dinu and Dmitry Khovratovich and Simon Josefsson},
+  title        = {{Argon2} Memory-Hard Function for Password Hashing and Proof-of-Work Applications},
+  year         = {2021},
+  howpublished = {\url{https://doi.org/10.17487/RFC9106}},
+  note         = {{RFC} 9106}
+}
+
+@misc{rfc5869,
+  author       = {Hugo Krawczyk and Pasi Eronen},
+  title        = {{HMAC}-based Extract-and-Expand Key Derivation Function ({HKDF})},
+  year         = {2010},
+  howpublished = {\url{https://doi.org/10.17487/RFC5869}},
+  note         = {{RFC} 5869}
+}
+
+@misc{rfc5322,
+  author       = {Peter W. Resnick},
+  title        = {Internet Message Format},
+  year         = {2008},
+  howpublished = {\url{https://doi.org/10.17487/RFC5322}},
+  note         = {{RFC} 5322}
+}
+
+@misc{nist-sp-800-38d,
+  author       = {Morris Dworkin},
+  title        = {Recommendation for Block Cipher Modes of Operation: {Galois/Counter Mode} ({GCM}) and {GMAC}},
+  year         = {2007},
+  howpublished = {\url{https://doi.org/10.6028/NIST.SP.800-38D}},
+  note         = {{NIST} Special Publication 800-38D}
+}
+
+@misc{nist-sp-800-90b,
+  author       = {Meltem S{\"o}nmez Turan and Elaine Barker and John Kelsey and Kerry A. McKay and
+                  Mary L. Baish and Mike Boyle},
+  title        = {Recommendation for the Entropy Sources Used for Random Bit Generation},
+  year         = {2018},
+  howpublished = {\url{https://doi.org/10.6028/NIST.SP.800-90B}},
+  note         = {{NIST} Special Publication 800-90B}
+}
+
+@misc{nist-sp-800-63b,
+  author       = {{National Institute of Standards and Technology}},
+  title        = {Digital Identity Guidelines},
+  year         = {2025},
+  howpublished = {\url{https://pages.nist.gov/800-63-4/sp800-63b.html}},
+  note         = {{NIST} Special Publication 800-63B, revisione 4}
+}
+
+@misc{owasp-password-storage,
+  author       = {{OWASP}},
+  title        = {Password Storage Cheat Sheet},
+  year         = {2026},
+  howpublished = {\url{https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html}}
+}
+
+@misc{ramusb-code-argon2-params,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: parametri di costo {Argon2id} di Database-Vault},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/database-vault/internal/password/hash.go\#L33-L42}}
+}
+
+@misc{ramusb-code-hkdf-newgcm,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: derivazione della chiave per record con {HKDF-SHA256}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/database-vault/internal/encryption/encryption.go\#L88-L98}}
+}
+
+@misc{ramusb-code-saveuser,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: salvataggio del record utente in transazione atomica},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/database-vault/internal/storage/storage.go\#L111-L146}}
+}
+
+@misc{ramusb-code-registration-rollback,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: rollback compensativo dopo un fallimento di Storage-Service},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/database-vault/internal/registration/registration.go\#L157-L165}}
+}
+
+@misc{ramusb-code-login,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: esito unico del login per email inesistente e password errata},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/database-vault/internal/login/login.go\#L160-L185}}
+}
+
+@misc{ramusb-code-verify-dummy,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: verifica fittizia che pareggia i tempi di risposta del login},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/database-vault/internal/password/hash.go\#L178-L193}}
+}
+
+@misc{ramusb-code-ss-f-06,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: mappatura degli errori di Network-Manager sui codici {HTTP} di Security-Switch},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/security-switch/internal/httpapi/handler.go\#L255-L266}}
+}
+
 @phdthesis{fielding2000rest,
   author = {Roy Thomas Fielding},
   title  = {Architectural Styles and the Design of Network-based Software Architectures},

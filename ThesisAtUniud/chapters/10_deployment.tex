@@ -1,4 +1,5 @@
 \chapter{Deployment}
+\label{chap:deployment}
 
 \section{Containerizzazione e supervisione s6-overlay}
 %% TODO: pattern comune a più servizi, processi multipli supervisionati nello stesso container (es. tailscaled reale + binario Go).
@@ -14,3 +15,4 @@
 
 \section{Alta disponibilità e resilienza: stato attuale e limiti}
 %% TODO: cosa esiste oggi (supervisione s6-overlay che riavvia i processi caduti dentro un container, sweep periodico dei grant di Network-Manager come auto-pulizia), cosa è solo potenziale (HA reale via cluster Proxmox iperconvergente, live migration/failover — non ancora costruito), e il rischio noto accettato (RISK-04: dipendenza circolare di Network-Manager da MagicDNS, nessun recovery automatico, richiede intervento manuale).
+%% TODO: rispondere qui alla domanda che il 4.2 lascia aperta (il servizio è disponibile solo finché lo sono i suoi sette componenti fondamentali), distinguendo tre piani invece di rispondere "ci pensa Proxmox": (1) oggi esiste solo il riavvio dei processi caduti dentro un container, che copre il crash di un processo e non la caduta della macchina che lo ospita; (2) un cluster Proxmox iperconvergente darebbe live migration e failover, ma richiede almeno tre nodi per il quorum e storage replicato (Ceph), e nel deployment attuale non esiste, quindi è una direzione e non una mitigazione già in campo (la nota della SRS sezione 2.4 lo mette al condizionale); (3) anche una volta costruito, il failover copre la caduta di un nodo fisico e non un errore di configurazione o un processo che risponde male, e costa comunque il riavvio della VM sull'altro nodo, quindi minuti di indisponibilità invece che continuità di servizio. La sintesi costo/beneficio complessiva resta nel cap. 11, qui solo il piano infrastrutturale.

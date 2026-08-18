@@ -46,6 +46,48 @@
 %% seguito da un lungo elenco di nomi propri, senza molti punti di interruzione naturali).
 \setlength{\emergencystretch}{2em}
 \hypersetup{hidelinks}
+%% listings: frammenti di codice Go copiati verbatim dai sorgenti del progetto. Il linguaggio Go
+%% non è tra quelli predefiniti del pacchetto, quindi va dichiarato qui.
+\usepackage{listings}
+\lstdefinelanguage{Go}{
+  morekeywords={break,case,chan,const,continue,default,defer,else,fallthrough,for,func,go,goto,%
+    if,import,interface,map,package,range,return,select,struct,switch,type,var,nil,true,false,%
+    make,new,len,cap,append,copy,error,string,byte,rune,bool,int,int64,uint8,uint32},
+  sensitive=true,
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+}
+%% Palette dei listati: il colore affianca grassetto e corsivo, non li sostituisce, cosi il
+%% codice resta leggibile anche stampato in bianco e nero.
+\definecolor{lstkeyword}{RGB}{0,70,140}
+\definecolor{lstcomment}{RGB}{100,100,100}
+\definecolor{lststring}{RGB}{0,110,70}
+\definecolor{lstrule}{RGB}{120,120,120}
+\lstset{
+  language=Go,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\bfseries\color{lstkeyword},
+  commentstyle=\itshape\color{lstcomment},
+  stringstyle=\color{lststring},
+  columns=fullflexible,
+  breaklines=true,
+  breakatwhitespace=true,
+  showstringspaces=false,
+  tabsize=4,
+  captionpos=b,
+  xleftmargin=1em,
+  rulecolor=\color{lstrule},
+  frame=tb,
+  framerule=0.5pt,
+  framesep=6pt,
+  aboveskip=1.2em,
+  belowskip=0.8em,
+}
+\renewcommand{\lstlistingname}{Codice}
+\providecommand{\lstlistingautorefname}{Codice}
+%% needspace: evita che un frammento di codice venga spezzato tra due pagine.
+\usepackage{needspace}
 %% tocbibind: Inserisce nell'indice anche la lista delle figure, la bibliografia, ecc.
 
 %% --- Stili di pagina disponibili (comando \pagestyle) ---
