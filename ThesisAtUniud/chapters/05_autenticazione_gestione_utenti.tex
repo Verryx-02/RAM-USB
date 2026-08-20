@@ -27,8 +27,8 @@ introduce diversità algoritmica, ma garantisce che nessun servizio dia per scon
 precedente abbia fatto il proprio lavoro. In questo modo, se a Database-Vault dovesse arrivare una
 richiesta proveniente da un servizio compromesso, la validazione verrebbe fatta comunque.
 
-Gli errori interni vengono infine tradotti in codici HTTP, riassunti nella
-\autoref{tab:codici-http}.
+Gli errori interni vengono infine tradotti in codici HTTP. La \autoref{tab:codici-http} li
+riassume, indicando per ciascuno se a costruirlo sia Entry-Hub, Security-Switch o entrambi.
 
 \begin{table}[H]
 \centering
@@ -68,10 +68,9 @@ interni.
 Database-Vault tratta i dati che riceve in tre modi diversi:
 
 \begin{itemize}
-    \item la chiave SSH è una chiave pubblica, quindi non è necessario proteggerla in alcun modo;
+    \item la chiave SSH è pubblica, quindi non necessita di segretezza;
     \item l'email è insieme una chiave di ricerca e un dato personale da proteggere;
-    \item la password non deve essere recuperabile in nessuna circostanza, nemmeno da chi amministra
-    il database.
+    \item la password non deve essere recuperabile, nemmeno da chi amministra il database.
 \end{itemize}
 
 L'email viene normalizzata in minuscolo e ridotta al proprio digest SHA-256, che diventa la chiave primaria 
@@ -88,8 +87,9 @@ vengono salvati nel record, mentre la chiave derivata viene azzerata appena il c
 Derivare una chiave per ogni record, invece di cifrare tutto con la master key, riduce la quantità
 di dati protetti da una singola chiave.
 
-\needspace{13\baselineskip}
-\begin{lstlisting}[caption={Estratto di \texttt{newGCM}, da \texttt{encryption.go} \cite{ramusb-code-hkdf-newgcm}.}, label={lst:hkdf}]
+\Needspace{22\baselineskip}
+\begin{lstlisting}[caption={Derivazione della chiave per record in \texttt{newGCM}, da
+\texttt{encryption.go} \cite{ramusb-code-hkdf-newgcm}.}, label={lst:hkdf}]
 func newGCM(masterKey, salt []byte) (cipher.AEAD, error) {
 	derivedKey := make([]byte, derivedKeySize)
 	kdf := hkdf.New(sha256.New, masterKey, salt, []byte(hkdfInfo))
@@ -101,6 +101,17 @@ func newGCM(masterKey, salt []byte) (cipher.AEAD, error) {
 	for i := range derivedKey {
 		derivedKey[i] = 0
 	}
+	if err != nil {
+		return nil, fmt.Errorf("encryption: new AES cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("encryption: new GCM: %w", err)
+	}
+
+	return gcm, nil
+}
 \end{lstlisting}
 
 
@@ -116,28 +127,12 @@ soltanto che un tentativo valga per più utenti insieme, il pepper nel database 
 assenza nessun tentativo è calcolabile, e una copia del database non è quindi sufficiente a condurre
 l'attacco.
 
-Il risultato viene salvato come stringa autodescrittiva in formato PHC. Ogni record porta quindi con sé i 
-parametri con cui è stato creato, e la verifica al login li usa al posto delle costanti correnti del servizio. 
+Il risultato viene salvato come stringa autodescrittiva in formato PHC, la convenzione di codifica
+nata dalla Password Hashing Competition. Ogni record porta quindi con sé i parametri con cui è stato creato, 
+e la verifica al login li usa al posto delle costanti correnti del servizio. 
 In questo modo, cambiare i parametri per i nuovi utenti non invalida i record già esistenti. 
 
-Master key e pepper risiedono entrambi in variabili d'ambiente, senza una procedura di backup né di
-rotazione. È un rischio accettato consapevolmente, discusso nel \autoref{chap:conclusioni}.
-
-
-\begin{lstlisting}[caption={Parametri di costo di Argon2id, da \texttt{hash.go}
-\cite{ramusb-code-argon2-params}.}, label={lst:argon2}]
-const (
-	// argonTime is the number of Argon2id passes over memory.
-	argonTime = 2
-	// argonMemoryKiB is the working-memory size in KiB (46 MiB).
-	argonMemoryKiB = 47104
-	// argonThreads is the degree of parallelism.
-	argonThreads = 1
-	// argonKeyLen is the output hash length in bytes.
-	argonKeyLen = 32
-)
-\end{lstlisting}
-
+La \autoref{tab:phc} elenca i campi di quella stringa, nell'ordine in cui compaiono nel record.
 
 \begin{table}[H]
 \centering
@@ -158,77 +153,98 @@ digest & Hash di 32 byte prodotto da Argon2id \\
 \end{tabular}
 \end{table}
 
+Master key e pepper risiedono entrambi in variabili d'ambiente, senza una procedura di backup né di
+rotazione. Il rischio è discusso nel \autoref{chap:conclusioni}.
+
+
+\Needspace{13\baselineskip}
+\begin{lstlisting}[caption={Parametri di costo di Argon2id, da \texttt{hash.go}
+\cite{ramusb-code-argon2-params}.}, label={lst:argon2}]
+const (
+	// argonTime is the number of Argon2id passes over memory.
+	argonTime = 2
+	// argonMemoryKiB is the working-memory size in KiB (46 MiB).
+	argonMemoryKiB = 47104
+	// argonThreads is the degree of parallelism.
+	argonThreads = 1
+	// argonKeyLen is the output hash length in bytes.
+	argonKeyLen = 32
+)
+\end{lstlisting}
+
 
 \subsection{Robustezza della password}
 \label{sec:entropia}
 
-Le regole di validazione della \autoref{sec:ciclo-richiesta} delimitano lo spazio delle password ammesse, 
-e da quello spazio si ricava quanta incertezza la policy possa garantire nel caso migliore. 
-La misura adottata qui è l'entropia minima, che NIST SP 800-90B \cite{nist-sp-800-90b} definisce, per una 
-variabile aleatoria discreta
-$X$ a valori in $\{x_1, \dots, x_k\}$ con $\Pr(X = x_i) = p_i$, come
+Le regole di validazione della \autoref{sec:ciclo-richiesta} delimitano lo spazio delle password
+ammesse, e da quello spazio si ricava, nel caso migliore, quanta incertezza la policy possa
+garantire a chi tenta di indovinare una password, ossia quante possibilità debba considerare, non
+sapendo quale sia stata scelta.
+
+Quanto valga quell'incertezza dipende però da come la password è stata scelta. Nel caso migliore, in
+cui è prodotta da un generatore pseudo-casuale che pesca dall'intero alfabeto ammesso, ogni
+password ammessa è equiprobabile e l'incertezza
+è quindi massima. Nel caso peggiore, in cui è costruita da una persona, alcune password sono
+ben più probabili di altre, ad esempio, \texttt{Password1!} viene scelta molto più spesso di
+una sequenza casuale della stessa lunghezza. Il valore calcolato qui è quello del caso migliore, cioè un
+limite superiore.
+
+In questo caso, quindi, il calcolo si riduce a contare i valori distinti che la policy ammette, a partire 
+dalla cardinalità delle quattro categorie:
 
 \[
-H_\infty = \min_{1 \le i \le k} \left( -\log_2 p_i \right)
-          = -\log_2 \max_{1 \le i \le k} p_i .
+\begin{array}{rcll}
+n_1 & = & 26  & \mbox{minuscole} \\
+n_2 & = & 26  & \mbox{maiuscole} \\
+n_3 & = & 10  & \mbox{cifre} \\
+n_4 & = & 33  & \mbox{simboli} \\[2pt]
+N   & = & \sum_i n_i = 95 & \mbox{caratteri disponibili in totale}
+\end{array}
 \]
 
-È una misura conservativa, perché guarda l'esito più probabile invece di mediare sull'intera
-distribuzione, ed è quindi quella che descrive chi prova per prima la password più plausibile. Lo
-stesso documento precisa che il suo valore massimo, per una variabile con $k$ valori distinti, è
-$\log_2 k$, raggiunto quando la distribuzione è uniforme.
+Il vincolo di almeno tre categorie esclude le stringhe che ne usano al più due, quindi per contare le
+password valide conviene contare quelle che non lo sono: si parte da tutte le $N^L$ stringhe
+possibili e si sottraggono quelle che usano una sola categoria e quelle che ne usano esattamente due.
 
-Il calcolo si riduce quindi a contare i valori distinti che la policy ammette. Indicando con
-$n_1 = 26$, $n_2 = 26$, $n_3 = 10$ e $n_4 = 33$ le cardinalità delle quattro categorie, cioè
-minuscole, maiuscole, cifre e simboli, e con $N = \sum_i n_i = 95$ i caratteri complessivi, il
-vincolo di almeno tre categorie esclude le stringhe che ne usano al più due. Per il principio di
-inclusione-esclusione, il numero di password valide di lunghezza $L$ vale
+Il primo gruppo è immediato, perché le stringhe scritte con la sola categoria $i$ sono $n_i^L$. Per
+il secondo non basta sommare $(n_i + n_j)^L$ su tutte le coppie, perché quel valore conta le stringhe
+scritte con quei due soli alfabeti e comprende quindi anche quelle di sola $i$ e di sola $j$:
+sottraendo $n_i^L$ e $n_j^L$ restano le stringhe che usano davvero entrambe le categorie. Per il
+principio di inclusione-esclusione, il numero di password valide di lunghezza $L$ vale quindi
 
 \[
 V(L) = N^L - \sum_{i=1}^{4} n_i^L
        - \sum_{i<j} \left[ (n_i + n_j)^L - n_i^L - n_j^L \right].
 \]
 
-I 95 caratteri considerati sono i soli ASCII stampabili, spazio incluso, mentre l'implementazione
-ammette come simbolo qualunque carattere che non sia lettera o cifra, anche fuori da ASCII: lo
-spazio realmente ammesso è più ampio, e il valore che segue ne è quindi una stima per difetto.
+Un attaccante privo di qualsiasi informazione deve considerare tutti i $V(L)$ candidati ammessi.
+Quel numero si esprime abitualmente in bit, cioè come esponente di 2: $b$ bit corrispondono a $2^b$
+candidati. Se la password è estratta uniformemente, l'incertezza dell'attaccante vale perciò 
+$\log_2 V(L)$ bit. 
 
-Assumendo che la password venga estratta uniformemente tra le $V(L)$ ammesse, ogni esito ha
-probabilità $1/V(L)$, quindi $p_{\max} = 1/V(L)$ e l'entropia minima vale
+Per la lunghezza minima ammessa, $L = 8$, si ottiene $V(8) = 6{,}27 \cdot 10^{15}$, cioè
+$\log_2 V(8) \approx 52{,}48$ bit.
 
-\[
-H_\infty = -\log_2 \frac{1}{V(L)} = \log_2 V(L).
-\]
+Il confronto con lo spazio non vincolato mostra quanto pesi ciascuna delle due regole. Senza il
+vincolo sulle categorie sarebbero ammesse tutte le stringhe di otto caratteri sull'alfabeto, cioè
+$N^8 = 95^8 = 6{,}63 \cdot 10^{15}$, cioè 52,56 bit. La suddetta regola quindi riduce i bit di 0,08. 
+Aggiungere un carattere in più, invece, aumenta i bit di entropia di $\log_2 95 \approx 6{,}57$ bit per ogni
+carattere aggiunto.
 
-Per la lunghezza minima ammessa, $L = 8$, si ottiene $V(8) = 6\,273\,401\,614\,552\,800$, cioè
-$H_\infty \approx 52{,}48$ bit.
+Da queste cifre potrebbe sembrare che il vincolo semplifichi il lavoro di un malintenzionato invece
+di contrastarlo, ed è vero, per quanto in misura trascurabile, nel caso in cui le password siano create da 
+generatori pseudo-casuali. 
+Lo scopo di quella regola però non è aumentare l'entropia, bensì vincolare la scelta di
+una persona, che tende a fermarsi sulle sole minuscole o su lettere e cifre. Quanto valga in quel
+ruolo non è ricavabile da questo calcolo.
 
-Il confronto con lo spazio non vincolato mostra da dove quel valore provenga. Senza il vincolo sulle
-categorie, $N^8$ varrebbe $6{,}63 \cdot 10^{15}$, cioè $52{,}56$ bit: la regola ne esclude il 5,4 per
-cento e sottrae quindi meno di un decimo di bit, perché il 94,6 per cento delle stringhe casuali di
-otto caratteri usa già almeno tre categorie per conto proprio. Un carattere in più, sullo stesso
-alfabeto, ne aggiunge invece $\log_2 95 \approx 6{,}57$, ottanta volte tanto: è la lunghezza minima a
-determinare la dimensione dello spazio, non la regola di composizione.
+Se le due regole debbano coesistere, o se convenga sostituire il vincolo sulle categorie con una
+lunghezza minima maggiore, resta quindi una questione aperta, ripresa tra gli sviluppi futuri nel
+\autoref{chap:conclusioni}.
 
-Vale infine la pena distinguere ciò che questo numero afferma da ciò che non afferma. I 52,48 bit
-sono il massimo che la policy può garantire, e lo garantiscono solo se la password viene estratta
-uniformemente a caso, come farebbe un gestore di password; sotto quell'ipotesi entropia minima ed
-entropia di Shannon coincidono. Una password scelta da una persona non ha distribuzione uniforme, la
-sua entropia minima è strettamente inferiore e non è ricavabile dalla policy: servirebbe una stima
-empirica sulla distribuzione reale delle password scelte dagli utenti.
 
-Argon2id non aggiunge alla password un solo bit di entropia: l'entropia dipende da come la password
-viene scelta, non da come viene verificata. Le due grandezze sono indipendenti e agiscono su fattori
-distinti del medesimo prodotto: l'entropia stabilisce quanti candidati un attaccante deve provare, il
-costo della funzione di hash stabilisce quanto gli costa provarne uno, e il tempo di attacco è il
-prodotto dei due. I poco più di 52 bit appena calcolati sono pochi o molti a seconda del
-secondo fattore.
-
-Con i parametri del \autoref{lst:argon2}, un singolo hash richiede circa 64 ms su un core della
-macchina di sviluppo, cioè circa sedici tentativi al secondo. Esaurire a quel ritmo i
-$6{,}27 \cdot 10^{15}$ candidati richiederebbe circa $1{,}2 \cdot 10^7$ anni, e in media ne
-basterebbe la metà; anche ipotizzando un attaccante capace di $10^6$ tentativi al secondo, cinque
-ordini di grandezza in più, servirebbero ancora circa due secoli.
+Quanto quello spazio resista dipende però anche dal costo di ogni tentativo, cioè dai parametri di
+Argon2id: il \autoref{chap:sicurezza} quantifica quel costo dal punto di vista di chi attacca.
 
 \section{Registrazione}
 
@@ -239,18 +255,7 @@ sull'hash dell'email e uno sulla chiave pubblica SSH: se uno dei due viene viola
 è rifiutata con HTTP 409, senza dire quale dei due abbia causato il conflitto. Quel codice
 resta però un'informazione: dice a un mittente non autenticato che uno dei due valori inviati era
 già presente, e chi invia una chiave SSH appena generata sa che l'unico altro candidato è l'email.
-Il \autoref{chap:sicurezza} analizza cosa questo permetta e una possibile mitigazione.
-
-La \autoref{fig:uc01} riassume l'intera sequenza, dalla richiesta del client fino alla risposta. Gli
-ultimi due scambi, quelli verso Network-Manager, sono oggetto della sezione conclusiva di questo
-capitolo.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{figures/03-usecases-sequence-uc01-registration.pdf}
-    \caption{Sequenza di registrazione (UC-01).}
-    \label{fig:uc01}
-\end{figure}
+Il \autoref{chap:sicurezza} analizza questo problema e presenta una possibile mitigazione.
 
 A questo punto il record esiste, ma l'utente non ha ancora uno spazio in cui scrivere.
 Database-Vault genera allora un nome utente POSIX nella forma
@@ -265,7 +270,7 @@ Quando invece entrambi i passi riescono, Database-Vault comunica a Security-Swit
 registrazione è andata a buon fine, e quest'ultimo procede con l'orchestrazione descritta
 nella sezione conclusiva di questo capitolo.
 
-\needspace{12\baselineskip}
+\Needspace{12\baselineskip}
 \begin{lstlisting}[caption={Rollback compensativo dopo un fallimento di Storage-Service, da
 \texttt{registration.go} \cite{ramusb-code-registration-rollback}.}, label={lst:rollback}]
 		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
@@ -279,26 +284,25 @@ nella sezione conclusiva di questo capitolo.
 		}
 \end{lstlisting}
 
+La \autoref{fig:uc01} riassume l'intera sequenza, dalla richiesta del client fino alla risposta. Gli
+ultimi due scambi, quelli verso Network-Manager, sono oggetto della sezione conclusiva di questo
+capitolo.
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/03-usecases-sequence-uc01-registration.pdf}
+    \caption{Sequenza di registrazione (UC-01).}
+    \label{fig:uc01}
+\end{figure}
 
 \section{Login}
 
 Durante il login, Database-Vault ricalcola il digest SHA-256 dell'email ricevuta e con quello cerca il 
-record. L'email cifrata non viene mai decifrata durante l'autenticazione poiché per riconoscere l'utente 
-è sufficiente la chiave di ricerca.
-
-La \autoref{fig:uc02} ne riassume la sequenza completa.
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{figures/04-usecases-sequence-uc02-login.pdf}
-    \caption{Sequenza di autenticazione (UC-02).}
-    \label{fig:uc02}
-\end{figure}
+record.
 
 Salt e parametri di costo vengono estratti dalla stringa PHC del record. Argon2id viene ricalcolato con 
 quei valori e con il pepper, e il digest ottenuto è confrontato con quello salvato tramite un confronto a 
-tempo costante, che non lascia dedurre quanti byte iniziali dei due valori coincidano.
+tempo costante, che non lascia quindi dedurre quanti byte iniziali dei due valori coincidano.
 
 Un'email inesistente e una password sbagliata devono produrre la stessa risposta, e non devono
 essere distinguibili nemmeno nei log. Le due strade convergono quindi su un unico errore
@@ -309,9 +313,9 @@ Rendere identici la risposta e il log non basta però a rendere indistinguibili 
 resta una terza differenza osservabile: il tempo. Argon2id, con i parametri della sezione
 precedente, costa decine di millisecondi, e se venisse eseguito solo quando un record esiste
 davvero, un attaccante potrebbe distinguere le due situazioni misurando la latenza della risposta. 
-La soluzione è spendere lo stesso tempo anche quando non c'è nulla da verificare.
+La soluzione adottata è spendere lo stesso tempo anche quando non c'è nulla da verificare.
 
-\needspace{6\baselineskip}
+\Needspace{6\baselineskip}
 \begin{lstlisting}[caption={Verifica fittizia usata sui percorsi di rifiuto, da \texttt{hash.go}
 \cite{ramusb-code-verify-dummy}.}, label={lst:verifydummy}]
 func VerifyDummy(password, pepper []byte) {
@@ -322,29 +326,39 @@ func VerifyDummy(password, pepper []byte) {
 La funzione ricalcola Argon2id contro un hash fittizio, costruito una sola volta per processo con
 gli stessi parametri di costo dei record veri, e ne scarta il risultato. Viene chiamata su ogni
 percorso di rifiuto, compreso quello in cui è il lookup stesso a fallire, così nemmeno un guasto
-dell'infrastruttura diventa misurabile dall'esterno.
+dell'infrastruttura diventa facilmente misurabile dall'esterno.
 
 Ogni incertezza porta allo stesso esito. Se la verifica non può concludersi, per esempio perché
-l'hash salvato è malformato, la risposta resta 401 e non un errore diverso, secondo il principio
+l'hash salvato è malformato, la risposta resta 401, secondo il principio
 fail-secure \cite{owasp-fail-securely}. Nei log quel caso resta distinguibile, perché a un operatore
-serve sapere che si tratta di un record corrotto e non di un utente distratto.
+serve sapere che si tratta di un record corrotto, di un utente distratto o di un vero e proprio attacco.
 
-Esiste comunque un'altra strada per scoprire se un indirizzo è registrato, che passa dalla
-registrazione invece che dal login: il \autoref{chap:sicurezza} la descrive.
+La \autoref{fig:uc02} riassume la sequenza completa di login, compreso il ramo in cui le due cause
+di rifiuto convergono sulla stessa risposta.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/04-usecases-sequence-uc02-login.pdf}
+    \caption{Sequenza di autenticazione (UC-02).}
+    \label{fig:uc02}
+\end{figure}
 
 \section{Orchestrazione post-autenticazione}
 
-Autenticare un utente non gli dà ancora accesso a niente. L'accesso, in questo sistema, è una
-proprietà della rete e non una conseguenza della verifica della password. 
-Security-Switch richiede a Network-Manager la modifica delle regole di rete in due momenti diversi.
+Autenticare un utente non gli dà comunque ancora accesso a niente. L'accesso, in questo sistema, è
+una proprietà della rete. Security-Switch richiede a Network-Manager la modifica delle regole di rete
+in due momenti diversi.
 
 Dopo una registrazione riuscita chiede la creazione dell'identità dell'utente sulla rete mesh e di
-una pre-auth key, che risale la catena fino al client dentro la risposta 201. È l'unica
-credenziale che il sistema restituisce all'utente, ed è ciò che permette al suo dispositivo di
-entrare nella rete privata.
+una pre-auth key, che risale la catena fino al client dentro la risposta 201 e che permette al suo
+dispositivo di entrare nella rete privata.
 
 Dopo un login riuscito chiede invece un accesso temporaneo di 12 ore verso Storage-Service.
-La registrazione dà quindi accesso alla rete, il login dà accesso allo spazio di backup.
+
+Entrambi i passaggi concedono però raggiungibilità, non lettura: la registrazione mette il
+dispositivo nella rete, il login gli permette di raggiungere Storage-Service, ma ad aprire i backup è
+la chiave privata SSH. Conoscere le credenziali dell'utente non è pertanto condizione sufficiente ad 
+accedere ai suoi backup.
 
 Come Network-Manager crei l'identità mesh, applichi il tag ACL e ne gestisca la scadenza è oggetto
 del \autoref{chap:rete}.
