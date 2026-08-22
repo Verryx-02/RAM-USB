@@ -2,12 +2,114 @@
 \label{chap:storage}
 
 \section{Modello di accesso SFTP-only}
-%% TODO: accesso esclusivo via SFTP con chiave registrata (ST-F-03), contenuto già cifrato lato client (ST-F-02), divieto di ogni altra forma di SSH (ST-F-04).
+
+Storage-Service conserva i backup degli utenti ed è l'unico componente con cui il client parli
+direttamente dopo l'autenticazione. 
+Una volta autenticato, infatti, l'utente diventa in grado di raggiungerlo sulla rete privata 
+ed è quindi pronto per gestire i suoi backup. 
+
+Prima di trasmetterli però, il client dell'utente, tramite Restic \cite{restic-github}, deduplica, comprime e 
+cifra i backup dell'utente. Storage-Service riceve quindi una sequenza di blocchi cifrati che non è 
+in grado di decifrare.
+Il client, all'inizializzazione della repository Restic, prende 32 byte da \texttt{crypto/rand}, li
+codifica in base64 e li usa come password del repository \cite{ramusb-code-reposecret}. 
+Da quella password Restic ricava la chiave che apre il file in cui custodisce la chiave di cifratura vera, 
+generata a caso alla creazione del repository \cite{restic-design}: è quest'ultima a proteggere i blocchi.
+
+Questo approccio è stato pensato per togliere la possibilità all'utente di scegliere una password
+debole. Il client salva la password del repository sul dispositivo dell'utente, con gli stessi
+permessi della chiave privata SSH. La sua segretezza, come la responsabilità di copiare le chiavi in
+un luogo sicuro, è lasciata all'utente. Nel caso in cui venisse persa anche una sola delle
+credenziali, l'utente non potrebbe in alcun modo accedere al contenuto dei suoi backup.
+
+Il fatto che i dati degli utenti siano cifrati, però, non significa che debbano poter essere raggiunti da 
+chiunque.
+L'unico modo per raggiungere i blocchi è infatti una sessione SFTP autenticata, all'interno della rete 
+privata mesh. Su quella sessione, l'unica operazione possibile è trasferire file, e l'unica credenziale 
+accettata è la chiave SSH \cite{openssh-sshd-config}. 
+
+Restano fuori gli altri modi di autenticarsi e gli altri usi che SSH consente di norma: eseguire un comando, 
+aprire una shell, o servirsi della connessione come tramite per raggiungere altre macchine.
+
+Inoltre, solo gli account creati dal servizio possono presentarsi, perché il server accetta esclusivamente
+nomi utente della forma \texttt{user*} e l'accesso root è esplicitamente disabilitato.
+
+La lista predefinita di algoritmi crittografici di OpenSSH \cite{openssh-sshd-config} è volutamente ampia 
+per garantire compatibilità con client che non supportano gli algoritmi moderni e più robusti, ma qui quella 
+compatibilità non serve, e rischia solo di indebolire il sistema, pertanto, anche gli algoritmi 
+crittografici sono elencati a mano \cite{ramusb-code-sshd-config}.
 
 \section{Isolamento e chroot dinamico}
-%% TODO: utente POSIX senza home/shell (ST-F-05..09), lookup dinamico della chiave via AuthorizedKeysCommand con fail-secure su qualunque errore (ST-F-11).
+\label{sec:isolamento}
+
+L'isolamento tra gli utenti si regge su un meccanismo del sistema operativo chiamato chroot, che
+confina un processo dentro una sottodirectory: da quel momento quella directory è, per lui, la
+radice del filesystem, e al di fuori di essa non esiste più alcun percorso che il processo possa
+nominare.
+
+Alla registrazione, Storage-Service prepara per il nuovo utente l'account POSIX che abiterà quello
+spazio. L'account non ha una home directory tradizionale e la sua shell è \texttt{/usr/sbin/nologin},
+un programma che si limita a rifiutare l'accesso.
+
+Per ogni utente POSIX il cui nome corrisponde a \texttt{user*} vengono applicate anche le regole
+specificate nel \autoref{lst:sshd-match}.
+
+\Needspace{10\baselineskip}
+\begin{lstlisting}[language=sshdconfig, caption={Le due direttive per utente, da
+\texttt{sshd\_config} \cite{ramusb-code-sshd-config}, con commenti aggiunti.},
+label={lst:sshd-match}]
+Match User user*
+    ChrootDirectory /storage/%u   # confina la sessione nel sottoalbero dell'utente
+    ForceCommand internal-sftp    # impone SFTP al posto del comando richiesto dal client
+\end{lstlisting}
+
+Accanto all'account nasce la struttura di directory illustrata nella
+\autoref{fig:filesystem-storage}. La radice del confinamento appartiene a root, mentre la
+sottodirectory \texttt{data} appartiene all'utente ed è l'unico posto in cui possa scrivere. La
+proprietà da parte di root è un requisito del server SSH, che
+rifiuta di confinare una sessione in una directory scrivibile da chiunque altro.
+
+Il risultato è che un utente collegato vede come radice del proprio filesystem la directory che gli
+appartiene, e le directory degli altri non sono raggiungibili, né elencabili in alcun modo.
+
+Di norma un server SSH cerca le chiavi che autorizzano una connessione in un file dentro la home
+dell'utente, dove sono elencate quelle accettate per quell'account. Qui quel file non viene
+consultato. 
+Al suo posto, a ogni tentativo di connessione, il server esegue un binario dedicato passandogli il
+nome utente che si sta presentando. Il binario gira con un'identità di sistema che non ha altri
+compiti sulla macchina e chiede a Database-Vault la chiave pubblica corrente di quell'utente su un
+canale mTLS.
+
+Qualunque cosa vada storta produce lo stesso esito: il binario termina senza stampare nulla 
+\cite{ramusb-code-authkeys-cmd}. Il server riceve un elenco vuoto di chiavi e nega la connessione, 
+secondo il principio fail-secure \cite{owasp-fail-securely}. 
+Non esiste alcun altro luogo al di fuori di Database-Vault in cui siano salvate le chiavi pubbliche SSH, 
+quindi un suo malfunzionamento impedisce agli utenti di avviare le sessioni SFTP. 
 
 \section{Backup e restore}
-%% TODO: come lo user-client invoca restic via SFTP con la chiave SSH generata localmente (mai trasmessa), layout /storage/user<xxxxxx>/data/, UC-03/UC-04.
-%% TODO: inserire qui il diagramma di sequenza UC-03, gia' esportato in figures/05-usecases-sequence-uc03-backup.pdf: tre partecipanti (utente, Storage-Service, Database-Vault per il lookup della chiave via AuthorizedKeysCommand), proporzioni 751x580, sta bene a 0.8\textwidth.
- 
+\label{sec:backup-restore}
+
+Il backup avviene per intero sul dispositivo dell'utente. Il client invoca Restic indicando come
+repository la sottodirectory scrivibile dentro il proprio spazio confinato, raggiunta via SFTP, e gli
+impone di autenticarsi con la chiave privata generata alla registrazione
+\cite{ramusb-code-restic-sftp}, che non ha mai lasciato la macchina e che nessun componente del
+sistema ha mai visto.
+
+Il percorso indicato al repository è già relativo alla radice del confinamento.
+
+Il client risolve Storage-Service tramite MagicDNS sulla rete mesh,
+e la risoluzione riesce solo finché è attivo il permesso temporaneo concesso dall'ultimo login:
+scaduto quello, il nodo dell'utente non vede più il servizio e la connessione non parte nemmeno. Il
+\autoref{chap:rete} descrive come quel permesso venga concesso e revocato.
+
+La \autoref{fig:uc03} riassume la sequenza, dalla connessione SFTP fino ai dati scritti.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/05-usecases-sequence-uc03-backup.pdf}
+    \caption{Sequenza di backup di un file (UC-03).}
+    \label{fig:uc03}
+\end{figure}
+
+Il restore percorre la stessa strada in senso opposto, l'unica differenza è il comando impartito a
+Restic, che scarica i blocchi richiesti e li decifra sul dispositivo dell'utente.
