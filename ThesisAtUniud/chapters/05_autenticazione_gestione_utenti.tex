@@ -27,8 +27,13 @@ introduce diversità algoritmica, ma garantisce che nessun servizio dia per scon
 precedente abbia fatto il proprio lavoro. In questo modo, se a Database-Vault dovesse arrivare una
 richiesta proveniente da un servizio compromesso, la validazione verrebbe fatta comunque.
 
-Gli errori interni vengono infine tradotti in codici HTTP. La \autoref{tab:codici-http} li
-riassume, indicando per ciascuno se a costruirlo sia Entry-Hub, Security-Switch o entrambi.
+Gli errori interni vengono infine tradotti in codici HTTP. La \autoref{tab:codici-http} riassume i codici 
+che raggiungono l'utente, attribuendo ciascun codice a chi lo emette.
+
+Entry-Hub costruisce soltanto gli errori che nascono da sé stesso: una validazione fallita e una
+chiamata a Security-Switch andata male. Tutto il resto lo rilancia al client così come gli arriva
+dall'interno, senza modificarlo. Per questo motivo, un 401 o un 409 raggiungono l'utente pur non
+essendo mai prodotti da Entry-Hub.
 
 \begin{table}[H]
 \centering
@@ -49,11 +54,6 @@ riassume, indicando per ciascuno se a costruirlo sia Entry-Hub, Security-Switch 
 \hline
 \end{tabular}
 \end{table}
-
-Entry-Hub costruisce soltanto gli errori che nascono da sé stesso: una validazione fallita e una
-chiamata a Security-Switch andata male. Tutto il resto lo rilancia al client così come gli arriva
-dall'interno, senza modificarlo. Per questo motivo, un 401 o un 409 raggiungono l'utente pur non
-essendo mai prodotti da Entry-Hub.
 
 Tra i codici che i due servizi costruiscono per conto proprio ci sono due differenze: 
 la prima è il 403, che solo Security-Switch può emettere, perché è l'unico dei due a poter ricevere un 
@@ -157,21 +157,32 @@ Master key e pepper risiedono entrambi in variabili d'ambiente, senza una proced
 rotazione. Il rischio è discusso nel \autoref{chap:conclusioni}.
 
 
-\Needspace{13\baselineskip}
-\begin{lstlisting}[caption={Parametri di costo di Argon2id, da \texttt{hash.go}
-\cite{ramusb-code-argon2-params}.}, label={lst:argon2}]
-const (
-	// argonTime is the number of Argon2id passes over memory.
-	argonTime = 2
-	// argonMemoryKiB is the working-memory size in KiB (46 MiB).
-	argonMemoryKiB = 47104
-	// argonThreads is the degree of parallelism.
-	argonThreads = 1
-	// argonKeyLen is the output hash length in bytes.
-	argonKeyLen = 32
-)
-\end{lstlisting}
+Lo \autoref{sch:credenziali} riassume le trasformazioni appena descritte, con i simboli seguenti:
 
+\begin{itemize}
+    \item $e$: l'email ricevuta;
+    \item $p$: la password ricevuta;
+    \item $k_{SSH}$: la chiave pubblica SSH;
+    \item $\pi$: il pepper;
+    \item $MK$: la master key;
+    \item $s$, $n$, $s_p$: rispettivamente il salt di HKDF, il nonce di AES-GCM e il salt di
+    Argon2id, generati per quel record;
+    \item $\stackrel{R}{\leftarrow}$: un'estrazione casuale uniforme dall'insieme indicato.
+\end{itemize}
+
+\begin{schema}
+\centering
+$\begin{array}{rl}
+1. & s,\, s_p \stackrel{R}{\leftarrow} \{0,1\}^{128}, \quad n \stackrel{R}{\leftarrow} \{0,1\}^{96} \\[4pt]
+2. & k_h = \mathrm{SHA\mbox{-}256}(\mathrm{lower}(e)) \\[4pt]
+3. & k = \mathrm{HKDF\mbox{-}SHA256}(MK,\, s) \\[4pt]
+4. & c = \mathrm{AES\mbox{-}GCM}_{k}(n,\, e) \\[4pt]
+5. & h = \mathrm{Argon2id}(p \, \| \, \pi,\, s_p) \\[4pt]
+6. & r = (k_h,\, s,\, n,\, c,\, \mathrm{PHC}(h,\, s_p),\, k_{SSH})
+\end{array}$
+\caption{Trasformazioni applicate alle credenziali prima della scrittura del record.}
+\label{sch:credenziali}
+\end{schema}
 
 \subsection{Robustezza della password}
 \label{sec:entropia}
@@ -357,8 +368,8 @@ Dopo un login riuscito chiede invece un accesso temporaneo di 12 ore verso Stora
 
 Entrambi i passaggi concedono però raggiungibilità, non lettura: la registrazione mette il
 dispositivo nella rete, il login gli permette di raggiungere Storage-Service, ma ad aprire i backup è
-la chiave privata SSH. Conoscere le credenziali dell'utente non è pertanto condizione sufficiente ad 
-accedere ai suoi backup.
+la chiave privata SSH, che non lascia mai il dispositivo dell'utente. 
+Conoscere le credenziali dell'utente non è pertanto condizione sufficiente ad accedere ai suoi backup.
 
 Come Network-Manager crei l'identità mesh, applichi il tag ACL e ne gestisca la scadenza è oggetto
 del \autoref{chap:rete}.
