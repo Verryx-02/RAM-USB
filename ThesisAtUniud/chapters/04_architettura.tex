@@ -17,7 +17,7 @@ La \autoref{fig:architecture-container} mostra questi dieci componenti e il prot
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.75\textwidth]{figures/01-architecture-container.pdf}
+    \includegraphics[width=0.5\textwidth]{figures/01-architecture-container.pdf}
     \caption{Diagramma dei container di RAM-USB.}
     \label{fig:architecture-container}
 \end{figure}
@@ -98,7 +98,7 @@ Security-Switch.
 Un'email inesistente e una password sbagliata producono la stessa risposta: in questo modo,
 chi tenta l'accesso non può usarla per scoprire quali email sono registrate.
 Il \autoref{chap:sicurezza}, tuttavia, spiega come un utente esterno può tentare di capire se 
-un'email è già registrata nel sistema e anche come un amministratore può ottenere le credenziali 
+un'email è già registrata nel sistema e anche come un amministratore malintenzionato può ottenere le credenziali 
 di accesso di un utente.
 
 
@@ -119,8 +119,8 @@ La struttura del file system è illustrata in \autoref{fig:filesystem-storage}.
     \label{fig:filesystem-storage}
 \end{figure}
 
-L'accesso allo Storage-Service può avvenire solo via SFTP, con la chiave pubblica SSH inviata
-dall'utente in fase di registrazione. Non sono quindi permessi né l'autenticazione con username e password, 
+L'accesso allo Storage-Service può avvenire solo via SFTP \cite{sftp-filexfer}, con la chiave
+pubblica SSH inviata dall'utente in fase di registrazione. Non sono quindi permessi né l'autenticazione con username e password, 
 né altre forme di accesso SSH al di fuori della SFTP.
 
 Ad ogni connessione, un binario \texttt{AuthorizedKeysCommand} dedicato interroga Database-Vault per 
@@ -164,14 +164,14 @@ Storage-Service senza conoscerne l'indirizzo IP.
 
 Valida inoltre la pre-auth key di un nuovo dispositivo al momento dell'ingresso nella mesh.
 
-A differenza di ogni altro componente interno, Headscale non risiede nella rete privata, ma è raggiungibile 
-da chiunque su internet. La \autoref{sec:paradosso-coordinatore} ne approfondisce le ragioni.
+A differenza degli altri componenti interni, fatta eccezione per Entry-Hub, Headscale non risiede nella 
+rete privata, ma è raggiungibile da chiunque su internet. La \autoref{sec:paradosso-coordinatore} ne approfondisce le ragioni.
 
 \subsection{Mosquitto}
 
 Mosquitto è il broker MQTT su cui ogni servizio, una volta al minuto, pubblica le proprie metriche operative. 
 
-Applica una ACL in cui ogni servizio può solo scrivere sul proprio topic, mai leggerlo, mentre 
+Applica una ACL secondo la quale ogni servizio può solo scrivere sul proprio topic, mai leggerlo, mentre 
 Metrics-Collector può solo leggere l'intero spazio \texttt{metrics/*}, senza mai scrivervi.
 
 \subsection{Metrics-Collector}
@@ -196,7 +196,7 @@ Il \autoref{chap:osservabilita} tratta questa pipeline di osservabilità nel det
 
 Ogni servizio espone la propria API HTTPS sulla libreria standard di Go, \texttt{net/http}.
 Le richieste e le risposte sono corpi JSON ed ogni endpoint è registrato su un router minimale, 
-\texttt{http.ServeMux}.
+\texttt{http.ServeMux}. La versione di TLS ammessa è la 1.3.
 
 Gli endpoint qui elencati seguono le convenzioni REST \cite{fielding2000rest}.
 \begin{itemize}
@@ -214,7 +214,7 @@ interno a Network-Manager e scade autonomamente.
 La pubblicazione delle metriche inoltre, è asincrona: ogni servizio, infatti, pubblica i propri messaggi su
 un topic MQTT dedicato, e non c'è alcun bisogno di attendere una risposta.
 
-Questa struttura ha però un costo non indifferente: ogni registrazione e ogni login attraversano
+La struttura del sistema ha un costo non indifferente: ogni registrazione e ogni login attraversano
 quattro processi distinti, ognuno con il proprio handshake mTLS e la propria rivalidazione. 
 La latenza è quindi ben più alta rispetto ad un sistema monolitico, e non è possibile ridurla saltando uno 
 dei passaggi qualora fosse necessario. Il servizio, inoltre, resta disponibile agli utenti solo finché 
