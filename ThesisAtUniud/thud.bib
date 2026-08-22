@@ -1,23 +1,3 @@
-@book{Knu86,
-  author    = {Donald E. Knuth},
-  title     = {The TeXbook},
-  publisher = {Addison-Wesley},
-  year      = {1986},
-  isbn      = {0-201-13447-0},
-  bibsource = {DBLP, http://dblp.uni-trier.de}
-}
-
-@book{Lam94,
-  author    = {Leslie Lamport},
-  title     = {LaTeX - A Document Preparation System: User's Guide and
-               Reference Manual, Second Edition},
-  publisher = {Pearson / Prentice Hall},
-  year      = {1994},
-  isbn      = {978-0-201-52983-8},
-  pages     = {I-XVI, 1-272},
-  bibsource = {DBLP, http://dblp.uni-trier.de}
-}
-
 @article{Boehm88,
   author  = {Barry W. Boehm},
   title   = {A Spiral Model of Software Development and Enhancement},
@@ -48,13 +28,6 @@
   title        = {{RAM-USB} Contributing Guidelines: Commit structure (Section 2.2)},
   year         = {2026},
   howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/7984a140e0ce7f6b3ea89470801c0d26ecbd4aa1/CONTRIBUTING.md?plain=1\#L33-L101}}
-}
-
-@misc{ramusb-commit-dv-f-07-rework,
-  author       = {Francesco Verrengia},
-  title        = {{RAM-USB}: remove the separate password-salt field, storing it inside the {Argon2id} string},
-  year         = {2026},
-  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/commit/996671502ebf2024fca05c9ac24f2e2272e871cb}}
 }
 
 @misc{ramusb-commit-nm-f-12-v1,
@@ -239,18 +212,11 @@
   howpublished = {\url{https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html}}
 }
 
-@misc{ramusb-code-argon2-params,
-  author       = {Francesco Verrengia},
-  title        = {{RAM-USB}: parametri di costo {Argon2id} di Database-Vault},
-  year         = {2026},
-  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/database-vault/internal/password/hash.go\#L33-L42}}
-}
-
 @misc{ramusb-code-hkdf-newgcm,
   author       = {Francesco Verrengia},
   title        = {{RAM-USB}: derivazione della chiave per record con {HKDF-SHA256}},
   year         = {2026},
-  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/database-vault/internal/encryption/encryption.go\#L88-L98}}
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/database-vault/internal/encryption/encryption.go\#L88-L109}}
 }
 
 @misc{ramusb-code-saveuser,
@@ -281,13 +247,6 @@
   howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/database-vault/internal/password/hash.go\#L178-L193}}
 }
 
-@misc{ramusb-code-ss-f-06,
-  author       = {Francesco Verrengia},
-  title        = {{RAM-USB}: mappatura degli errori di Network-Manager sui codici {HTTP} di Security-Switch},
-  year         = {2026},
-  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/3a5b843c439fc62df99212b1d960d119dd6fe1ea/services/security-switch/internal/httpapi/handler.go\#L255-L266}}
-}
-
 @phdthesis{fielding2000rest,
   author = {Roy Thomas Fielding},
   title  = {Architectural Styles and the Design of Network-based Software Architectures},
@@ -295,3 +254,57 @@
   year   = {2000},
   note   = {\url{https://www.ics.uci.edu/~fielding/pubs/dissertation/top.htm}}
 }
+
+@misc{openssh-sshd-config,
+  author       = {{OpenBSD Project}},
+  title        = {\texttt{sshd\_config}(5): OpenSSH daemon configuration file},
+  year         = {2026},
+  howpublished = {\url{https://man.openbsd.org/sshd_config.5}}
+}
+
+@misc{restic-design,
+  author       = {{restic}},
+  title        = {{restic} documentation: references and repository design},
+  year         = {2026},
+  howpublished = {\url{https://restic.readthedocs.io/en/stable/100_references.html}}
+}
+
+@misc{ramusb-code-authkeys-cmd,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: fail-secure exit paths of the \texttt{AuthorizedKeysCommand} binary},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/services/storage-service/cmd/authorized-keys-command/main.go\#L97-L131}}
+}
+
+@misc{ramusb-code-restic-sftp,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: {Restic} repository {URL} and {SFTP} transport command},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/user-client/internal/restic/restic.go\#L74-L90}}
+}
+
+@misc{ramusb-code-reposecret,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: generation and local storage of the {Restic} repository password},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/user-client/internal/reposecret/reposecret.go\#L51-L77}}
+}
+
+
+@misc{ramusb-code-sshd-config,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: Storage-Service hardened \texttt{sshd\_config}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/deployments/docker/storage-service/sshd_config}}
+}
+
+@misc{sftp-filexfer,
+  author       = {Tatu Yl{\"o}nen and Sami Lehtinen},
+  title        = {{SSH} File Transfer Protocol},
+  year         = {2001},
+  howpublished = {\url{https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02}},
+  note         = {Internet-Draft \texttt{draft-ietf-secsh-filexfer-02}, la revisione implementata da
+                  OpenSSH, mai divenuta {RFC}}
+}
+
+
