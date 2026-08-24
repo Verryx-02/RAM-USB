@@ -64,6 +64,10 @@ func newClient(t *testing.T, ca *mtls.TestCA) *http.Client {
 	}
 }
 
+// testHostPublicKey is a fixture value in authorized_keys one-line format
+// (ST-F-16), standing in for Storage-Service's real host key.
+const testHostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleTestHostKeyOnly root@storage-service"
+
 // Requirement: DV-F-09
 func TestCreatePOSIXUser_Success(t *testing.T) {
 	ca, err := mtls.NewTestCA()
@@ -81,14 +85,46 @@ func TestCreatePOSIXUser_Success(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "host_public_key": testHostPublicKey})
+	})
+
+	client := newClient(t, ca)
+
+	hostPublicKey, err := posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
+	if err != nil {
+		t.Fatalf("CreatePOSIXUser() error = %v, want nil", err)
+	}
+	if hostPublicKey != testHostPublicKey {
+		t.Fatalf("CreatePOSIXUser() hostPublicKey = %q, want %q", hostPublicKey, testHostPublicKey)
+	}
+}
+
+// Requirement: ST-F-16
+func TestCreatePOSIXUser_MissingHostPublicKey(t *testing.T) {
+	ca, err := mtls.NewTestCA()
+	if err != nil {
+		t.Fatalf("NewTestCA() error = %v", err)
+	}
+
+	baseURL, _ := stubStorageService(t, ca, "StorageService", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		// Success, but no host_public_key field - a misbehaving or
+		// misconfigured Storage-Service.
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 	})
 
 	client := newClient(t, ca)
 
-	err = posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
-	if err != nil {
-		t.Fatalf("CreatePOSIXUser() error = %v, want nil", err)
+	hostPublicKey, err := posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
+	if err == nil {
+		t.Fatal("CreatePOSIXUser() error = nil, want a failure error")
+	}
+	if hostPublicKey != "" {
+		t.Fatalf("CreatePOSIXUser() hostPublicKey = %q, want empty on failure", hostPublicKey)
+	}
+	if !errors.Is(err, posix.ErrHostPublicKeyMissing) {
+		t.Fatalf("CreatePOSIXUser() error = %v, want it to wrap ErrHostPublicKeyMissing", err)
 	}
 }
 
@@ -110,7 +146,7 @@ func TestCreatePOSIXUser_FailureResponse(t *testing.T) {
 
 	client := newClient(t, ca)
 
-	err = posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
+	_, err = posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
 	if err == nil {
 		t.Fatal("CreatePOSIXUser() error = nil, want a failure error")
 	}
@@ -133,7 +169,7 @@ func TestCreatePOSIXUser_MalformedResponseBody(t *testing.T) {
 
 	client := newClient(t, ca)
 
-	err = posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
+	_, err = posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
 	if err == nil {
 		t.Fatal("CreatePOSIXUser() error = nil, want a failure error")
 	}
@@ -160,7 +196,7 @@ func TestCreatePOSIXUser_ServerWrongOrganization(t *testing.T) {
 
 	client := newClient(t, ca)
 
-	err = posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
+	_, err = posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
 	if err == nil {
 		t.Fatal("CreatePOSIXUser() error = nil, want a failure error for a non-StorageService peer")
 	}
@@ -184,7 +220,7 @@ func TestCreatePOSIXUser_ConnectionFailure(t *testing.T) {
 
 	client := newClient(t, ca)
 
-	err = posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
+	_, err = posix.CreatePOSIXUser(context.Background(), client, baseURL, "user1a2b3c")
 	if err == nil {
 		t.Fatal("CreatePOSIXUser() error = nil, want a connection failure error")
 	}

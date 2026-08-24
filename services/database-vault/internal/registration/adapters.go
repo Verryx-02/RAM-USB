@@ -22,9 +22,10 @@ type Storage interface {
 
 // POSIXProvisioner is the subset of Storage-Service interaction Register
 // needs: requesting POSIX-user creation (DV-F-09) and waiting for the
-// result.
+// result, which on success includes Storage-Service's SSH host public key
+// (ST-F-16).
 type POSIXProvisioner interface {
-	CreatePOSIXUser(ctx context.Context, username string) error
+	CreatePOSIXUser(ctx context.Context, username string) (hostPublicKey string, err error)
 }
 
 // StorageAdapter adapts storage.SaveUser/storage.DeleteUser — free functions
@@ -55,6 +56,6 @@ type POSIXAdapter struct {
 }
 
 // CreatePOSIXUser implements POSIXProvisioner.
-func (a POSIXAdapter) CreatePOSIXUser(ctx context.Context, username string) error {
+func (a POSIXAdapter) CreatePOSIXUser(ctx context.Context, username string) (string, error) {
 	return posix.CreatePOSIXUser(ctx, a.Client, a.BaseURL, username)
 }

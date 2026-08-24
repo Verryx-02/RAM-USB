@@ -77,6 +77,10 @@ type Result struct {
 	// PosixUsername is set only when Outcome is OutcomeRegistered.
 	PosixUsername string
 
+	// HostPublicKey is Storage-Service's SSH host public key (ST-F-16),
+	// set only when Outcome is OutcomeRegistered.
+	HostPublicKey string
+
 	// Err is nil only when Outcome is OutcomeRegistered.
 	Err error
 }
@@ -140,7 +144,8 @@ func Register(ctx context.Context, store Storage, posixSvc POSIXProvisioner, inp
 		}
 	}
 
-	if err := posixSvc.CreatePOSIXUser(ctx, username); err != nil {
+	hostPublicKey, err := posixSvc.CreatePOSIXUser(ctx, username)
+	if err != nil {
 		// DV-F-10: compensating rollback. The record was saved above; it
 		// must not survive a failed POSIX-user creation.
 		//
@@ -170,5 +175,5 @@ func Register(ctx context.Context, store Storage, posixSvc POSIXProvisioner, inp
 	}
 
 	// DV-F-11: both steps succeeded.
-	return Result{Outcome: OutcomeRegistered, PosixUsername: username}
+	return Result{Outcome: OutcomeRegistered, PosixUsername: username, HostPublicKey: hostPublicKey}
 }
