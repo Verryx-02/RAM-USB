@@ -69,11 +69,15 @@ func equalStrings(a, b []string) bool {
 // Requirement: NM-F-01, NM-F-02, NM-F-03, NM-F-04, NM-F-05, NM-F-06, NM-F-07, DV-F-09, ST-F-01
 //
 // Asserts PolicyDocument's generated JSON contains exactly the right
-// src/dst pairs for every rule this task's six requirements (plus the
+// src/dst pairs for every rule this file's requirements (plus the
 // NM-F-03 rule buildACLs' own doc comment explains including) translate
-// to - no more, no less - cross-checked against
-// docs/design/diagrams/09-security-trust-zones.puml's arrows, not
-// re-derived from the SRS prose alone. Also covers the MQTT-broker rule
+// to - no more, no less. NM-F-01/02/03/04 were narrowed on the SRS's
+// 2026-08-23 update (KI-127, docs/Known_Issues.md): each src set below is
+// now the real initiator set found by grepping each service's own
+// outbound-URL env var, and NM-F-04's second direction (Certificate-
+// Authority contacting every internal component) no longer has a rule at
+// all, so a stale wantSrc/extra rule here would catch a regression back
+// to the old, wider policy. Also covers the MQTT-broker rule
 // (TagMQTTBroker's own doc comment explains why it carries no single SRS
 // ID).
 func TestPolicyDocument_Content(t *testing.T) {
@@ -87,8 +91,8 @@ func TestPolicyDocument_Content(t *testing.T) {
 		t.Fatalf("json.Unmarshal(PolicyDocument()) error = %v", err)
 	}
 
-	if len(doc.ACLs) != 9 {
-		t.Fatalf("len(doc.ACLs) = %d, want 9 (NM-F-01, 02, 03, 04x2, 05, 06/07, MQTT-broker, Grafana->Metrics-Collector)", len(doc.ACLs))
+	if len(doc.ACLs) != 8 {
+		t.Fatalf("len(doc.ACLs) = %d, want 8 (NM-F-01, 02, 03, 04, 05, 06/07, MQTT-broker, Grafana->Metrics-Collector)", len(doc.ACLs))
 	}
 
 	for i, acl := range doc.ACLs {
@@ -103,22 +107,22 @@ func TestPolicyDocument_Content(t *testing.T) {
 		wantSrc []string
 	}{
 		{
-			name:    "NM-F-01: only Entry-Hub, Database-Vault, Network-Manager, Certificate-Authority can contact Security-Switch",
+			name:    "NM-F-01: only Entry-Hub can contact Security-Switch",
 			dst:     []string{hs.TagSecuritySwitch + ":*"},
-			wantSrc: []string{hs.TagEntryHub, hs.TagDatabaseVault, hs.TagNetworkManager, hs.TagCertificateAuthority},
+			wantSrc: []string{hs.TagEntryHub},
 		},
 		{
-			name:    "NM-F-02: only Security-Switch, Storage-Service, Certificate-Authority can contact Database-Vault",
+			name:    "NM-F-02: only Security-Switch and Storage-Service can contact Database-Vault",
 			dst:     []string{hs.TagDatabaseVault + ":*"},
-			wantSrc: []string{hs.TagSecuritySwitch, hs.TagStorageService, hs.TagCertificateAuthority},
+			wantSrc: []string{hs.TagSecuritySwitch, hs.TagStorageService},
 		},
 		{
-			name:    "NM-F-03: only Security-Switch, Certificate-Authority can contact Network-Manager",
+			name:    "NM-F-03: only Security-Switch can contact Network-Manager",
 			dst:     []string{hs.TagNetworkManager + ":*"},
-			wantSrc: []string{hs.TagSecuritySwitch, hs.TagCertificateAuthority},
+			wantSrc: []string{hs.TagSecuritySwitch},
 		},
 		{
-			name: "NM-F-04 direction one: every internal component (including Metrics-Collector, the MQTT broker's and Grafana's own cert-renewal sidecars) can contact Certificate-Authority",
+			name: "NM-F-04: every internal component (including Metrics-Collector, the MQTT broker's and Grafana's own cert-renewal sidecars) can contact Certificate-Authority; the requirement's 'be contacted by' direction has no rule (step-ca never initiates a connection)",
 			dst:  []string{hs.TagCertificateAuthority + ":*"},
 			wantSrc: []string{
 				hs.TagEntryHub,
@@ -130,20 +134,6 @@ func TestPolicyDocument_Content(t *testing.T) {
 				hs.TagMetricsCollector,
 				hs.TagGrafana,
 			},
-		},
-		{
-			name: "NM-F-04 direction two: Certificate-Authority can contact every internal component",
-			dst: []string{
-				hs.TagEntryHub + ":*",
-				hs.TagSecuritySwitch + ":*",
-				hs.TagDatabaseVault + ":*",
-				hs.TagStorageService + ":*",
-				hs.TagNetworkManager + ":*",
-				hs.TagMQTTBroker + ":*",
-				hs.TagMetricsCollector + ":*",
-				hs.TagGrafana + ":*",
-			},
-			wantSrc: []string{hs.TagCertificateAuthority},
 		},
 		{
 			name:    "NM-F-05/NM-F-07 (authenticated half) + DV-F-09/ST-F-01: TagStorageAccess nodes and Database-Vault can contact Storage-Service",

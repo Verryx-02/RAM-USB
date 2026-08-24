@@ -165,64 +165,92 @@ func dstAny(tag string) string {
 
 // buildACLs returns the ordered list of ACL rules this file exists to
 // produce. Each rule is traceable to exactly one requirement ID via its
-// own comment; NM-F-04's "both directions" wording produces two rules,
-// not one.
+// own comment.
 //
-// A seventh rule, labeled NM-F-03, is included even though this task's
-// scope named only NM-F-01/02/04/05/06/07: NM-F-03 ("only Security-Switch
-// and Certificate-Authority can contact Network-Manager") is already
-// implemented at the mTLS/HTTP boundary (internal/server, NM-F-03's own
-// commit), and SS-F-05/NM-F-08/NM-F-09's already-shipped, already-tested
-// traffic (Security-Switch calling Network-Manager to request a mesh
-// user or a storage-access grant) depends on that path being reachable
-// at the network layer too. Once any ACL rule exists in a Headscale
-// policy, reachability not explicitly listed is denied by default - so
-// omitting NM-F-03 here would silently break that already-built feature
-// the moment this policy is pushed. This is flagged explicitly, not a
-// silent scope expansion: confirm with the requirement owner if a
-// different resolution is wanted.
+// NM-F-01/02/03/04 were narrowed on the SRS's own 2026-08-23 update (see
+// each requirement's note in docs/Software_Requirements_Specification.md):
+// they used to be written as the union of "who calls X" and "who X
+// calls", on the assumption that reply traffic needs a rule in the
+// opposite direction. It does not - Tailscale's packet filter matches ACL
+// rules only against a TCP SYN and admits every later packet of an
+// established session (tailscale.com/wgengine/filter/filter.go), so a
+// permitted outbound connection's replies flow with no reverse rule at
+// all. Measured live on the real Proxmox deployment (KI-127,
+// docs/Known_Issues.md): Entry-Hub cannot open a connection toward a
+// user's node, yet serves that node's HTTP requests normally. Each of
+// NM-F-01/02/03's src sets below is now exactly the real initiators
+// found by grepping each service's own outbound-URL env var
+// (RAM_USB_SECURITY_SWITCH_URL, RAM_USB_DATABASE_VAULT*,
+// RAM_USB_NETWORK_MANAGER_URL) - not the old "who else might reply"
+// superset - and NM-F-04's second direction (Certificate-Authority
+// contacting every internal component) is dropped entirely: step-ca
+// never initiates a connection to any of them, its only outbound traffic
+// is the metrics sidecar's MQTT publish (CA-F-03), already covered by
+// the MQTT-broker rule below.
 //
-// An eighth rule grants every metrics publisher, plus Metrics-Collector
+// A sixth rule, labeled NM-F-03, is included even though this file's
+// scope names only NM-F-01/02/04/05/06/07: NM-F-03 ("only Security-Switch
+// can contact Network-Manager") is already implemented at the mTLS/HTTP
+// boundary (internal/server, NM-F-03's own commit), and SS-F-05/NM-F-08/
+// NM-F-09's already-shipped, already-tested traffic (Security-Switch
+// calling Network-Manager to request a mesh user or a storage-access
+// grant) depends on that path being reachable at the network layer too.
+// Once any ACL rule exists in a Headscale policy, reachability not
+// explicitly listed is denied by default - so omitting NM-F-03 here
+// would silently break that already-built feature the moment this
+// policy is pushed.
+//
+// A seventh rule grants every metrics publisher, plus Metrics-Collector
 // itself, reachability toward the MQTT broker's mesh identity
 // (TagMQTTBroker) - see that constant's own doc comment for why no single
 // SRS ID names this rule the way NM-F-04 names Certificate-Authority's,
-// and why it is included here anyway.
+// and why it is included here anyway (KI-119, docs/Known_Issues.md).
 //
-// A ninth rule grants Grafana's own mesh sidecar reachability toward
+// An eighth rule grants Grafana's own mesh sidecar reachability toward
 // Metrics-Collector's mesh identity (TagMetricsCollector) - TimescaleDB
 // (MT-F-03) is now co-located inside Metrics-Collector's own container
 // (KI-18), so Grafana's outbound query connection (UC-05, RU-10) reaches
 // TimescaleDB's Postgres-wire port under this same tag, not a separate
-// one. See TagGrafana's own doc comment for why no single SRS ID names
-// this rule.
+// one. Both that rule and the MQTT-broker one below are now named by
+// requirements of their own (NM-F-20, NM-F-21), added 2026-08-23 after
+// KI-119 pointed out they had been written on implementer judgment alone.
 func buildACLs() []policyACL {
 	return []policyACL{
-		{ // NM-F-01: only Entry-Hub, Database-Vault, Network-Manager, and
-			// Certificate-Authority can contact Security-Switch.
+		{ // NM-F-01: only Entry-Hub can contact Security-Switch. Confirmed
+			// by grep: RAM_USB_SECURITY_SWITCH_URL is read solely by
+			// services/entry-hub - Database-Vault, Network-Manager and
+			// Certificate-Authority never dial Security-Switch, and its own
+			// mTLS gate accepts organization=EntryHub only, so they could
+			// never authenticate even if they connected.
 			Action: "accept",
-			Src:    []string{TagEntryHub, TagDatabaseVault, TagNetworkManager, TagCertificateAuthority},
+			Src:    []string{TagEntryHub},
 			Dst:    []string{dstAny(TagSecuritySwitch)},
 		},
-		{ // NM-F-02: only Security-Switch, Storage-Service, and
-			// Certificate-Authority can contact Database-Vault.
+		{ // NM-F-02: only Security-Switch and Storage-Service can contact
+			// Database-Vault. Confirmed by grep: RAM_USB_DATABASE_VAULT* is
+			// read by security-switch (register/login) and storage-service
+			// (ST-F-11's AuthorizedKeysCommand public-key lookup) -
+			// Certificate-Authority never dials Database-Vault.
 			Action: "accept",
-			Src:    []string{TagSecuritySwitch, TagStorageService, TagCertificateAuthority},
+			Src:    []string{TagSecuritySwitch, TagStorageService},
 			Dst:    []string{dstAny(TagDatabaseVault)},
 		},
 		{ // NM-F-03 (already implemented at the mTLS boundary; included
 			// here so the network layer does not block it - see this
-			// function's own doc comment): only Security-Switch and
-			// Certificate-Authority can contact Network-Manager's own mTLS
-			// listener - Entry-Hub no longer needs mesh reachability to
-			// Network-Manager now that NM-F-14's Headscale coordination
+			// function's own doc comment): only Security-Switch can
+			// contact Network-Manager's own mTLS listener. Confirmed by
+			// grep: RAM_USB_NETWORK_MANAGER_URL is read solely by
+			// security-switch - Certificate-Authority never dials
+			// Network-Manager, and Entry-Hub no longer needs mesh
+			// reachability to it now that NM-F-14's Headscale coordination
 			// endpoint is directly public-facing (EH-F-12 withdrawn; see
 			// services/network-manager/cmd/network-manager/main.go's own
 			// package doc comment).
 			Action: "accept",
-			Src:    []string{TagSecuritySwitch, TagCertificateAuthority},
+			Src:    []string{TagSecuritySwitch},
 			Dst:    []string{dstAny(TagNetworkManager)},
 		},
-		{ // NM-F-04, direction one: every internal component can contact
+		{ // NM-F-04: every internal component can contact
 			// Certificate-Authority. TagMQTTBroker is included alongside
 			// the original five (KI-16/PKI-F-03): the MQTT broker's own
 			// cert-renewal sidecar (mqtt-broker-cert-renewer, sharing
@@ -241,7 +269,9 @@ func buildACLs() []policyACL {
 			// now run as a real mesh sidecar (deployments/compose/
 			// grafana.yml's grafana-mesh) sharing Grafana's own mesh
 			// identity, and need this same mesh-routed reachability to
-			// mint/renew Grafana's TimescaleDB client certificate.
+			// mint/renew Grafana's TimescaleDB client certificate. The
+			// requirement's "and be contacted by" direction no longer has
+			// a rule - see this function's own doc comment.
 			Action: "accept",
 			// TagMetricsCollector is included because NM-F-04 says "all
 			// internal components of the network, except Users", and
@@ -261,23 +291,6 @@ func buildACLs() []policyACL {
 				TagGrafana,
 			},
 			Dst: []string{dstAny(TagCertificateAuthority)},
-		},
-		{ // NM-F-04, direction two: Certificate-Authority can contact
-			// every internal component - the same set as direction one,
-			// since NM-F-04's "can contact, and be contacted by" is
-			// symmetric over one component list.
-			Action: "accept",
-			Src:    []string{TagCertificateAuthority},
-			Dst: []string{
-				dstAny(TagEntryHub),
-				dstAny(TagSecuritySwitch),
-				dstAny(TagDatabaseVault),
-				dstAny(TagStorageService),
-				dstAny(TagNetworkManager),
-				dstAny(TagMQTTBroker),
-				dstAny(TagMetricsCollector),
-				dstAny(TagGrafana),
-			},
 		},
 		{ // NM-F-05 and (together with the rule below) half of NM-F-07:
 			// only authenticated Users - nodes holding TagStorageAccess,
@@ -308,9 +321,11 @@ func buildACLs() []policyACL {
 			Dst:    []string{dstAny(TagEntryHub)},
 		},
 		{ // Every metrics publisher, plus Metrics-Collector itself
-			// (subscriber), can contact the MQTT broker's mesh identity -
-			// see buildACLs' own doc comment and TagMQTTBroker's for why
-			// this rule has no single SRS ID of its own.
+			// (subscriber), can contact the MQTT broker's mesh identity.
+			// NM-F-20. Without this rule the whole metrics pipeline
+			// (MT-F-01..04, CA-F-03, DV-F-16, EH-F-10, NM-F-17, SS-F-07,
+			// ST-F-12) stops silently, since Headscale denies unlisted
+			// reachability without reporting an error.
 			Action: "accept",
 			Src: []string{
 				TagEntryHub,
@@ -326,8 +341,7 @@ func buildACLs() []policyACL {
 		{ // Grafana's own mesh sidecar can contact Metrics-Collector's mesh
 			// identity - TimescaleDB now lives inside this same container
 			// (KI-18), so this rule is what lets Grafana's outbound query
-			// connection (UC-05) reach it over the mesh. See TagGrafana's
-			// own doc comment for why this rule has no single SRS ID.
+			// connection (UC-05, RU-10) reach it over the mesh. NM-F-21.
 			Action: "accept",
 			Src:    []string{TagGrafana},
 			Dst:    []string{dstAny(TagMetricsCollector)},
