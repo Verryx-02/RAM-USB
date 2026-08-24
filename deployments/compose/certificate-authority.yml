@@ -134,8 +134,25 @@ services:
       # rewrite a file in a different container's filesystem even though
       # both share one network namespace).
       RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker.ramusb-mesh.internal:8883"
-    ports:
-      - "9000:9000"
+    # KI-128: no "ports:" stanza - this used to publish "9000:9000" on the
+    # Docker host, which put step-ca's API within reach of anything on the
+    # host's LAN interface, outside the mesh and outside NM-F-04's trust
+    # model (confirmed live: a TCP connect from the Proxmox host itself,
+    # which holds no mesh identity, succeeded in 3ms, while every other
+    # internal service refused the same connect because those bind
+    # mesh-only). Nothing depends on the published port: every bootstrap
+    # token mint in deployments/scripts/*.sh runs via `docker exec
+    # certificate-authority step ca token ...` (a call inside this
+    # container, against its own localhost), every other service's own
+    # RAM_USB_CA_BOOTSTRAP_TOKEN reaches "https://certificate-authority:9000"
+    # over ramusb-net's internal Docker DNS (unaffected by removing a HOST
+    # port publish), and the healthcheck above already targets
+    # "https://localhost:9000" from inside the container. This also matches
+    # deployments/proxmox/certificate-authority.md's own "No published
+    # ports - hard requirement, not a should" section, which already names
+    # the dev stack's port publish as "a deliberate, dev-only
+    # simplification" this fix removes rather than a production-required
+    # behaviour.
     volumes:
       - ramusb-ca-data:/home/step
       - ramusb-certificate-authority-logs:/var/log/certificate-authority
