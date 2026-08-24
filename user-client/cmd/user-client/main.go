@@ -9,13 +9,18 @@
 //     with the returned pre-auth key, if Entry-Hub's response carries one -
 //     see internal/entryhub's own doc note on this field's current
 //     server-side gap).
-//   - login: CL-F-09, CL-F-03 (POST /api/login) - a user re-runs this
-//     subcommand manually before their 12-hour ACL grant expires; this
-//     binary does not run a background scheduler of its own.
-//   - backup <path>: CL-F-06 (restic backup over SFTP, authenticating with
-//     CL-F-01's key). CL-F-05's MagicDNS resolution needs no code here -
-//     it is transparent through the OS resolver once mesh-joined.
-//   - restore <snapshot> --target <path>: CL-F-07 (restic restore).
+//   - login: CL-F-09, CL-F-03 (POST /api/login, against a URL separate
+//     from registration's - CL-F-10 - since Entry-Hub serves the two on
+//     different listeners, EH-F-01/EH-F-02 vs EH-F-03) - a user re-runs
+//     this subcommand manually before their 12-hour ACL grant expires;
+//     this binary does not run a background scheduler of its own.
+//   - backup <path>: CL-F-06 (restic backup over SFTP on Storage-Service's
+//     fixed port, ST-F-03, authenticating with CL-F-01's key and pinning
+//     its host key per CL-F-11). CL-F-05's MagicDNS resolution needs no
+//     code here - it is transparent through the OS resolver once
+//     mesh-joined.
+//   - restore <snapshot> --target <path> (either order - see runRestore's
+//     own doc comment): CL-F-07 (restic restore).
 //
 // Every subcommand maps a locally caught pre-validation failure or an
 // Entry-Hub HTTP error code to a sanitized message (CL-F-08/CL-F-09) -
@@ -33,9 +38,14 @@
 //     neither set fails immediately instead of blocking on a prompt. This
 //     precedence is a usability/security trade-off, not an SRS-specified
 //     mechanism.
-//   - Entry-Hub's base URL, Headscale's login-server URL, and
-//     Storage-Service's mesh hostname are read from environment variables
-//     (RAM_USB_ENTRY_HUB_URL, RAM_USB_HEADSCALE_URL,
+//   - Entry-Hub's registration base URL, Entry-Hub's separate login base
+//     URL (CL-F-10 - must resolve to a hostname covered by the certificate
+//     Entry-Hub's mesh-only login listener presents, EH-F-03, e.g. its
+//     public hostname once NM-F-19's MagicDNS record resolves that name to
+//     the mesh address; never a bare mesh IP, which the certificate does
+//     not cover), Headscale's login-server URL, and Storage-Service's mesh
+//     hostname are read from environment variables (RAM_USB_ENTRY_HUB_URL,
+//     RAM_USB_ENTRY_HUB_LOGIN_URL, RAM_USB_HEADSCALE_URL,
 //     RAM_USB_STORAGE_HOST), mirroring every other RAM-USB service's own
 //     env-var configuration convention (CONTRIBUTING.md section 7's
 //     cmd/<service>/main.go pattern), even though this component is not a
@@ -48,6 +58,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"golang.org/x/term"
 
@@ -65,10 +76,11 @@ import (
 // Env var names this entrypoint reads. See the package doc comment's
 // "design decisions flagged for review" note.
 const (
-	envEntryHubURL   = "RAM_USB_ENTRY_HUB_URL"
-	envHeadscaleURL  = "RAM_USB_HEADSCALE_URL"
-	envStorageHost   = "RAM_USB_STORAGE_HOST"
-	envLoginPassword = "RAM_USB_PASSWORD"
+	envEntryHubURL      = "RAM_USB_ENTRY_HUB_URL"
+	envEntryHubLoginURL = "RAM_USB_ENTRY_HUB_LOGIN_URL"
+	envHeadscaleURL     = "RAM_USB_HEADSCALE_URL"
+	envStorageHost      = "RAM_USB_STORAGE_HOST"
+	envLoginPassword    = "RAM_USB_PASSWORD"
 )
 
 func main() {
@@ -216,6 +228,13 @@ func runRegister(args []string, runner execrunner.Runner) error {
 	if err := clientstate.SavePosixUsername(dir, result.PosixUsername); err != nil {
 		return fmt.Errorf("save posix username locally: %w", err)
 	}
+	// CL-F-11/ST-F-16: pin Storage-Service's SSH host key now, over this
+	// already-authenticated mTLS chain, rather than trusting it the first
+	// time a later backup connects (trust-on-first-use is explicitly not
+	// used).
+	if err := clientstate.SaveHostPublicKey(dir, result.HostPublicKey); err != nil {
+		return fmt.Errorf("save ssh host public key locally: %w", err)
+	}
 	fmt.Printf("registered successfully as %s\n", result.PosixUsername)
 
 	if result.PreauthKey == "" {
@@ -236,7 +255,13 @@ func runRegister(args []string, runner execrunner.Runner) error {
 	return nil
 }
 
-// runLogin implements CL-F-03/CL-F-09.
+// runLogin implements CL-F-03/CL-F-09/CL-F-10. Login is deliberately read
+// from its own RAM_USB_ENTRY_HUB_LOGIN_URL, separate from
+// RAM_USB_ENTRY_HUB_URL: Entry-Hub serves POST /api/login on a mesh-only
+// listener at a different address than registration's public one
+// (EH-F-01/EH-F-02 vs EH-F-03), so one base URL cannot address both - see
+// this command's own package doc comment for the certificate/hostname
+// constraint the login value must satisfy.
 func runLogin(args []string) error {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	email, password, err := resolveCredentials(fs, args)
@@ -244,12 +269,12 @@ func runLogin(args []string) error {
 		return err
 	}
 
-	entryHubURL := os.Getenv(envEntryHubURL)
-	if entryHubURL == "" {
-		return fmt.Errorf("%s is required", envEntryHubURL)
+	entryHubLoginURL := os.Getenv(envEntryHubLoginURL)
+	if entryHubLoginURL == "" {
+		return fmt.Errorf("%s is required", envEntryHubLoginURL)
 	}
 
-	client := entryhub.New(entryHubURL)
+	client := entryhub.New(entryHubLoginURL)
 	if err := client.Login(context.Background(), validation.LoginRequest{Email: email, Password: password}); err != nil {
 		return err
 	}
@@ -290,6 +315,23 @@ func resticConfig(runner execrunner.Runner) (restic.Config, error) {
 		return restic.Config{}, fmt.Errorf("%s is required", envStorageHost)
 	}
 
+	// CL-F-11: pin Storage-Service's SSH host key rather than falling back
+	// to trust-on-first-use. A missing stored key (state predating this
+	// change, or a registration response that, contrary to ST-F-16,
+	// carried none) is a fail-secure error, not a silently-accepted
+	// connection.
+	hostPublicKey, ok, err := clientstate.LoadHostPublicKey(dir)
+	if err != nil {
+		return restic.Config{}, fmt.Errorf("load ssh host public key: %w", err)
+	}
+	if !ok {
+		return restic.Config{}, fmt.Errorf("no ssh host public key found; run 'register' again to pin it before backing up or restoring")
+	}
+	knownHostsPath, err := restic.WriteKnownHosts(dir, host, hostPublicKey)
+	if err != nil {
+		return restic.Config{}, fmt.Errorf("write known_hosts: %w", err)
+	}
+
 	password, err := reposecret.Ensure(dir)
 	if err != nil {
 		return restic.Config{}, fmt.Errorf("prepare repository password: %w", err)
@@ -300,6 +342,7 @@ func resticConfig(runner execrunner.Runner) (restic.Config, error) {
 		Host:               host,
 		PosixUsername:      posixUsername,
 		PrivateKeyPath:     keyPair.PrivateKeyPath,
+		KnownHostsPath:     knownHostsPath,
 		RepositoryPassword: password,
 	}, nil
 }
@@ -334,10 +377,16 @@ func runBackup(args []string, runner execrunner.Runner) error {
 
 // runRestore implements CL-F-07. runner is the execrunner.Runner used for
 // the restic invocations - see resticConfig's own doc comment.
+//
+// Both "restore <snapshot> --target <path>" (this command's documented
+// form) and "restore --target <path> <snapshot>" are accepted: Go's
+// flag.Parse stops at the first non-flag argument, so without
+// reorderRestoreArgs only the second form would actually work, silently
+// contradicting the usage string below (KI-125).
 func runRestore(args []string, runner execrunner.Runner) error {
 	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
 	target := fs.String("target", "", "local directory to restore into")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderRestoreArgs(args)); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
@@ -358,4 +407,30 @@ func runRestore(args []string, runner execrunner.Runner) error {
 	}
 	fmt.Println("restore completed successfully")
 	return nil
+}
+
+// reorderRestoreArgs moves a "--target <path>" or "--target=<path>" pair
+// (in either "-" or "--" form) to the front of args, so flag.Parse - which
+// stops at the first non-flag argument - recognizes --target regardless of
+// whether it appears before or after the positional snapshot ID (KI-125).
+// Any args not matching --target are left in their relative order.
+func reorderRestoreArgs(args []string) []string {
+	for i, a := range args {
+		switch {
+		case a == "--target" || a == "-target":
+			if i+1 >= len(args) {
+				return args // malformed ("--target" with nothing after it) - let flag.Parse report it
+			}
+			rest := make([]string, 0, len(args)-2)
+			rest = append(rest, args[:i]...)
+			rest = append(rest, args[i+2:]...)
+			return append([]string{a, args[i+1]}, rest...)
+		case strings.HasPrefix(a, "--target=") || strings.HasPrefix(a, "-target="):
+			rest := make([]string, 0, len(args)-1)
+			rest = append(rest, args[:i]...)
+			rest = append(rest, args[i+1:]...)
+			return append([]string{a}, rest...)
+		}
+	}
+	return args
 }

@@ -91,6 +91,12 @@ type RegisterResult struct {
 	// gracefully (e.g. Security-Switch's SS-F-09 call to Network-Manager
 	// failed server-side) rather than treat it as a hard error.
 	PreauthKey string
+
+	// HostPublicKey is Storage-Service's SSH host public key (ST-F-16),
+	// relayed unchanged through Database-Vault, Security-Switch and
+	// Entry-Hub. CL-F-11 requires the caller to persist this and pin it
+	// locally before the first backup, rather than trust-on-first-use.
+	HostPublicKey string
 }
 
 // registerResponse is the JSON body this client expects from Entry-Hub on
@@ -101,6 +107,7 @@ type RegisterResult struct {
 type registerResponse struct {
 	PosixUsername string `json:"posix_username"`
 	PreauthKey    string `json:"pre_auth_key"`
+	HostPublicKey string `json:"host_public_key"`
 }
 
 // appErrorResponse mirrors every service's own appErrorResponse shape

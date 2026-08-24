@@ -14,12 +14,17 @@ import (
 // -o sftp.command, which restic splits shell-style before exec'ing ssh.
 const testKeyPath = "/Users/alice/Library/Application Support/ram-usb/id_ed25519"
 
+// testKnownHostsPath stands in for the path WriteKnownHosts would return -
+// restic.Config never writes this file itself, only references it.
+const testKnownHostsPath = "/Users/alice/Library/Application Support/ram-usb/known_hosts"
+
 func testConfig(fake execrunner.Runner) Config {
 	return Config{
 		Runner:             fake,
 		Host:               "storage-service.mesh.ts.net",
 		PosixUsername:      "user000001",
 		PrivateKeyPath:     testKeyPath,
+		KnownHostsPath:     testKnownHostsPath,
 		RepositoryPassword: "repo-secret",
 	}
 }
@@ -34,7 +39,7 @@ func TestSftpCommand_QuotesInterpolatedValues(t *testing.T) {
 		{
 			name: "space-containing key path stays a single ssh argument",
 			cfg:  testConfig(&execrunner.Fake{}),
-			want: "ssh -i '/Users/alice/Library/Application Support/ram-usb/id_ed25519' -l 'user000001' 'storage-service.mesh.ts.net' -s sftp",
+			want: "ssh -i '/Users/alice/Library/Application Support/ram-usb/id_ed25519' -o 'UserKnownHostsFile=/Users/alice/Library/Application Support/ram-usb/known_hosts' -o StrictHostKeyChecking=yes -p 2222 -l 'user000001' 'storage-service.mesh.ts.net' -s sftp",
 		},
 		{
 			name: "space-free key path is quoted just the same",
@@ -42,8 +47,9 @@ func TestSftpCommand_QuotesInterpolatedValues(t *testing.T) {
 				Host:           "storage-service",
 				PosixUsername:  "user000002",
 				PrivateKeyPath: "/home/user/.config/ram-usb/id_ed25519",
+				KnownHostsPath: "/home/user/.config/ram-usb/known_hosts",
 			},
-			want: "ssh -i '/home/user/.config/ram-usb/id_ed25519' -l 'user000002' 'storage-service' -s sftp",
+			want: "ssh -i '/home/user/.config/ram-usb/id_ed25519' -o 'UserKnownHostsFile=/home/user/.config/ram-usb/known_hosts' -o StrictHostKeyChecking=yes -p 2222 -l 'user000002' 'storage-service' -s sftp",
 		},
 	}
 
@@ -70,7 +76,7 @@ func TestInit_Success(t *testing.T) {
 	}
 	call := fake.Calls[0]
 	wantRepo := "sftp:user000001@storage-service.mesh.ts.net:/data"
-	wantSftpCmd := "sftp.command=ssh -i '" + testKeyPath + "' -l 'user000001' 'storage-service.mesh.ts.net' -s sftp"
+	wantSftpCmd := "sftp.command=ssh -i '" + testKeyPath + "' -o 'UserKnownHostsFile=" + testKnownHostsPath + "' -o StrictHostKeyChecking=yes -p 2222 -l 'user000001' 'storage-service.mesh.ts.net' -s sftp"
 	want := []string{"restic", "-r", wantRepo, "-o", wantSftpCmd, "init"}
 	if len(call) != len(want) {
 		t.Fatalf("call = %v, want %v", call, want)

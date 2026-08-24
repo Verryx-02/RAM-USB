@@ -49,6 +49,14 @@ type Config struct {
 	// user's own default SSH identity.
 	PrivateKeyPath string
 
+	// KnownHostsPath is the path to a known_hosts file (written by
+	// WriteKnownHosts) pinning Storage-Service's SSH host key (CL-F-11,
+	// ST-F-16). ssh is pointed at this file with strict host-key checking
+	// on, so a host key that changes at connection time aborts the
+	// connection rather than prompting or silently accepting it
+	// (trust-on-first-use is explicitly not used - CL-F-11).
+	KnownHostsPath string
+
 	// RepositoryPassword is restic's own repository-encryption password,
 	// distinct from the user's RAM-USB login password (see this
 	// package's own doc note on where this value comes from - flagged as
@@ -68,6 +76,12 @@ var ErrRepositoryOperationFailed = errors.New("restic: operation failed")
 // just the first) from a genuine failure.
 const alreadyInitializedMarker = "already initialized"
 
+// SSHPort is the fixed TCP port Storage-Service's sshd listens on
+// (ST-F-03) - CAP_NET_BIND_SERVICE is deliberately outside the container's
+// capability set, so the default port 22 is not bindable at all, and
+// every connection must name this port explicitly.
+const SSHPort = 2222
+
 // repository returns the sftp: repository URL this Config addresses -
 // the user's writable data/ subdirectory inside their own chroot (ST-F-06/
 // ST-F-08, SRS section 4.5).
@@ -77,15 +91,28 @@ func (c Config) repository() string {
 
 // sftpCommand returns the -o sftp.command value that makes restic
 // authenticate over SFTP using CL-F-01's client-generated private key
-// instead of any default identity.
+// instead of any default identity, on Storage-Service's SSHPort (ST-F-03),
+// with the host key pinned at KnownHostsPath and strict checking on
+// (CL-F-11).
 //
-// Every interpolated value is single-quoted: restic splits sftp.command
-// shell-style (respecting quotes) before exec'ing it, and
-// sshkey.ConfigDir() on darwin returns "$HOME/Library/Application Support/
-// ram-usb" - a path containing a space, which unquoted would reach ssh as
-// two separate arguments and break CL-F-06/CL-F-07 on every macOS run.
+// Every interpolated value is single-quoted, and each -o option's whole
+// "key=value" pair is quoted as one token rather than quoting only the
+// value: restic splits sftp.command shell-style before exec'ing it, but
+// (confirmed empirically against restic 0.19.0's actual splitter, not just
+// assumed) it only treats a quote as opening a token when the quote is the
+// token's first character. -o UserKnownHostsFile='%s' puts the quote after
+// the "=", so restic's splitter hands ssh a bare "UserKnownHostsFile=" and
+// the path as a second, unrelated argument - ssh then rejects the option
+// with "no argument after keyword" and the sftp subsystem never starts.
+// Quoting the entire "-o 'UserKnownHostsFile=...'" token sidesteps this
+// because the quote is then the token's first character. The same
+// sshkey.ConfigDir() space-containing path (darwin: "$HOME/Library/
+// Application Support/ram-usb") motivates the quoting itself.
 func (c Config) sftpCommand() string {
-	return fmt.Sprintf("ssh -i '%s' -l '%s' '%s' -s sftp", c.PrivateKeyPath, c.PosixUsername, c.Host)
+	return fmt.Sprintf(
+		"ssh -i '%s' -o 'UserKnownHostsFile=%s' -o StrictHostKeyChecking=yes -p %d -l '%s' '%s' -s sftp",
+		c.PrivateKeyPath, c.KnownHostsPath, SSHPort, c.PosixUsername, c.Host,
+	)
 }
 
 // env returns the RESTIC_PASSWORD environment entry every invocation
