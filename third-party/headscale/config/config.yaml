@@ -45,9 +45,21 @@
 # forwards to) is loopback-only (127.0.0.1) - only this container's own
 # nginx process reaches it; NM-F-14's actual public exposure is the
 # reverse proxy's own listener (deployments/docker/headscale/nginx.conf),
-# not this one directly. NM-F-15's MagicDNS base_domain below remains a
-# placeholder value, not a considered choice - still out of this session's
-# scope.
+# not this one directly.
+#
+# NM-F-15's MagicDNS base_domain below is a decided value, not a placeholder
+# (KI-120, settled 2026-08-23). The ".internal" suffix was chosen because the
+# ICANN Board reserved .INTERNAL permanently from delegation in the DNS root
+# zone at its Special Meeting of 29 July 2024, precisely so private networks
+# have a suffix that can never collide with a future public gTLD - the
+# collision risk that makes ad hoc choices like .corp, .home or .lan unsafe.
+# One caveat worth knowing: .internal is NOT in IANA's Special-Use Domain
+# Names registry (RFC 6761), unlike .local (RFC 6762) or home.arpa
+# (RFC 8375), so it gets no protocol-level special handling from resolvers.
+# That costs this deployment nothing, because MagicDNS resolves the zone
+# itself rather than relying on the OS to treat the suffix specially, but it
+# does mean the guarantee here is "never delegated publicly", not "recognised
+# by resolver software".
 
 server_url: https://headscale:8080
 listen_addr: 127.0.0.1:8081
