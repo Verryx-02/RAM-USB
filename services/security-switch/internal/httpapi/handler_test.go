@@ -23,6 +23,9 @@ const (
 	testEmail        = "user@example.com"
 	testPassword     = "Str0ng!Pass"
 	testSSHPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJl6r+SEQfM50WkfR/4iZpu9NDXCBs4RwIKidjhOCbdw user@client"
+	// testHostPublicKey stands in for Storage-Service's real SSH host
+	// public key (ST-F-16), in authorized_keys one-line format.
+	testHostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleTestHostKeyOnly root@storage-service"
 )
 
 // fakeDBVault is a hand-written fake implementing DatabaseVaultClient
@@ -105,8 +108,9 @@ func loginRequestBody(email, password string) string {
 
 // Requirement: SS-F-04
 // Requirement: SS-F-09
+// Requirement: ST-F-16
 func TestHandler_Register_Success(t *testing.T) {
-	dbVault := &fakeDBVault{registerResult: dbvault.Result{Outcome: dbvault.OutcomeRegistered, PosixUsername: "user7k2m9x"}}
+	dbVault := &fakeDBVault{registerResult: dbvault.Result{Outcome: dbvault.OutcomeRegistered, PosixUsername: "user7k2m9x", HostPublicKey: testHostPublicKey}}
 	networkManager := &fakeNetworkManager{meshUserPreAuth: "authkey-abc123"}
 	h, _ := newTestHandler(dbVault, networkManager)
 
@@ -137,6 +141,9 @@ func TestHandler_Register_Success(t *testing.T) {
 	}
 	if resp.PreAuthKey != "authkey-abc123" {
 		t.Fatalf("PreAuthKey = %q, want %q", resp.PreAuthKey, "authkey-abc123")
+	}
+	if resp.HostPublicKey != testHostPublicKey {
+		t.Fatalf("HostPublicKey = %q, want %q", resp.HostPublicKey, testHostPublicKey)
 	}
 
 	if got := h.Metrics.Snapshot(); got.RequestCount != 1 || got.ErrorCount != 0 {

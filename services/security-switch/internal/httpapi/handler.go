@@ -145,7 +145,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.logger().Info("register: network-manager mesh user creation succeeded")
-		apperrors.WriteJSON(w, http.StatusCreated, registerResponse{PosixUsername: result.PosixUsername, PreAuthKey: preAuthKey})
+		apperrors.WriteJSON(w, http.StatusCreated, registerResponse{PosixUsername: result.PosixUsername, PreAuthKey: preAuthKey, HostPublicKey: result.HostPublicKey})
 	case dbvault.OutcomeDuplicate:
 		isError = true
 		h.logger().Warn("register: database-vault rejected as duplicate")
@@ -276,15 +276,18 @@ func (h *Handler) failValidation(w http.ResponseWriter, endpoint string, err err
 }
 
 // registerResponse is the JSON body Register writes on success.
-// PosixUsername mirrors Database-Vault's own registerResponse shape
-// (relayed, not reinvented). PreAuthKey is SS-F-09's addition: the
-// Headscale pre-auth key Network-Manager's CreateMeshUser returned,
-// carrying the exact "pre_auth_key" JSON field name Network-Manager's own
-// handler uses - Entry-Hub relays this response completely unchanged
-// (EH-F-08), and the user-client already expects this exact field name.
+// PosixUsername and HostPublicKey (ST-F-16) both mirror Database-Vault's
+// own registerResponse shape (relayed, not reinvented). PreAuthKey is
+// SS-F-09's addition: the Headscale pre-auth key Network-Manager's
+// CreateMeshUser returned, carrying the exact "pre_auth_key" JSON field
+// name Network-Manager's own handler uses - Entry-Hub relays this response
+// completely unchanged (EH-F-08), and the user-client already expects this
+// exact field name (and, per CL-F-11, must come to expect "host_public_key"
+// too).
 type registerResponse struct {
 	PosixUsername string `json:"posix_username"`
 	PreAuthKey    string `json:"pre_auth_key"`
+	HostPublicKey string `json:"host_public_key"`
 }
 
 // loginResponse is the JSON body Login writes on success.
