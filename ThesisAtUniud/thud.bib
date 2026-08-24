@@ -308,3 +308,193 @@
 }
 
 
+
+@misc{ramusb-code-acl-policy,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: mesh reachability rules published to {Headscale}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/services/network-manager/internal/headscale/policy.go\#L198-L336}}
+}
+
+@misc{ramusb-code-mesh-user,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: mesh identity and pre-auth key creation at registration},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/services/network-manager/internal/headscale/client.go\#L198-L217}}
+}
+
+@misc{ramusb-code-grant,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: assignment of the {Storage-Service} access tag after login},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/services/network-manager/internal/headscale/client.go\#L251-L275}}
+}
+
+@misc{ramusb-code-sweep,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: periodic revocation of expired access grants},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/services/network-manager/internal/grants/sweep.go\#L54-L88}}
+}
+
+@misc{ramusb-code-grants-schema,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: {SQLite} schema of the persisted access-grants table},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/cd4b9fcaf3b1f503d96040287d4849c8cc17f2ac/services/network-manager/internal/grants/store.go\#L87-L94}}
+}
+
+@misc{ramusb-code-meshusers-schema,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: {SQLite} schema of the permanent email-to-pre-auth-key-{ID} mapping},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/cd4b9fcaf3b1f503d96040287d4849c8cc17f2ac/services/network-manager/internal/grants/meshusers.go\#L20-L25}}
+}
+
+@misc{ramusb-code-headscale-config,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: relay map configured for the mesh network},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/third-party/headscale/config/config.yaml\#L69-L71}}
+}
+
+@misc{ramusb-code-headscale-dns,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: {MagicDNS} settings and mesh base domain},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/third-party/headscale/config/config.yaml\#L80-L86}}
+}
+
+@misc{ramusb-code-headscale-proxy,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: {mTLS} enforcement on {Headscale}'s administrative path},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/deployments/docker/headscale/nginx.conf\#L110-L129}}
+}
+
+@misc{rfc6598,
+  author       = {Jason Weil and Victor Kuarsingh and Chris Donley and Christopher Liljenstolpe and
+                  Marla Azinger},
+  title        = {{IANA}-Reserved {IPv4} Prefix for Shared Address Space},
+  year         = {2012},
+  howpublished = {\url{https://doi.org/10.17487/RFC6598}},
+  note         = {{RFC} 6598, {BCP} 153}
+}
+
+@misc{headscale-faq,
+  author       = {{Headscale}},
+  title        = {{Headscale} {FAQ}: can {I} use headscale and tailscale on the same machine?},
+  year         = {2026},
+  howpublished = {\url{https://headscale.net/stable/about/faq/}}
+}
+
+@misc{tailscale-filter,
+  author       = {{Tailscale}},
+  title        = {\texttt{wgengine/filter}: il filtro dei pacchetti del client {Tailscale}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/tailscale/tailscale/blob/main/wgengine/filter/filter.go}},
+  note         = {Il comportamento è descritto solo nel sorgente del client, non nella documentazione di
+                  Tailscale né in quella di Headscale; verificato sulla versione \texttt{v1.101.0-pre},
+                  quella fissata da questo progetto}
+}
+
+@misc{tailscale-magicsock,
+  author       = {{Tailscale}},
+  title        = {\texttt{wgengine/magicsock}: trasporto e attraversamento del {NAT} del client {Tailscale}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/tailscale/tailscale/blob/main/wgengine/magicsock/magicsock.go}},
+  note         = {Il percorso diretto usa socket \texttt{udp4}/\texttt{udp6}; quello di ripiego passa da
+                  \texttt{derp/derphttp}, che parla {HTTPS}. Verificato sulla versione
+                  \texttt{v1.101.0-pre}, quella fissata da questo progetto}
+}
+
+@misc{ramusb-test-plan,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: Software Test Plan},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/docs/Test_Plan.md}}
+}
+
+@misc{ramusb-code-test-traceability,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: convenzione di tracciabilità fra test e requisito},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/services/database-vault/internal/password/hash_test.go}}
+}
+
+@misc{golangci-lint,
+  author       = {{golangci-lint}},
+  title        = {\texttt{golangci-lint}: analizzatore statico aggregato per {Go}},
+  year         = {2026},
+  howpublished = {\url{https://golangci-lint.run/}}
+}
+
+@misc{govulncheck,
+  author       = {{Go Team}},
+  title        = {\texttt{govulncheck}: analisi delle vulnerabilità raggiungibili dal codice},
+  year         = {2026},
+  howpublished = {\url{https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck}}
+}
+
+@misc{gitleaks,
+  author       = {{Gitleaks}},
+  title        = {\texttt{gitleaks}: rilevamento di segreti nei repository},
+  year         = {2026},
+  howpublished = {\url{https://github.com/gitleaks/gitleaks}}
+}
+
+@misc{trivy,
+  author       = {{Aqua Security}},
+  title        = {\texttt{trivy}: scanner di vulnerabilità per immagini e filesystem},
+  year         = {2026},
+  howpublished = {\url{https://github.com/aquasecurity/trivy}}
+}
+
+@misc{mosquitto-github,
+  author       = {{Eclipse Foundation}},
+  title        = {{Eclipse Mosquitto}: an open source {MQTT} broker},
+  year         = {2026},
+  howpublished = {\url{https://github.com/eclipse-mosquitto/mosquitto}}
+}
+
+@misc{oasis-mqtt-311,
+  author       = {Andrew Banks and Rahul Gupta},
+  title        = {{MQTT} Version 3.1.1 Plus Errata 01},
+  year         = {2015},
+  howpublished = {\url{https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/errata01/os/mqtt-v3.1.1-errata01-os-complete.html}}
+}
+
+@misc{ramusb-code-metrics-payload,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: shape of the aggregated metrics payload},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/dd0302834b0222ec9ef1899a01735d16725c5137/pkg/metrics/payload.go\#L50-L57}}
+}
+
+@misc{ramusb-code-metrics-publish,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: {QoS} level and publish timeout for metrics},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/dd0302834b0222ec9ef1899a01735d16725c5137/pkg/metrics/publish.go\#L12-L20}}
+}
+
+@misc{ramusb-code-mosquitto-conf,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: {Mosquitto} listener configuration ({mTLS}, identity-as-username)},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/1082038bcca583d3d9542145b64ea59ae34cce9a/third-party/mosquitto/mosquitto.conf\#L16-L35}}
+}
+
+@misc{ramusb-code-mosquitto-acl,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: {Mosquitto} access-control list for the metrics topics},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/287d74c76d61baf288100c8010cecfca8b2e5e33/third-party/mosquitto/acl.conf\#L30-L56}}
+}
+
+@misc{ramusb-code-metrics-schema,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: hypertable, retention, and compression policy for the metrics table},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/17dffbd13729426591f7052f8e2b782d41332d67/services/metrics-collector/migrations/000001_create_metrics_table.up.sql\#L56-L76}}
+}

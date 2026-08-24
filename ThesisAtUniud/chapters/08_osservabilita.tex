@@ -2,13 +2,108 @@
 \label{chap:osservabilita}
 
 \section{Pubblicazione delle metriche}
-%% TODO: ogni servizio pubblica sul proprio topic MQTT dedicato ogni minuto, via mTLS, mai dati personali — pattern comune a EH-F-10/11, SS-F-07/08, DV-F-16/17, ST-F-12/13, NM-F-17/18, CA-F-03, descritto qui una sola volta invece che ripeterlo in ogni capitolo-dominio.
 
-\section{Ingestione e controllo di coerenza}
-%% TODO: MT-F-01/02, ACL Mosquitto sui topic (Metrics-Collector legge solo metrics/*), verifica che il campo service corrisponda al topic di provenienza.
+Le metriche operative possono tipicamente raggiungere chi le osserva in due modi: o è qualcun altro a 
+interrogare periodicamente ogni servizio (\emph{pull}), oppure è ogni servizio a inviarle di propria 
+iniziativa (\emph{push}). 
+RAM-USB adotta il secondo: ogni servizio pubblica le proprie metriche una volta al minuto,
+sul proprio topic MQTT dedicato verso il broker Mosquitto \cite{mosquitto-github}. 
+La scelta deriva dal fatto che un modello \emph{pull} richiederebbe che Metrics-Collector apra una 
+connessione verso ciascuno dei sei servizi, ampliando le regole di reachability della mesh discusse nel 
+capitolo 7.
+Pubblicando di propria iniziativa, sono invece i servizi ad aprire la connessione verso il broker.
+Da lì, Metrics-Collector legge le metriche e le persiste in un database.
+
+Le metriche operative non contengono dati degli utenti, ma i metadati del sistema vanno protetti con la 
+stessa cura, per questo le comunicazioni avvengono all'interno della rete privata e protette dal mTLS, 
+certificato dalla CA interna.
+
+Ogni pubblicazione usa \emph{QoS 1}, (at least once) nella classificazione MQTT \cite{oasis-mqtt-311}: il
+broker garantisce che il messaggio arrivi almeno una volta, al costo di un possibile duplicato. \emph{QoS 0},
+(at most once), è escluso perché RAM-USB non può permettersi di perdere metriche in silenzio; \emph{QoS 2},
+(exactly once), è escluso perché la garanzia in più che offre (l'assenza di duplicati) qui non serve
+visto che un duplicato si traduce solo in due punti sovrapposti nello stesso istante, invisibili sul
+grafico.
+
+Ogni pubblicazione porta come corpo un payload di sei campi, riportato nel \autoref{lst:metrics-payload}.
+I campi sono rispettivamente: l'identificativo del servizio che sta pubblicando, l'istante della 
+pubblicazione, il numero di richieste gestite nell'ultimo minuto, il numero di errori rilevati nell'ultimo 
+minuto, il tempo di risposta medio dell'ultimo minuto in millisecondi e il numero di connessioni che 
+risultano aperte in quel momento. 
+
+\Needspace{10\baselineskip}
+\begin{lstlisting}[caption={Struttura del payload delle metriche, da \texttt{payload.go}
+\cite{ramusb-code-metrics-payload}.}, label={lst:metrics-payload}]
+type Payload struct {
+	Service               string  `json:"service"`
+	Timestamp             string  `json:"timestamp"`
+	RequestCount          int64   `json:"request_count"`
+	ErrorCount            int64   `json:"error_count"`
+	AverageResponseTimeMs float64 `json:"average_response_time_ms"` 
+	ActiveConnections     int64   `json:"active_connections"`
+}
+\end{lstlisting}
+
+\section{Ricezione e controllo di coerenza}
+
+Il messaggio pubblicato deve arrivare a un solo destinatario, e a nessun altro. Questa proprietà è garantita 
+dall'ACL di Mosquitto che garantisce che ogni servizio possa solo scrivere sul proprio topic, mentre 
+Metrics-Collector può leggere dai topic \texttt{metrics/\#} senza potervi scrivere.
+
+Quell'ACL, però, non impedisce che un servizio compromesso, pur restando entro il proprio permesso di 
+scrittura legittimo, pubblichi un payload il cui campo \texttt{service} dichiarato sia un nome diverso dal 
+proprio.
+Metrics-Collector rivalida quindi ogni messaggio in modo indipendente, derivando il servizio
+atteso dal topic di arrivo e confrontandolo con quello dichiarato nel payload. 
+Su qualunque discrepanza scarta il messaggio e lo registra nei log.
 
 \section{Persistenza delle serie temporali}
-%% TODO: MT-F-03, hypertable TimescaleDB, retention 30 giorni, compressione dopo 7 giorni.
+
+Metrics-Collector persiste le metriche in TimescaleDB \cite{timescaledb-github}, un'estensione di 
+PostgreSQL pensata per un carico fatto quasi solo di scritture ordinate nel tempo. 
+
+La tabella \texttt{metrics} non ha una chiave primaria dato che una riga di metriche non ha un'identità 
+naturale, inoltre, TimescaleDB \cite{timescaledb-github} non ne richiede una. È organizzata in chunk per
+intervalli di tempo sulla colonna \texttt{time}: le due politiche in background del
+\autoref{lst:metrics-policies} agiscono chunk per chunk, in base alla loro età. La prima elimina ogni chunk
+più vecchio di trenta giorni; la seconda, dopo sette giorni, sposta i chunk in un formato compresso a
+colonne, raggruppato per servizio e ordinato per tempo decrescente.
+
+\Needspace{18\baselineskip}
+\begin{lstlisting}[language=sql, caption={Politiche automatiche di ritenzione e compressione della tabella
+\texttt{metrics}, da \texttt{000001\_create\_metrics\_table.up.sql} \cite{ramusb-code-metrics-schema}.},
+label={lst:metrics-policies}]
+SELECT create_hypertable('metrics', by_range('time'));
+
+SELECT add_retention_policy('metrics', drop_after => INTERVAL '30 days');
+
+ALTER TABLE metrics SET (
+	timescaledb.enable_columnstore,
+	timescaledb.segmentby = 'service',
+	timescaledb.orderby = 'time DESC'
+);
+CALL add_columnstore_policy('metrics', after => INTERVAL '7 days');
+\end{lstlisting}
 
 \section{Visualizzazione delle metriche}
-%% TODO: MT-F-04, dashboard Grafana per tempo di risposta, throughput, connessioni attive.
+
+Un amministratore consulta lo stato di salute del sistema, senza che quella consultazione 
+tocchi mai i dati degli utenti visto che per costruzione, le metriche non ne contengono. 
+Grafana \cite{grafana-github} legge da TimescaleDB direttamente.
+
+Per contattare TimescaleDB, oltre alla raggiungibilità sulla rete mesh e al certificato mTLS di Grafana, 
+è richiesta anche una password, sullo stesso principio di difesa in profondità già visto per l'API 
+amministrativa di Headscale nel capitolo 7.
+
+La dashboard mostra tre pannelli, ciascuno una query diretta sulla tabella \texttt{metrics}: tempo medio di
+risposta, throughput e connessioni attive. 
+
+La \autoref{fig:metrics-flow} riassume l'intera pipeline appena descritta, dalla pubblicazione sul topic
+MQTT alla dashboard.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/11-operations-metrics-flow.pdf}
+    \caption{Pipeline di osservabilità, dalla pubblicazione delle metriche alla dashboard di Grafana.}
+    \label{fig:metrics-flow}
+\end{figure}

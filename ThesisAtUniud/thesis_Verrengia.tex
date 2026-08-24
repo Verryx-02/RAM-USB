@@ -80,6 +80,16 @@
   morecomment=[l]{\#},
   sensitive=true,
 }
+%% Lo schema SQL della tabella dei grant (cap. 7) non è nemmeno lui un linguaggio predefinito di
+%% listings: stessa ragione del blocco sshdconfig sopra.
+\lstdefinelanguage{sql}{
+  morekeywords={CREATE,TABLE,IF,NOT,EXISTS,PRIMARY,KEY,NULL,DEFAULT,UNIQUE,REFERENCES,%
+    INTEGER,TEXT,REAL,BLOB,SELECT,INSERT,INTO,VALUES,WHERE,UPDATE,DELETE,FROM,AND,OR,%
+    ALTER,SET,CALL},
+  sensitive=false,
+  morecomment=[l]{--},
+  morestring=[b]',
+}
 %% Palette dei listati: il colore affianca grassetto e corsivo, non li sostituisce, cosi il
 %% codice resta leggibile anche stampato in bianco e nero.
 \definecolor{lstkeyword}{RGB}{0,70,140}
