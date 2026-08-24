@@ -7,6 +7,18 @@
 # back into its own environment - same convention already documented in
 # ../storage-service/run for that longrun.
 #
+# CA-F-04 (KI-126): RAM_USB_PKI_IDENTITY_DIR is deliberately overridden
+# here, not left at pkg/pki's own default (/var/lib/ram-usb/pki-identity) -
+# this container already has cmd/storage-service's OWN pkg/pki identity
+# persisted at that default path (deployments/compose/storage-service.yml),
+# and this is a SECOND, separate identity (its own single-use
+# RAM_USB_STORAGE_SERVICE_AKC_BOOTSTRAP_TOKEN, distinct organization
+# credential) - both processes writing to the same directory would
+# corrupt each other's certificate/key. This subdirectory lives under the
+# same durable, sshd-authkeys-owned volume identity-provisioner already
+# writes its other files into (see below).
+export RAM_USB_PKI_IDENTITY_DIR=/var/lib/storage-service-identity/pki
+#
 # s6-setuidgid sshd-authkeys: this process runs as the same dedicated
 # unprivileged system account authorized-keys-command itself runs as (see
 # this container's Dockerfile's own comment on both) - it only needs

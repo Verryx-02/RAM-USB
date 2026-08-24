@@ -11,32 +11,49 @@
 # reachable and Entry-Hub's default route is the public internet. The fix
 # is the same sidecar pattern already used for step-ca/Mosquitto/Grafana
 # (see .claude/agent-memory/code-agent/sidecar-mesh-pattern.md): a real
-# tailscale/tailscale container sharing entry-hub's own network namespace
-# (network_mode: "service:entry-hub") gives this container a genuine kernel
-# tailscale0 interface, so the OS itself routes every outbound call -
-# including the one bootstrap-token exchange pkg/pki gives no hook for -
-# through the mesh once Certificate-Authority's hostname resolves via
-# MagicDNS (TS_ACCEPT_DNS=true below, matching the effective behavior of
-# Database-Vault/Security-Switch/Storage-Service's own tailscale-up.sh -
-# NOT containerboot's own default, which is false regardless of the plain
-# `tailscale` CLI's true default, confirmed live this session - and NOT
-# Network-Manager's --accept-dns=false, which is an NM-F-16-specific
-# exception). TS_USERSPACE=false is required: EH-F-03's
-# login listener is a Go process (not tailscaled itself) accepting inbound
-# mesh traffic through this shared namespace, and userspace-networking mode
-# has no kernel-visible tailscale0 interface for a separate process to see
-# (see grafana.yml's own top comment for the live-verified reasoning this
-# mirrors). See services/entry-hub/cmd/entry-hub/main.go's package doc
-# comment, "Mesh membership", for how this process itself discovers its own
-# mesh IPv4 address (no shell inside this image to run `tailscale ip -4`)
-# and binds EH-F-03's login listener to it explicitly.
+# tailscale/tailscale container sharing a network namespace with entry-hub
+# gives that container a genuine kernel tailscale0 interface, so the OS
+# itself routes every outbound call - including the one bootstrap-token
+# exchange pkg/pki gives no hook for - through the mesh once
+# Certificate-Authority's hostname resolves via MagicDNS (TS_ACCEPT_DNS=true
+# below, matching the effective behavior of Database-Vault/Security-Switch/
+# Storage-Service's own tailscale-up.sh - NOT containerboot's own default,
+# which is false regardless of the plain `tailscale` CLI's true default,
+# confirmed live this session - and NOT Network-Manager's --accept-dns=false,
+# which is an NM-F-16-specific exception). TS_USERSPACE=false is required:
+# EH-F-03's login listener is a Go process (not tailscaled itself) accepting
+# inbound mesh traffic through this shared namespace, and userspace-
+# networking mode has no kernel-visible tailscale0 interface for a separate
+# process to see (see grafana.yml's own top comment for the live-verified
+# reasoning this mirrors). See services/entry-hub/cmd/entry-hub/main.go's
+# package doc comment, "Mesh membership", for how this process itself
+# discovers its own mesh IPv4 address (no shell inside this image to run
+# `tailscale ip -4`) and binds EH-F-03's login listener to it explicitly.
 #
-# ramusb-net stays attached to entry-hub itself (EH-F-01/EH-F-02's public
-# listener needs it for its own published port, and it remains this dev
-# stack's own KI-05/KI-26 convenience path to Certificate-Authority too) -
-# this sidecar is purely ADDITIVE, giving Entry-Hub a SECOND, real
-# mesh-routed path that production (no ramusb-net-equivalent, Certificate-
-# Authority mesh-only) actually depends on.
+# KI-122: entry-hub-mesh, not entry-hub, OWNS the shared network namespace
+# (`networks: ramusb-net` + the published 8443 port now live on
+# entry-hub-mesh; entry-hub joins it via `network_mode:
+# "service:entry-hub-mesh"`). Originally this was the other way round, and
+# it was wrong: entry-hub exits with "discover mesh ipv4 address: interface
+# tailscale0 has no IPv4 address after 30s" whenever the mesh is not yet up,
+# and every such exit tore down the very namespace its own sidecar depended
+# on, since Compose derives a `network_mode: "service:X"` container's
+# namespace from whichever container X currently is. Reproduced live
+# 2026-08-23: the sidecar logged "LinkChange: all links down; pausing" and
+# "Tailscale cannot connect because the network is down" the instant
+# entry-hub restarted, and neither side recovered without manual
+# intervention. With the sidecar as the namespace owner, its own tailscaled
+# process (and the tailscale0 interface it holds) survives every entry-hub
+# restart untouched, matching Compose's real dependency direction: the
+# short-lived, restart-prone process should be the one joining a
+# longer-lived namespace, not the one hosting it. One consequence of this
+# inversion: Compose rejects `extra_hosts`/`--add-host` on a container using
+# `network_mode: "service:X"` - not an issue here, since entry-hub declares
+# no `extra_hosts` today (RAM_USB_SECURITY_SWITCH_URL/RAM_USB_MQTT_BROKER_URL
+# below are plain hostnames resolved via MagicDNS through the shared
+# tailscale0 interface, not `/etc/hosts` entries), but any future hostname
+# mapping Entry-Hub needs would have to come from the sidecar side (e.g. a
+# mounted `/etc/hosts` file) instead.
 name: ramusb-entry-hub
 services:
   entry-hub:
@@ -44,6 +61,15 @@ services:
       context: ../..
       dockerfile: deployments/docker/entry-hub/Dockerfile
     container_name: entry-hub
+    # KI-122: joins entry-hub-mesh's namespace instead of owning one - see
+    # this file's own top comment. Compose only needs entry-hub-mesh
+    # STARTED (its tailscaled process running), not mesh-joined yet, since
+    # entry-hub's own startup already waits out its own 30s mesh-IPv4
+    # discovery window.
+    depends_on:
+      entry-hub-mesh:
+        condition: service_started
+    network_mode: "service:entry-hub-mesh"
     environment:
       # EH-F-01/EH-F-02: Entry-Hub's public listener.
       RAM_USB_ENTRY_HUB_LISTEN_ADDR: "0.0.0.0:8443"
@@ -63,7 +89,11 @@ services:
       # regardless of what this hostname string also happens to resolve to
       # there.
       RAM_USB_SECURITY_SWITCH_URL: "https://security-switch:8444"
-      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token EntryHub --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      # Needed only on this service's very first start (CA-F-04, KI-126) -
+      # once the mTLS identity is persisted under the pki-identity volume
+      # below, restarts reuse it and never touch this variable again. Mint
+      # with: docker exec certificate-authority step ca token EntryHub --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:-}"
       # EH-F-10/EH-F-11: metrics publish, reuses the same mTLS identity
       # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
       # static MQTT certificate/key - reachable transparently through this
@@ -72,23 +102,31 @@ services:
       RAM_USB_MQTT_BROKER_URL: "tls://mqtt-broker:8883"
     volumes:
       - ../../third-party/entry-hub/config:/certs:ro
+      # CA-F-04: pkg/pki's persisted mTLS identity - see database-vault.yml's
+      # identical volume for the full reasoning (KI-126). This image runs
+      # as the distroless ":nonroot" account (uid/gid 65532), which is why
+      # the Dockerfile pre-creates and chowns this path at build time
+      # (see that Dockerfile's own comment) - a fresh named volume mounted
+      # here inherits that ownership.
+      - ramusb-entry-hub-pki-identity:/var/lib/ram-usb/pki-identity
+    # No "ports:"/"networks:" here anymore (KI-122) - entry-hub-mesh below
+    # now owns the shared namespace and publishes 8443 on its behalf;
+    # Compose does not allow `networks:` together with `network_mode` on
+    # the same container (see certificate-authority.yml's own top comment
+    # for the confirmed `docker compose config` rejection).
+
+  # See this file's own top comment ("entry-hub-mesh"/KI-122) for the full
+  # design. This container now owns the shared network namespace - it
+  # starts independently of entry-hub (no depends_on here), so its own
+  # tailscaled process and tailscale0 interface survive an entry-hub
+  # restart untouched.
+  entry-hub-mesh:
+    image: tailscale/tailscale:latest
+    container_name: entry-hub-mesh
     ports:
       - "8443:8443"
     networks:
       - ramusb-net
-
-  # See this file's own top comment ("entry-hub-mesh") for the full design.
-  # network_mode: "service:entry-hub" requires the entry-hub container to
-  # already exist (Compose creates the shared namespace from it), so this
-  # only needs the entry-hub container STARTED, not healthy - entry-hub
-  # defines no healthcheck, same "namespace exists" gate as grafana-mesh's
-  # own condition against grafana.
-  entry-hub-mesh:
-    image: tailscale/tailscale:latest
-    container_name: entry-hub-mesh
-    depends_on:
-      entry-hub:
-        condition: service_started
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -125,10 +163,6 @@ services:
       # sidecar exists to close.
       TS_ACCEPT_DNS: "true"
     entrypoint: ["/bin/sh", "-c", "update-ca-certificates && exec /usr/local/bin/containerboot"]
-    # Shares entry-hub's network namespace instead of joining ramusb-net
-    # itself - see this file's own top comment for why `network_mode` and
-    # `networks` never appear on the same container.
-    network_mode: "service:entry-hub"
 
 networks:
   ramusb-net:
@@ -139,3 +173,4 @@ volumes:
   # the same mesh node across container restarts" pattern as every other
   # mesh sidecar's own named state volume.
   ramusb-entry-hub-mesh-state:
+  ramusb-entry-hub-pki-identity:

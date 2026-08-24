@@ -514,13 +514,25 @@ func buildSecuritySwitchClient(ctx context.Context) (client *http.Client, baseUR
 		return nil, "", nil, err
 	}
 
-	token, err := pki.LoadBootstrapToken()
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("load ca bootstrap token: %w", err)
+	// A missing bootstrap token is not fatal on its own (CA-F-04's
+	// persistence clause, KI-126): pki.NewClient falls back to an
+	// already-persisted identity when one exists on disk, and the token is
+	// only ever consulted on a genuine first run. Any other LoadBootstrapToken
+	// error (e.g. a value set but unreadable) still fails fast here. tokenErr
+	// is kept so the error below can name the missing variable specifically,
+	// instead of surfacing only the lower-level bootstrap-token-parse failure.
+	token, tokenErr := pki.LoadBootstrapToken()
+	if tokenErr != nil && !errors.Is(tokenErr, pki.ErrBootstrapTokenMissing) {
+		return nil, "", nil, fmt.Errorf("load ca bootstrap token: %w", tokenErr)
 	}
 
 	client, err = pki.NewClient(ctx, token)
 	if err != nil {
+		if errors.Is(tokenErr, pki.ErrBootstrapTokenMissing) {
+			return nil, "", nil, fmt.Errorf(
+				"bootstrap security-switch client identity from certificate-authority: neither a persisted identity under %s nor a token in %s is available (the token is only needed on this service's very first start): %w",
+				pki.IdentityDirEnvVar, pki.BootstrapTokenEnvVar, err)
+		}
 		return nil, "", nil, fmt.Errorf("bootstrap security-switch client identity from certificate-authority: %w", err)
 	}
 
