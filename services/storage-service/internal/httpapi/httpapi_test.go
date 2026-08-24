@@ -34,9 +34,15 @@ func (f *fakeCreator) CreateUser(_ context.Context, username string) error {
 // independently in the test so an assertion failure points at a real JSON
 // contract mismatch, not at reuse of the package's own (private) type.
 type decodedResponse struct {
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
+	Success       bool   `json:"success"`
+	Error         string `json:"error,omitempty"`
+	HostPublicKey string `json:"host_public_key,omitempty"`
 }
+
+// testHostPublicKey is a fixture value, in the real authorized_keys
+// one-line format (ST-F-16), standing in for the on-disk value
+// cmd/storage-service/main.go loads at startup.
+const testHostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleTestHostKeyOnly root@storage-service"
 
 // Requirement: ST-F-06
 // Requirement: ST-F-10
@@ -109,9 +115,10 @@ func TestHandler_CreateUser(t *testing.T) {
 			creator := &fakeCreator{err: tt.creatorErr}
 			var logBuf bytes.Buffer
 			h := &httpapi.Handler{
-				Creator: creator,
-				Metrics: &metrics.RequestCounters{},
-				Logger:  slog.New(slog.NewTextHandler(&logBuf, nil)),
+				Creator:       creator,
+				Metrics:       &metrics.RequestCounters{},
+				Logger:        slog.New(slog.NewTextHandler(&logBuf, nil)),
+				HostPublicKey: testHostPublicKey,
 			}
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(tt.body))
@@ -153,7 +160,53 @@ func TestHandler_CreateUser(t *testing.T) {
 			if tt.creatorErr != nil && strings.Contains(logBuf.String(), "some sensitive system detail") == false {
 				t.Fatalf("expected internal error detail to be present in the log for operator visibility")
 			}
+
+			if tt.wantSuccess && got.HostPublicKey != testHostPublicKey {
+				t.Fatalf("host_public_key = %q, want %q", got.HostPublicKey, testHostPublicKey)
+			}
+			if !tt.wantSuccess && got.HostPublicKey != "" {
+				t.Fatalf("host_public_key = %q on a failure response, want empty (omitempty)", got.HostPublicKey)
+			}
 		})
+	}
+}
+
+// Requirement: ST-F-16
+func TestHandler_CreateUser_MissingHostPublicKeyFailsTheRequest(t *testing.T) {
+	// A configuration gap (HostPublicKey left unset) must never surface as
+	// a silently-omitted field in an otherwise-successful response
+	// (CL-F-11: the Client cannot pin a host key it never receives) - it
+	// must fail the whole request instead (RD-04, fail-secure).
+	creator := &fakeCreator{}
+	var logBuf bytes.Buffer
+	h := &httpapi.Handler{
+		Creator: creator,
+		Metrics: &metrics.RequestCounters{},
+		Logger:  slog.New(slog.NewTextHandler(&logBuf, nil)),
+		// HostPublicKey deliberately left unset.
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
+	rec := httptest.NewRecorder()
+
+	h.CreateUser(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	var got decodedResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("response body did not decode as the expected contract: %v", err)
+	}
+	if got.Success {
+		t.Fatal("Success = true, want false when the host public key is unavailable")
+	}
+	if got.HostPublicKey != "" {
+		t.Fatalf("host_public_key = %q, want empty on failure", got.HostPublicKey)
+	}
+	if !creator.createCalled {
+		t.Fatal("expected the creator to still be called before the host-key check")
 	}
 }
 
@@ -196,15 +249,16 @@ func TestHandler_CreateUser_RejectedRequestNeverForgesALogLine(t *testing.T) {
 }
 
 // Requirement: ST-F-10
+// Requirement: ST-F-16
 func TestHandler_CreateUser_ResponseShapeMatchesDatabaseVaultContract(t *testing.T) {
 	// Cross-check: this is the exact struct shape
 	// database-vault/internal/posix's unexported createUserResponse
-	// parses (json:"success", json:"error,omitempty"), reproduced here
-	// deliberately (not imported - Go's internal-package rule prevents
-	// that) so a contract drift between the two sides shows up as a
-	// failing test on this side too.
+	// parses (json:"success", json:"error,omitempty", json:"host_public_key,omitempty"),
+	// reproduced here deliberately (not imported - Go's internal-package
+	// rule prevents that) so a contract drift between the two sides shows
+	// up as a failing test on this side too.
 	creator := &fakeCreator{}
-	h := &httpapi.Handler{Creator: creator, Metrics: &metrics.RequestCounters{}}
+	h := &httpapi.Handler{Creator: creator, Metrics: &metrics.RequestCounters{}, HostPublicKey: testHostPublicKey}
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
 	rec := httptest.NewRecorder()
@@ -226,13 +280,16 @@ func TestHandler_CreateUser_ResponseShapeMatchesDatabaseVaultContract(t *testing
 	if _, ok := raw["error"]; ok {
 		t.Fatalf("response body has an \"error\" field on success, want it omitted: %q", rec.Body.String())
 	}
+	if got, ok := raw["host_public_key"]; !ok || got != testHostPublicKey {
+		t.Fatalf("response body host_public_key = %v, want %q", got, testHostPublicKey)
+	}
 }
 
 // Requirement: ST-F-12
 // Requirement: ST-F-13
 func TestHandler_CreateUser_MetricsCounted(t *testing.T) {
 	creator := &fakeCreator{}
-	h := &httpapi.Handler{Creator: creator, Metrics: &metrics.RequestCounters{}}
+	h := &httpapi.Handler{Creator: creator, Metrics: &metrics.RequestCounters{}, HostPublicKey: testHostPublicKey}
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, httpapi.CreateUserPath, strings.NewReader(`{"username":"user7g3k9z"}`))
 	rec := httptest.NewRecorder()

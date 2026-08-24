@@ -53,9 +53,12 @@ const (
 const OrganizationDatabaseVault = "DatabaseVault"
 
 // registerResponse mirrors Database-Vault's own registerResponse exactly
-// (services/database-vault/internal/httpapi/handler.go).
+// (services/database-vault/internal/httpapi/handler.go), including
+// HostPublicKey (ST-F-16), Storage-Service's SSH host public key relayed
+// unchanged so Entry-Hub and, in turn, the Client can pin it (CL-F-11).
 type registerResponse struct {
 	PosixUsername string `json:"posix_username"`
+	HostPublicKey string `json:"host_public_key"`
 }
 
 // loginResponse mirrors Database-Vault's own loginResponse exactly
@@ -107,6 +110,9 @@ type Result struct {
 	Outcome Outcome
 	// PosixUsername is set only when Outcome is OutcomeRegistered.
 	PosixUsername string
+	// HostPublicKey is Storage-Service's SSH host public key (ST-F-16),
+	// set only when Outcome is OutcomeRegistered.
+	HostPublicKey string
 	// Err is nil for every recognized Outcome above OutcomeUnknown; it is
 	// non-nil only when Outcome is OutcomeUnknown, and never carries any
 	// per-user content (email, password, SSH key) - see the sentinel
@@ -145,7 +151,7 @@ func Register(ctx context.Context, client *http.Client, baseURL string, req vali
 		if err := json.Unmarshal(respBody, &parsed); err != nil {
 			return Result{Outcome: OutcomeUnknown, Err: fmt.Errorf("%w: malformed success body: %w", ErrDatabaseVaultUnexpectedResponse, err)}
 		}
-		return Result{Outcome: OutcomeRegistered, PosixUsername: parsed.PosixUsername}
+		return Result{Outcome: OutcomeRegistered, PosixUsername: parsed.PosixUsername, HostPublicKey: parsed.HostPublicKey}
 	case http.StatusConflict:
 		return Result{Outcome: OutcomeDuplicate}
 	default:

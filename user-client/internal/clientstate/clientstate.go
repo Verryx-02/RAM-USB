@@ -30,8 +30,14 @@ import (
 // ram-usb config directory sshkey.ConfigDir returns).
 const fileName = "posix-username"
 
-// fileMode is a conventional world-readable mode - a POSIX username
-// carries no secret material.
+// hostPublicKeyFileName is the fixed file name this package stores
+// Storage-Service's pinned SSH host public key (ST-F-16) under - CL-F-11
+// requires this be recorded before the first backup, so restic's known
+// hosts can be pinned rather than left to trust-on-first-use.
+const hostPublicKeyFileName = "host-public-key"
+
+// fileMode is a conventional world-readable mode - neither a POSIX
+// username nor an SSH host public key is secret material.
 const fileMode = 0o644
 
 // SavePosixUsername persists username under dir, overwriting any
@@ -56,6 +62,40 @@ func LoadPosixUsername(dir string) (string, bool, error) {
 			return "", false, nil
 		}
 		return "", false, fmt.Errorf("clientstate: read posix username: %w", err)
+	}
+	return strings.TrimSpace(string(raw)), true, nil
+}
+
+// SaveHostPublicKey persists Storage-Service's SSH host public key (ST-F-16)
+// under dir, overwriting any previously saved value. An empty key is not
+// written at all: LoadHostPublicKey then reports it exactly like "nothing
+// has been saved yet" (ok=false), so the one code path CL-F-11's
+// missing-host-key handling needs covers both a pre-CL-F-11 client and a
+// server response that, contrary to ST-F-16, carried no key - fail-secure
+// (RD-04), never trust-on-first-use.
+func SaveHostPublicKey(dir, key string) error {
+	if key == "" {
+		return nil
+	}
+	path := filepath.Join(dir, hostPublicKeyFileName)
+	if err := os.WriteFile(path, []byte(key), fileMode); err != nil {
+		return fmt.Errorf("clientstate: write host public key: %w", err)
+	}
+	return nil
+}
+
+// LoadHostPublicKey reads back the SSH host public key saved under dir. It
+// reports ("", false, nil) if none has been saved yet - callers (CL-F-11's
+// resticConfig) must surface this as a fail-secure, actionable error ("run
+// register again"), never fall back to trust-on-first-use.
+func LoadHostPublicKey(dir string) (string, bool, error) {
+	path := filepath.Join(dir, hostPublicKeyFileName)
+	raw, err := os.ReadFile(path) //nolint:gosec // G304: path is dir (the caller's own ram-usb config directory) joined with this package's own fixed hostPublicKeyFileName constant, never externally-supplied input.
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("clientstate: read host public key: %w", err)
 	}
 	return strings.TrimSpace(string(raw)), true, nil
 }

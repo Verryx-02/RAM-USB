@@ -85,6 +85,27 @@ func TestRegister_Success(t *testing.T) {
 	}
 }
 
+// Requirement: CL-F-11
+func TestRegister_ParsesHostPublicKey(t *testing.T) {
+	const wantHostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleTestHostKeyOnly root@storage-service"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(registerResponse{PosixUsername: "user000001", HostPublicKey: wantHostKey})
+	}))
+	defer server.Close()
+
+	c := New(server.URL)
+	req := validation.RegisterRequest{Email: "user@example.com", Password: validPassword, SSHPublicKey: validSSHKey}
+	result, err := c.Register(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Register() error = %v, want nil", err)
+	}
+	if result.HostPublicKey != wantHostKey {
+		t.Errorf("result.HostPublicKey = %q, want %q", result.HostPublicKey, wantHostKey)
+	}
+}
+
 // Requirement: CL-F-08
 func TestRegister_MapsErrorStatusCodes(t *testing.T) {
 	tests := []struct {

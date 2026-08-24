@@ -59,3 +59,63 @@ func TestSavePosixUsername_Overwrites(t *testing.T) {
 		t.Errorf("LoadPosixUsername() = %q, want %q (overwritten value)", got, "user000002")
 	}
 }
+
+// Requirement: CL-F-11
+func TestSaveAndLoadHostPublicKey(t *testing.T) {
+	dir := t.TempDir()
+	const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleTestHostKeyOnly root@storage-service"
+
+	if err := SaveHostPublicKey(dir, key); err != nil {
+		t.Fatalf("SaveHostPublicKey() error = %v, want nil", err)
+	}
+
+	got, ok, err := LoadHostPublicKey(dir)
+	if err != nil {
+		t.Fatalf("LoadHostPublicKey() error = %v, want nil", err)
+	}
+	if !ok {
+		t.Fatalf("LoadHostPublicKey() ok = false, want true")
+	}
+	if got != key {
+		t.Errorf("LoadHostPublicKey() = %q, want %q", got, key)
+	}
+}
+
+// Requirement: CL-F-11
+func TestLoadHostPublicKey_NotYetSaved(t *testing.T) {
+	dir := t.TempDir()
+
+	got, ok, err := LoadHostPublicKey(dir)
+	if err != nil {
+		t.Fatalf("LoadHostPublicKey() error = %v, want nil", err)
+	}
+	if ok {
+		t.Errorf("LoadHostPublicKey() ok = true, want false when nothing was saved")
+	}
+	if got != "" {
+		t.Errorf("LoadHostPublicKey() = %q, want empty string", got)
+	}
+}
+
+// Requirement: CL-F-11
+//
+// SaveHostPublicKey deliberately writes nothing for an empty key, so a
+// server response that (contrary to ST-F-16) carried no host key leaves
+// LoadHostPublicKey reporting ok=false - the exact same "no host key
+// pinned yet" state resticConfig's fail-secure check needs, without a
+// second sentinel value to keep in sync.
+func TestSaveHostPublicKey_EmptyKeyIsNotPersisted(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := SaveHostPublicKey(dir, ""); err != nil {
+		t.Fatalf("SaveHostPublicKey() error = %v, want nil", err)
+	}
+
+	_, ok, err := LoadHostPublicKey(dir)
+	if err != nil {
+		t.Fatalf("LoadHostPublicKey() error = %v, want nil", err)
+	}
+	if ok {
+		t.Error("LoadHostPublicKey() ok = true, want false after saving an empty key")
+	}
+}

@@ -30,10 +30,12 @@ CL-F-02 & Su comando dell'utente, deve inviare a Entry-Hub, durante la registraz
 CL-F-03 & Su comando dell'utente, deve ripetere il login (\texttt{POST /api/login}) prima della scadenza del grant ACL di 12 ore, per mantenere la continuità di accesso a Storage-Service. \\
 CL-F-04 & Deve configurare e avviare Tailscale usando la pre-auth key ricevuta nella risposta di registrazione, per unirsi alla rete mesh privata. \\
 CL-F-05 & Deve risolvere Storage-Service tramite MagicDNS sulla rete mesh, senza fare affidamento su indirizzi IP statici. \\
-CL-F-06 & Su comando dell'utente, deve invocare \texttt{restic backup} verso Storage-Service via SFTP, autenticandosi con la chiave privata SSH generata in CL-F-01. \\
-CL-F-07 & Su comando dell'utente, deve invocare \texttt{restic restore} verso Storage-Service via SFTP, usando lo stesso metodo di autenticazione di CL-F-06. \\
+CL-F-06 & Su comando dell'utente, deve invocare \texttt{restic backup} verso Storage-Service via SFTP sulla porta TCP 2222 (ST-F-03), autenticandosi con la chiave privata SSH generata in CL-F-01. \\
+CL-F-07 & Su comando dell'utente, deve invocare \texttt{restic restore} verso Storage-Service via SFTP sulla porta TCP 2222 (ST-F-03), usando lo stesso metodo di autenticazione di CL-F-06. \\
 CL-F-08 & Deve gestire i codici di errore HTTP restituiti da Entry-Hub (400/401/403/500/502/503/504) senza esporre dettagli interni del sistema all'utente finale. \\
 CL-F-09 & Su comando dell'utente, deve validare localmente email, password e — solo in fase di registrazione — la chiave pubblica SSH, usando le stesse regole imposte da Entry-Hub (EH-F-04 per la registrazione, EH-F-05 per il login), prima di inviare \texttt{POST /api/users} o \texttt{POST /api/login}; in caso di fallimento della validazione locale, non deve trasmettere la richiesta. \\
+CL-F-10 & Deve ricavare l'endpoint di login di Entry-Hub da un valore di configurazione distinto da quello di registrazione, e deve usare per il login un nome coperto dal certificato che Entry-Hub presenta. \\
+CL-F-11 & Deve fissare la chiave host SSH di Storage-Service: registra la chiave ricevuta nella risposta alla registrazione (ST-F-16) prima del primo backup, la presenta a \texttt{ssh} come host noto e interrompe la connessione se la chiave presentata differisce. \\
 \end{longtable}
 
 \subsection{Entry-Hub}
@@ -148,7 +150,7 @@ DV-F-20 & In caso di fallimento della validazione deve: rispondere con HTTP 400 
 \endlastfoot
 ST-F-01 & Deve accettare connessioni mTLS solo da client che soddisfino: campo \texttt{organization} uguale a \texttt{DatabaseVault}; certificato valido; accesso alla rete mesh privata. \\
 ST-F-02 & Deve fornire upload/download di file già cifrati lato client, senza mai elaborare contenuto in chiaro. \\
-ST-F-03 & L'accesso deve avvenire esclusivamente via SFTP, autenticato con la chiave pubblica SSH registrata dall'utente. \\
+ST-F-03 & L'accesso deve avvenire esclusivamente via SFTP sulla porta TCP 2222, autenticato con la chiave pubblica SSH registrata dall'utente. \\
 ST-F-04 & Deve vietare esplicitamente qualsiasi forma di connessione SSH diversa da SFTP. \\
 ST-F-05 & Ogni utente deve disporre di uno spazio di storage isolato, non accessibile dagli altri utenti. \\
 ST-F-06 & Su richiesta di Database-Vault via mTLS, deve creare sul sistema un utente POSIX con username \texttt{user\textless{}xxxxxx\textgreater{}} (\texttt{xxxxxx}: 6 caratteri casuali da un alfabeto base-36). \\
@@ -161,6 +163,7 @@ ST-F-12 & Deve pubblicare le metriche ogni minuto, e solo allora, sul proprio to
 ST-F-13 & Le metriche non devono mai contenere dati personali degli utenti, solo statistiche aggregate. \\
 ST-F-14 & Dovrebbe imporre limiti di quota per utente. \\
 ST-F-15 & Dovrebbe garantire: replica automatica dei dati; tolleranza ai guasti per almeno un nodo; consistenza dei dati; possibilità di espansione tramite l'aggiunta di nuovi nodi senza interrompere il servizio. \\
+ST-F-16 & Deve restituire la propria chiave pubblica host SSH nella risposta alla richiesta di creazione dell'utente POSIX proveniente da Database-Vault (ST-F-10), affinché possa essere inoltrata al client e fissata da questo (CL-F-11). \\
 \end{longtable}
 
 \subsection{Network-Manager}
@@ -179,10 +182,10 @@ ST-F-15 & Dovrebbe garantire: replica automatica dei dati; tolleranza ai guasti 
 \endfoot
 \hline
 \endlastfoot
-NM-F-01 & Deve garantire che solo Entry-Hub, Database-Vault, Network-Manager e Certificate-Authority possano contattare Security-Switch. \\
-NM-F-02 & Deve garantire che solo Security-Switch, Storage-Service e Certificate-Authority possano contattare Database-Vault. \\
-NM-F-03 & Deve garantire che solo Security-Switch e Certificate-Authority possano contattare Network-Manager. \\
-NM-F-04 & Deve garantire che tutti i componenti interni della rete, eccetto gli utenti, possano contattare ed essere contattati dalla Certificate-Authority sulla rete mesh. \\
+NM-F-01 & Deve garantire che solo Entry-Hub possa contattare Security-Switch. \\
+NM-F-02 & Deve garantire che solo Security-Switch e Storage-Service possano contattare Database-Vault. \\
+NM-F-03 & Deve garantire che solo Security-Switch possa contattare Network-Manager. \\
+NM-F-04 & Deve garantire che tutti i componenti interni della rete, eccetto gli utenti, possano contattare la Certificate-Authority sulla rete mesh. \\
 NM-F-05 & Deve garantire che solo gli utenti autenticati possano vedere e contattare Storage-Service. \\
 NM-F-06 & Deve garantire che gli utenti registrati ma non autenticati possano vedere e contattare solo Entry-Hub. \\
 NM-F-07 & Deve garantire che gli utenti registrati e autenticati possano vedere e contattare solo Entry-Hub e Storage-Service. \\
@@ -197,6 +200,9 @@ NM-F-15 & Deve configurare MagicDNS con un dominio di base dedicato, in modo che
 NM-F-16 & Il nodo mesh di Network-Manager deve accettare la configurazione DNS distribuita da Headscale (MagicDNS), in modo che le proprie chiamate in uscita verso Certificate-Authority e MQTT-Broker risolvano quegli hostname sulla mesh, anziché ricadere su un percorso di rete privo di equivalente in produzione. \\
 NM-F-17 & Deve pubblicare le metriche ogni minuto, e solo allora, sul proprio topic MQTT dedicato (\texttt{metrics/Network-Manager}), via mTLS, verificando che: il certificato provenga da un MQTT-Broker; il certificato X.509 sia valido. \\
 NM-F-18 & Le metriche non devono mai contenere dati personali degli utenti, solo statistiche aggregate. \\
+NM-F-19 & Deve configurare MagicDNS con un record che risolva il nome pubblico di Entry-Hub sul suo indirizzo mesh, così che un membro della rete che contatta il listener di login (EH-F-03) usi il nome coperto dal certificato di Entry-Hub. \\
+NM-F-20 & Deve garantire che solo i servizi che pubblicano metriche (Entry-Hub, Security-Switch, Database-Vault, Storage-Service, Network-Manager, Certificate-Authority) e Metrics-Collector possano contattare MQTT-Broker. \\
+NM-F-21 & Deve garantire che solo Grafana possa contattare Metrics-Collector. \\
 \end{longtable}
 
 \subsection{Certificate-Authority}

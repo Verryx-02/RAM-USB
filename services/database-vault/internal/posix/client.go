@@ -32,9 +32,13 @@ type createUserRequest struct {
 
 // createUserResponse is the JSON body Storage-Service is expected to send
 // back, reporting the outcome of POSIX-user creation (ST-F-10).
+// HostPublicKey (ST-F-16) is Storage-Service's own SSH host public key, in
+// authorized_keys one-line format, present only on success - relayed
+// unchanged all the way to the Client so it can pin it (CL-F-11).
 type createUserResponse struct {
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
+	Success       bool   `json:"success"`
+	Error         string `json:"error,omitempty"`
+	HostPublicKey string `json:"host_public_key,omitempty"`
 }
 
 // ErrStorageServiceUnreachable means the HTTP/mTLS call to Storage-Service
@@ -51,6 +55,14 @@ var ErrStorageServiceUnreachable = errors.New("posix: storage-service unreachabl
 // status, or a decoded body with success=false).
 var ErrPOSIXUserCreationFailed = errors.New("posix: storage-service reported POSIX user creation failure")
 
+// ErrHostPublicKeyMissing means Storage-Service reported success but its
+// response carried no host public key (ST-F-16). Treated identically to
+// ErrPOSIXUserCreationFailed by callers: the Client can never pin a key it
+// never receives (CL-F-11), so a missing key is a hard failure of the
+// whole request, per RD-04 fail-secure - never silently forwarded onward
+// as an empty field.
+var ErrHostPublicKeyMissing = errors.New("posix: storage-service response missing ssh host public key")
+
 // CreatePOSIXUser asks Storage-Service, over the mTLS connection configured
 // in client, to create the POSIX user named username, and waits for its
 // response (DV-F-09). baseURL is Storage-Service's address (e.g.
@@ -58,38 +70,44 @@ var ErrPOSIXUserCreationFailed = errors.New("posix: storage-service reported POS
 // be configured with mtls.ClientConfig so the call only completes if the
 // peer's certificate carries organization="StorageService".
 //
-// A nil return means Storage-Service reported success. A non-nil return
-// wraps either ErrStorageServiceUnreachable (the call itself did not
-// complete) or ErrPOSIXUserCreationFailed (Storage-Service responded, and
-// the response was a failure) - callers implementing DV-F-10 can tell
-// these apart with errors.Is if needed, but must treat both as "POSIX user
-// creation did not succeed" either way.
-func CreatePOSIXUser(ctx context.Context, client *http.Client, baseURL string, username string) error {
+// On success, the returned string is Storage-Service's SSH host public key
+// (ST-F-16), in authorized_keys one-line format, unchanged from what it
+// sent - the caller (registration.Register) relays it onward, it is never
+// parsed or validated here beyond "non-empty".
+//
+// A nil error return means Storage-Service reported success. A non-nil
+// error wraps ErrStorageServiceUnreachable (the call itself did not
+// complete), ErrPOSIXUserCreationFailed (Storage-Service responded, and
+// the response was a failure), or ErrHostPublicKeyMissing (Storage-Service
+// reported success but omitted the host key) - callers implementing
+// DV-F-10 can tell these apart with errors.Is if needed, but must treat
+// all three as "POSIX user creation did not succeed" either way.
+func CreatePOSIXUser(ctx context.Context, client *http.Client, baseURL string, username string) (string, error) {
 	body, err := json.Marshal(createUserRequest{Username: username})
 	if err != nil {
-		return fmt.Errorf("posix: encode create-user request: %w", err)
+		return "", fmt.Errorf("posix: encode create-user request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+CreateUserPath, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("posix: build create-user request: %w", err)
+		return "", fmt.Errorf("posix: build create-user request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrStorageServiceUnreachable, err)
+		return "", fmt.Errorf("%w: %w", ErrStorageServiceUnreachable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("%w: read response: %w", ErrStorageServiceUnreachable, err)
+		return "", fmt.Errorf("%w: read response: %w", ErrStorageServiceUnreachable, err)
 	}
 
 	var parsed createUserResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return fmt.Errorf("%w: status %d, malformed response body: %w", ErrPOSIXUserCreationFailed, resp.StatusCode, err)
+		return "", fmt.Errorf("%w: status %d, malformed response body: %w", ErrPOSIXUserCreationFailed, resp.StatusCode, err)
 	}
 
 	if resp.StatusCode != http.StatusCreated || !parsed.Success {
@@ -99,10 +117,14 @@ func CreatePOSIXUser(ctx context.Context, client *http.Client, baseURL string, u
 			// internal/httpapi's registration handler. Sanitize strips the
 			// control characters a compromised or buggy Storage-Service
 			// would otherwise use to forge extra log lines.
-			return fmt.Errorf("%w: status %d: %s", ErrPOSIXUserCreationFailed, resp.StatusCode, logging.Sanitize(parsed.Error))
+			return "", fmt.Errorf("%w: status %d: %s", ErrPOSIXUserCreationFailed, resp.StatusCode, logging.Sanitize(parsed.Error))
 		}
-		return fmt.Errorf("%w: status %d", ErrPOSIXUserCreationFailed, resp.StatusCode)
+		return "", fmt.Errorf("%w: status %d", ErrPOSIXUserCreationFailed, resp.StatusCode)
 	}
 
-	return nil
+	if parsed.HostPublicKey == "" {
+		return "", fmt.Errorf("%w: status %d", ErrHostPublicKeyMissing, resp.StatusCode)
+	}
+
+	return parsed.HostPublicKey, nil
 }

@@ -55,8 +55,19 @@ services:
       # Leave unset once that certificate chains to a real, publicly
       # trusted root (a real Let's Encrypt certificate in production).
       RAM_USB_NETWORK_MANAGER_HEADSCALE_API_CA_FILE: "/etc/headscale-api-ca/cert.dev-only.pem"
-      RAM_USB_NETWORK_MANAGER_GRANTS_DB_PATH: "/tmp/grants.db"
-      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token NetworkManager --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      # KI-129: this path used to be /tmp/grants.db, which lives in the
+      # container's writable layer and is wiped on every recreate - see
+      # internal/grants/store.go's own package comment, which already
+      # required a durable-volume path here. /var/lib/network-manager is
+      # now backed by the named volume below, so both the NM-F-11 grants
+      # table and the mesh_users email->pre-auth-key-ID mapping survive a
+      # container restart or image update.
+      RAM_USB_NETWORK_MANAGER_GRANTS_DB_PATH: "/var/lib/network-manager/grants.db"
+      # Needed only on this service's very first start (CA-F-04, KI-126) -
+      # once the mTLS identity is persisted under the pki-identity volume
+      # below, restarts reuse it and never touch this variable again. Mint
+      # with: docker exec certificate-authority step ca token NetworkManager --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:-}"
       # NM-F-17/NM-F-18: metrics publish, reuses the same mTLS identity
       # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
       # static MQTT certificate/key.
@@ -78,6 +89,13 @@ services:
         && docker exec headscale headscale preauthkeys create --user <ID_FROM_PREVIOUS_COMMAND> --expiration 15m --tags tag:network-manager}
     volumes:
       - ramusb-network-manager-tailscale-state:/var/lib/tailscale
+      # KI-129: durable home for RAM_USB_NETWORK_MANAGER_GRANTS_DB_PATH
+      # above, outside the container's writable layer - without this, a
+      # recreate silently drops both NM-F-11's grant expiries (turning
+      # every outstanding grant into unlimited access, since NM-F-10's
+      # sweep can only revoke what it finds recorded) and mesh_users
+      # (permanently breaking login for every already-registered account).
+      - ramusb-network-manager-grants-db:/var/lib/network-manager
       # Dev-only: the reverse proxy's own self-signed certificate, trusted
       # a second time at this fixed path via the real OS trust store
       # (update-ca-certificates, see rootfs/etc/s6-overlay/s6-rc.d/
@@ -91,6 +109,11 @@ services:
       # right above, even though it happens to be the same file in this
       # dev/test stack (see that env var's own doc comment for why).
       - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/etc/headscale-api-ca/cert.dev-only.pem:ro
+      # CA-F-04: pkg/pki's persisted mTLS identity - see database-vault.yml's
+      # identical volume for the full reasoning (KI-126). This container
+      # also runs entirely as root, so the default path needs no ownership
+      # fix.
+      - ramusb-network-manager-pki-identity:/var/lib/ram-usb/pki-identity
     # No "ports:" block - network-manager no longer publishes anything to
     # the Docker host at all: Headscale's own public coordination endpoint
     # now lives entirely in the separate deployments/compose/headscale.yml
@@ -105,3 +128,5 @@ networks:
 
 volumes:
   ramusb-network-manager-tailscale-state:
+  ramusb-network-manager-grants-db:
+  ramusb-network-manager-pki-identity:

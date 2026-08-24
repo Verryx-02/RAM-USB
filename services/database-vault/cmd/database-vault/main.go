@@ -454,14 +454,26 @@ func getEnvOrDefault(name, fallback string) string {
 // sufficient - the two real *http.Server values run actually serves
 // (httpServer, publicKeyHTTPServer) are constructed separately in run.
 func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
-	token, err := pki.LoadBootstrapToken()
-	if err != nil {
-		return nil, fmt.Errorf("load ca bootstrap token: %w", err)
+	// A missing bootstrap token is not fatal on its own (CA-F-04's
+	// persistence clause, KI-126): pki.NewServer falls back to an
+	// already-persisted identity when one exists on disk, and the token is
+	// only ever consulted on a genuine first run. Any other LoadBootstrapToken
+	// error (e.g. a value set but unreadable) still fails fast here. tokenErr
+	// is kept so the error below can name the missing variable specifically,
+	// instead of surfacing only the lower-level bootstrap-token-parse failure.
+	token, tokenErr := pki.LoadBootstrapToken()
+	if tokenErr != nil && !errors.Is(tokenErr, pki.ErrBootstrapTokenMissing) {
+		return nil, fmt.Errorf("load ca bootstrap token: %w", tokenErr)
 	}
 
 	base := &http.Server{ReadHeaderTimeout: 10 * time.Second}
 	bootstrapped, err := pki.NewServer(ctx, token, base)
 	if err != nil {
+		if errors.Is(tokenErr, pki.ErrBootstrapTokenMissing) {
+			return nil, fmt.Errorf(
+				"bootstrap server identity from certificate-authority: neither a persisted identity under %s nor a token in %s is available (the token is only needed on this service's very first start): %w",
+				pki.IdentityDirEnvVar, pki.BootstrapTokenEnvVar, err)
+		}
 		return nil, fmt.Errorf("bootstrap server identity from certificate-authority: %w", err)
 	}
 

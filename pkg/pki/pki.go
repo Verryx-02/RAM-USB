@@ -98,38 +98,65 @@ func LoadBootstrapToken() (string, error) {
 	return token, nil
 }
 
-// NewServer exchanges token for an initial certificate from the
-// Certificate-Authority and returns base configured for mTLS
-// (ca.BootstrapServer): by default the server requires and verifies the
+// NewServer loads this service's persisted mTLS identity if one exists
+// (CA-F-04), or exchanges token for an initial certificate from the
+// Certificate-Authority on a genuine first run, and returns base
+// configured for mTLS: by default the server requires and verifies the
 // client's certificate. The certificate renews automatically for the
 // lifetime of ctx — callers should pass a context that lives at least as
-// long as the server itself, not a short-lived per-request context.
+// long as the server itself, not a short-lived per-request context. See
+// identity.go's package doc comment for the persistence design and its
+// fail-closed handling of an unusable stored identity.
 //
 // Every outbound call this package makes on base's behalf (the initial
 // bootstrap exchange, and the server's own background renewal calls back
 // to the Certificate-Authority) goes out over the process's default
 // network stack. Unlike NewClient/NewClientWithDialer, no dialer-injecting
 // variant exists here: github.com/smallstep/certificates@v0.30.2's
-// ca.Client.GetServerTLSConfig (called internally by ca.BootstrapServer,
-// in ca/tls.go) builds the *http.Transport its background
+// ca.Client.GetServerTLSConfig builds the *http.Transport its background
 // certificate-renewal goroutine dials through entirely inside that call
 // and never returns it to the caller - GetServerTLSConfig hands back only
-// the resulting *tls.Config, and BootstrapServer only ever exposes that
-// *tls.Config (as base.TLSConfig), discarding the transport. Unlike
-// BootstrapClient (whose returned *http.Client.Transport IS that same
-// renewal transport - see RouteThroughDialer), there is no reference to
-// it anywhere reachable from BootstrapServer's return value, so a
-// bootstrapped server's own outbound renewal traffic cannot be routed
-// through a custom dialer using only this library version's public API.
+// the resulting *tls.Config. Unlike Client.Transport (whose returned
+// http.RoundTripper IS that same renewal transport - see
+// RouteThroughDialer), there is no reference to it anywhere reachable from
+// GetServerTLSConfig's return value, so a bootstrapped server's own
+// outbound renewal traffic cannot be routed through a custom dialer using
+// only this library version's public API.
 func NewServer(ctx context.Context, token string, base *http.Server) (*http.Server, error) {
-	return stepca.BootstrapServer(ctx, token, base, forceTLS13)
+	if base.TLSConfig != nil {
+		return nil, errors.New("pki: server TLSConfig is already set")
+	}
+
+	id, err := establishIdentity(token, identityDir())
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := newStepClientFor(id)
+	if err != nil {
+		return nil, err
+	}
+	version, err := client.Version()
+	if err != nil {
+		return nil, err
+	}
+
+	tlsConfig, err := client.GetServerTLSConfig(ctx, id.sign, id.pk, rootsOptionsFor(version, true)...)
+	if err != nil {
+		return nil, err
+	}
+
+	base.TLSConfig = tlsConfig
+	return base, nil
 }
 
-// NewClient exchanges token for an initial certificate from the
-// Certificate-Authority and returns an *http.Client configured to present
-// it on every outbound mTLS connection (ca.BootstrapClient). The
-// certificate renews automatically, same as NewServer, for the lifetime
-// of ctx.
+// NewClient loads this service's persisted mTLS identity if one exists
+// (CA-F-04), or exchanges token for an initial certificate from the
+// Certificate-Authority on a genuine first run, and returns an
+// *http.Client configured to present it on every outbound mTLS connection.
+// The certificate renews automatically, same as NewServer, for the
+// lifetime of ctx. See identity.go's package doc comment for the
+// persistence design.
 //
 // This is NewClientWithDialer with a nil dial — see that function's doc
 // comment for how to route this package's outbound traffic (including

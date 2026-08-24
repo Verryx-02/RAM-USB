@@ -29,7 +29,11 @@ services:
       # joins (see rootfs/etc/s6-overlay/s6-rc.d/storage-service/run),
       # never 0.0.0.0/ramusb-net (NET-F-01).
       RAM_USB_STORAGE_SERVICE_LISTEN_PORT: "8448"
-      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token StorageService --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      # Needed only on this service's very first start (CA-F-04, KI-126) -
+      # once the mTLS identity is persisted under the pki-identity volume
+      # below, restarts reuse it and never touch this variable again. Mint
+      # with: docker exec certificate-authority step ca token StorageService --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:-}"
       # ST-F-12/ST-F-13: metrics publish, reuses the same mTLS identity
       # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
       # static MQTT certificate/key.
@@ -71,6 +75,23 @@ services:
       # once RAM_USB_TAILSCALE_CONTROL_URL carries a publicly-trusted-root
       # certificate.
       - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+      # CA-F-04: cmd/storage-service's own persisted mTLS identity - see
+      # database-vault.yml's identical volume for the full reasoning
+      # (KI-126). This process runs as root (see
+      # .claude/agent-memory/code-agent/s6-overlay.md), so the default path
+      # needs no ownership fix.
+      - ramusb-storage-service-pki-identity:/var/lib/ram-usb/pki-identity
+      # KI-126: cmd/identity-provisioner's OWN, SEPARATE persisted mTLS
+      # identity - a second pkg/pki identity in this same container (its
+      # own single-use RAM_USB_STORAGE_SERVICE_AKC_BOOTSTRAP_TOKEN above),
+      # so it needs its own directory, not the default one storage-service
+      # itself just claimed above. Reuses this already-durable,
+      # sshd-authkeys-owned volume (rootfs/etc/s6-overlay/s6-rc.d/
+      # identity-provisioner/run sets RAM_USB_PKI_IDENTITY_DIR to a "pki"
+      # subdirectory of this same mount) rather than adding a third named
+      # volume - this directory used to live only in the container's
+      # writable layer (not durable across a recreate) before this fix.
+      - ramusb-storage-service-identity:/var/lib/storage-service-identity
     # No "ports:" - sshd no longer binds 0.0.0.0/ramusb-net at all (fixed a
     # NET-F-01 violation: only Entry-Hub's port should ever be published),
     # it binds exclusively to this node's Tailscale interface address. SFTP
@@ -85,3 +106,5 @@ networks:
 
 volumes:
   ramusb-storage-service-mesh-state:
+  ramusb-storage-service-pki-identity:
+  ramusb-storage-service-identity:

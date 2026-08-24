@@ -395,3 +395,61 @@ func TestBuildServerTLSConfig_RealListener_AcceptsNoClientCertOnLogin(t *testing
 		t.Fatalf("status = %d, called = %v, want 200 and called", resp.StatusCode, called)
 	}
 }
+
+// Requirement: CA-F-04
+//
+// A service that already holds a persisted mTLS identity must be able to
+// start with no bootstrap token at all: after one real bootstrap persists
+// an identity under RAM_USB_PKI_IDENTITY_DIR, a second
+// buildSecuritySwitchClient call with RAM_USB_CA_BOOTSTRAP_TOKEN empty must
+// still succeed, reusing the stored identity instead of failing closed
+// (KI-126). buildSecuritySwitchClient never dials Security-Switch itself
+// (see this file's other tests), so only envSecuritySwitchURL needs a
+// placeholder value and only a real Certificate-Authority is required.
+func TestBuildSecuritySwitchClient_RealCA_NoTokenReusesStoredIdentity(t *testing.T) {
+	caURL, container := skipUnlessCAConfigured(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	t.Setenv(pki.IdentityDirEnvVar, t.TempDir())
+	t.Setenv(envSecuritySwitchURL, "https://security-switch.itest.invalid:8444")
+
+	token := generateToken(ctx, t, caURL, container, "EntryHub-itest-persist")
+	t.Setenv(pki.BootstrapTokenEnvVar, token)
+	if _, _, _, err := buildSecuritySwitchClient(ctx); err != nil {
+		t.Fatalf("buildSecuritySwitchClient() first call (bootstrap) error = %v, want nil", err)
+	}
+
+	// Second start: no token, same identity directory - must succeed from
+	// the persisted identity alone.
+	t.Setenv(pki.BootstrapTokenEnvVar, "")
+	if _, _, _, err := buildSecuritySwitchClient(ctx); err != nil {
+		t.Fatalf("buildSecuritySwitchClient() second call (no token) error = %v, want nil", err)
+	}
+}
+
+// Requirement: CA-F-04
+//
+// With neither a persisted identity nor a bootstrap token, startup must
+// fail with a message naming both RAM_USB_PKI_IDENTITY_DIR and
+// RAM_USB_CA_BOOTSTRAP_TOKEN, not just the lower-level bootstrap-token
+// parsing failure (KI-126). No real Certificate-Authority is needed: an
+// empty token fails token parsing before any network call.
+func TestBuildSecuritySwitchClient_NoTokenNoStoredIdentity_FailsWithClearMessage(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	t.Setenv(pki.IdentityDirEnvVar, t.TempDir())
+	t.Setenv(pki.BootstrapTokenEnvVar, "")
+	t.Setenv(envSecuritySwitchURL, "https://security-switch.itest.invalid:8444")
+
+	_, _, _, err := buildSecuritySwitchClient(ctx)
+	if err == nil {
+		t.Fatal("buildSecuritySwitchClient() error = nil, want an error when neither a token nor a stored identity is available")
+	}
+	if !strings.Contains(err.Error(), pki.IdentityDirEnvVar) || !strings.Contains(err.Error(), pki.BootstrapTokenEnvVar) {
+		t.Fatalf("buildSecuritySwitchClient() error = %q, want it to name both %s and %s",
+			err.Error(), pki.IdentityDirEnvVar, pki.BootstrapTokenEnvVar)
+	}
+}

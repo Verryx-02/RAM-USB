@@ -23,6 +23,11 @@ import (
 
 const validPassword = "Str0ng!Pass"
 
+// testHostPublicKey is a fixture value in authorized_keys/known_hosts
+// one-line format, standing in for Storage-Service's real SSH host key
+// (ST-F-16) as relayed through a successful registration response.
+const testHostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleTestHostKeyOnly root@storage-service"
+
 // isolateConfigDir points sshkey.ConfigDir (and therefore every
 // clientstate/reposecret helper keyed off the same directory) at a fresh
 // temporary directory for the duration of a test, so a test run never
@@ -58,9 +63,10 @@ func setupConfigDir(t *testing.T) string {
 }
 
 // setupRegisteredClient additionally seeds dir with a real key pair
-// (CL-F-01) and a persisted POSIX username (as a prior "register" run
-// would have left behind), the local state runBackup/runRestore's own
-// resticConfig requires before backing up or restoring.
+// (CL-F-01), a persisted POSIX username, and a persisted SSH host public
+// key (as a prior "register" run would have left behind, CL-F-11), the
+// local state runBackup/runRestore's own resticConfig requires before
+// backing up or restoring.
 func setupRegisteredClient(t *testing.T) (dir, posixUsername string) {
 	t.Helper()
 	dir = setupConfigDir(t)
@@ -70,6 +76,9 @@ func setupRegisteredClient(t *testing.T) (dir, posixUsername string) {
 	posixUsername = "user000001"
 	if err := clientstate.SavePosixUsername(dir, posixUsername); err != nil {
 		t.Fatalf("clientstate.SavePosixUsername() error = %v, want nil", err)
+	}
+	if err := clientstate.SaveHostPublicKey(dir, testHostPublicKey); err != nil {
+		t.Fatalf("clientstate.SaveHostPublicKey() error = %v, want nil", err)
 	}
 	return dir, posixUsername
 }
@@ -283,7 +292,7 @@ func TestRunLogin_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv(envEntryHubURL, server.URL)
+	t.Setenv(envEntryHubLoginURL, server.URL)
 	err := runLogin([]string{"--email=user@example.com", "--password=" + validPassword})
 	if err != nil {
 		t.Fatalf("runLogin() error = %v, want nil", err)
@@ -298,7 +307,7 @@ func TestRunLogin_MapsEntryHubErrorStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv(envEntryHubURL, server.URL)
+	t.Setenv(envEntryHubLoginURL, server.URL)
 	err := runLogin([]string{"--email=user@example.com", "--password=" + validPassword})
 
 	var appErr *apperrors.AppError
@@ -318,7 +327,7 @@ func TestRunLogin_LocalValidationFailure_DoesNotContactServer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv(envEntryHubURL, server.URL)
+	t.Setenv(envEntryHubLoginURL, server.URL)
 	err := runLogin([]string{"--email=not-an-email", "--password=" + validPassword})
 	if err == nil {
 		t.Fatal("runLogin() error = nil, want a local validation error")
@@ -330,7 +339,7 @@ func TestRunLogin_LocalValidationFailure_DoesNotContactServer(t *testing.T) {
 
 // Requirement: CL-F-03
 func TestRunLogin_MissingEntryHubURL(t *testing.T) {
-	t.Setenv(envEntryHubURL, "")
+	t.Setenv(envEntryHubLoginURL, "")
 	err := runLogin([]string{"--email=user@example.com", "--password=" + validPassword})
 	if err == nil {
 		t.Fatal("runLogin() error = nil, want an error when RAM_USB_ENTRY_HUB_URL is unset")
@@ -339,7 +348,7 @@ func TestRunLogin_MissingEntryHubURL(t *testing.T) {
 
 // Requirement: CL-F-03
 func TestRunLogin_MissingCredentials(t *testing.T) {
-	t.Setenv(envEntryHubURL, "https://example.invalid")
+	t.Setenv(envEntryHubLoginURL, "https://example.invalid")
 	err := runLogin([]string{"--password=" + validPassword})
 	if err == nil {
 		t.Fatal("runLogin() error = nil, want an error for a missing --email")
@@ -446,6 +455,42 @@ func TestRunRegister_Success_PersistsPosixUsername(t *testing.T) {
 
 	if _, ok, err := sshkey.Load(dir); err != nil || !ok {
 		t.Errorf("sshkey.Load() after register = ok=%v, err=%v, want ok=true, err=nil (CL-F-01)", ok, err)
+	}
+}
+
+// Requirement: CL-F-11
+func TestRunRegister_Success_PersistsHostPublicKey(t *testing.T) {
+	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"posix_username":  "user000001",
+			"host_public_key": testHostPublicKey,
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv(envEntryHubURL, server.URL)
+	t.Setenv(envHeadscaleURL, "")
+
+	err := runRegister([]string{"--email=user@example.com", "--password=" + validPassword}, &execrunner.Fake{})
+	if err != nil {
+		t.Fatalf("runRegister() error = %v, want nil", err)
+	}
+
+	dir, err := sshkey.ConfigDir()
+	if err != nil {
+		t.Fatalf("sshkey.ConfigDir() error = %v", err)
+	}
+	got, ok, err := clientstate.LoadHostPublicKey(dir)
+	if err != nil {
+		t.Fatalf("clientstate.LoadHostPublicKey() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("clientstate.LoadHostPublicKey() found no saved host key after a successful register")
+	}
+	if got != testHostPublicKey {
+		t.Errorf("saved host public key = %q, want %q", got, testHostPublicKey)
 	}
 }
 
@@ -704,6 +749,79 @@ func TestRunRestore_Success(t *testing.T) {
 }
 
 // Requirement: CL-F-07
+//
+// KI-125: the usage string documents "restore <snapshot> --target <path>",
+// but flag.Parse alone stops at the first non-flag argument and would
+// silently fail that exact documented form. This proves both orders work.
+func TestRunRestore_Success_AcceptsTargetAfterSnapshot(t *testing.T) {
+	_, posixUsername := setupRegisteredClient(t)
+	t.Setenv(envStorageHost, "storage-service.mesh")
+
+	fake := &execrunner.Fake{Output: []byte("restored 12 files")}
+	target := t.TempDir()
+
+	err := runRestore([]string{"latest", "--target", target}, fake)
+	if err != nil {
+		t.Fatalf("runRestore() error = %v, want nil", err)
+	}
+
+	if len(fake.Calls) != 1 {
+		t.Fatalf("fake.Calls = %v, want exactly 1 invocation", fake.Calls)
+	}
+	call := fake.Calls[0]
+	if got := call[len(call)-4:]; !reflect.DeepEqual(got, []string{"restore", "latest", "--target", target}) {
+		t.Errorf("call's trailing args = %v, want [restore latest --target %s]", got, target)
+	}
+	if !containsSubstring(call, posixUsername) {
+		t.Errorf("restore call = %v, want it to address repository user %q", call, posixUsername)
+	}
+}
+
+// Requirement: CL-F-07
+func TestReorderRestoreArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "documented form: snapshot then --target value",
+			args: []string{"latest", "--target", "/tmp/out"},
+			want: []string{"--target", "/tmp/out", "latest"},
+		},
+		{
+			name: "already-working form: --target value then snapshot",
+			args: []string{"--target", "/tmp/out", "latest"},
+			want: []string{"--target", "/tmp/out", "latest"},
+		},
+		{
+			name: "snapshot then --target=value form",
+			args: []string{"latest", "--target=/tmp/out"},
+			want: []string{"--target=/tmp/out", "latest"},
+		},
+		{
+			name: "no --target at all is left untouched",
+			args: []string{"latest"},
+			want: []string{"latest"},
+		},
+		{
+			name: "dangling --target with nothing after it is left untouched",
+			args: []string{"latest", "--target"},
+			want: []string{"latest", "--target"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := reorderRestoreArgs(tt.args)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("reorderRestoreArgs(%v) = %v, want %v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+// Requirement: CL-F-07
 func TestRunRestore_Failure_IsPropagated(t *testing.T) {
 	setupRegisteredClient(t)
 	t.Setenv(envStorageHost, "storage-service.mesh")
@@ -775,6 +893,32 @@ func TestResticConfig_MissingStorageHost(t *testing.T) {
 	}
 }
 
+// Requirement: CL-F-11
+func TestResticConfig_MissingHostPublicKey(t *testing.T) {
+	isolateConfigDir(t)
+	t.Setenv(envStorageHost, "storage-service.mesh")
+
+	dir, err := sshkey.ConfigDir()
+	if err != nil {
+		t.Fatalf("sshkey.ConfigDir() error = %v", err)
+	}
+	if _, err := sshkey.EnsureKeyPair(dir); err != nil {
+		t.Fatalf("sshkey.EnsureKeyPair() error = %v", err)
+	}
+	if err := clientstate.SavePosixUsername(dir, "user000005"); err != nil {
+		t.Fatalf("clientstate.SavePosixUsername() error = %v", err)
+	}
+	// Deliberately no SaveHostPublicKey call: reproduces state predating
+	// CL-F-11 (or a server response that, contrary to ST-F-16, carried no
+	// key). resticConfig must fail closed here, never fall back to
+	// trust-on-first-use.
+
+	_, err = resticConfig(&execrunner.Fake{})
+	if err == nil {
+		t.Fatal("resticConfig() error = nil, want an error when no ssh host public key was saved yet")
+	}
+}
+
 // Requirement: CL-F-06
 func TestResticConfig_Success(t *testing.T) {
 	isolateConfigDir(t)
@@ -791,6 +935,9 @@ func TestResticConfig_Success(t *testing.T) {
 	if err := clientstate.SavePosixUsername(dir, "user000004"); err != nil {
 		t.Fatalf("clientstate.SavePosixUsername() error = %v", err)
 	}
+	if err := clientstate.SaveHostPublicKey(dir, testHostPublicKey); err != nil {
+		t.Fatalf("clientstate.SaveHostPublicKey() error = %v", err)
+	}
 
 	cfg, err := resticConfig(&execrunner.Fake{})
 	if err != nil {
@@ -804,6 +951,14 @@ func TestResticConfig_Success(t *testing.T) {
 	}
 	if cfg.PrivateKeyPath != keyPair.PrivateKeyPath {
 		t.Errorf("cfg.PrivateKeyPath = %q, want %q", cfg.PrivateKeyPath, keyPair.PrivateKeyPath)
+	}
+	if cfg.KnownHostsPath == "" {
+		t.Error("cfg.KnownHostsPath is empty, want a written known_hosts file path (CL-F-11)")
+	}
+	if got, err := os.ReadFile(cfg.KnownHostsPath); err != nil {
+		t.Errorf("read cfg.KnownHostsPath: %v", err)
+	} else if !strings.Contains(string(got), "[storage-service.mesh]:2222") {
+		t.Errorf("known_hosts content = %q, want it to contain the bracketed [host]:2222 entry", got)
 	}
 	if cfg.RepositoryPassword == "" {
 		t.Error("cfg.RepositoryPassword is empty, want a generated repository password")

@@ -686,3 +686,32 @@ func TestGrafana_DatasourceHealthyAndDashboardLoadable(t *testing.T) {
 		}
 	})
 }
+
+// Requirement: CA-F-04
+//
+// With neither a persisted identity nor a bootstrap token, startup must
+// fail with a message naming both RAM_USB_PKI_IDENTITY_DIR and
+// RAM_USB_CA_BOOTSTRAP_TOKEN, not just the lower-level bootstrap-token
+// parsing failure (KI-126). No real Certificate-Authority or MQTT broker is
+// needed: an empty token fails token parsing before any network call -
+// buildMQTTClient's successful ("no token, reuses stored identity") path
+// is not covered here because it also requires a real MQTT broker
+// connection (pkg/metrics.NewClient blocks on Connect), unlike every other
+// buildServerTLSConfig/buildClient call site in this codebase.
+func TestBuildMQTTClient_NoTokenNoStoredIdentity_FailsWithClearMessage(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	t.Setenv(pki.IdentityDirEnvVar, t.TempDir())
+	t.Setenv(pki.BootstrapTokenEnvVar, "")
+	t.Setenv(envMQTTBrokerURL, "tls://mqtt-broker.itest.invalid:8883")
+
+	_, err := buildMQTTClient(ctx)
+	if err == nil {
+		t.Fatal("buildMQTTClient() error = nil, want an error when neither a token nor a stored identity is available")
+	}
+	if !strings.Contains(err.Error(), pki.IdentityDirEnvVar) || !strings.Contains(err.Error(), pki.BootstrapTokenEnvVar) {
+		t.Fatalf("buildMQTTClient() error = %q, want it to name both %s and %s",
+			err.Error(), pki.IdentityDirEnvVar, pki.BootstrapTokenEnvVar)
+	}
+}

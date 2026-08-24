@@ -147,7 +147,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	switch result.Outcome {
 	case registration.OutcomeRegistered:
 		h.logger().Info("register: succeeded")
-		apperrors.WriteJSON(w, http.StatusCreated, registerResponse{PosixUsername: result.PosixUsername})
+		apperrors.WriteJSON(w, http.StatusCreated, registerResponse{PosixUsername: result.PosixUsername, HostPublicKey: result.HostPublicKey})
 	case registration.OutcomeDuplicate:
 		isError = true
 		h.logger().Warn("register: rejected as duplicate", "error", result.Err)
@@ -232,9 +232,13 @@ func failBadRequest(w http.ResponseWriter, logger *slog.Logger, err error, msg s
 
 // registerResponse is the JSON body Register writes on success. No SRS or
 // design doc specifies this shape; it is this session's judgment call,
-// same as RegisterPath/LoginPath.
+// same as RegisterPath/LoginPath. HostPublicKey (ST-F-16) is
+// Storage-Service's own SSH host public key, relayed unchanged from
+// registration.Result so Security-Switch/Entry-Hub/the Client can each
+// relay it onward in turn (CL-F-11).
 type registerResponse struct {
 	PosixUsername string `json:"posix_username"`
+	HostPublicKey string `json:"host_public_key"`
 }
 
 // loginResponse is the JSON body Login writes on success.

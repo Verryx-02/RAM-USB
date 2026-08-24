@@ -630,3 +630,58 @@ func TestBuildServerTLSConfigReusedForAllThreeRoles_RealCA(t *testing.T) {
 		t.Fatalf("network-manager role: status = %d, want %d", nmResp.StatusCode, http.StatusOK)
 	}
 }
+
+// Requirement: CA-F-04
+//
+// A service that already holds a persisted mTLS identity must be able to
+// start with no bootstrap token at all: after one real bootstrap persists
+// an identity under RAM_USB_PKI_IDENTITY_DIR, a second buildServerTLSConfig
+// call with RAM_USB_CA_BOOTSTRAP_TOKEN empty must still succeed, reusing the
+// stored identity instead of failing closed (KI-126).
+func TestBuildServerTLSConfig_RealCA_NoTokenReusesStoredIdentity(t *testing.T) {
+	caURL, container := skipUnlessCAConfigured(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	t.Setenv(pki.IdentityDirEnvVar, t.TempDir())
+
+	token := generateToken(ctx, t, caURL, container, "SecuritySwitch_itest-persist")
+	t.Setenv(pki.BootstrapTokenEnvVar, token)
+	if _, err := buildServerTLSConfig(ctx); err != nil {
+		t.Fatalf("buildServerTLSConfig() first call (bootstrap) error = %v, want nil", err)
+	}
+
+	// Second start: no token, same identity directory - must succeed from
+	// the persisted identity alone, per this file's own package doc comment
+	// on buildServerTLSConfig.
+	t.Setenv(pki.BootstrapTokenEnvVar, "")
+	if _, err := buildServerTLSConfig(ctx); err != nil {
+		t.Fatalf("buildServerTLSConfig() second call (no token) error = %v, want nil", err)
+	}
+}
+
+// Requirement: CA-F-04
+//
+// With neither a persisted identity nor a bootstrap token, startup must
+// fail with a message naming both RAM_USB_PKI_IDENTITY_DIR and
+// RAM_USB_CA_BOOTSTRAP_TOKEN, not just the lower-level bootstrap-token
+// parsing failure - an operator reading this message must be able to tell
+// which of the two is missing (KI-126). No real Certificate-Authority is
+// needed: an empty token fails token parsing before any network call.
+func TestBuildServerTLSConfig_NoTokenNoStoredIdentity_FailsWithClearMessage(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	t.Setenv(pki.IdentityDirEnvVar, t.TempDir())
+	t.Setenv(pki.BootstrapTokenEnvVar, "")
+
+	_, err := buildServerTLSConfig(ctx)
+	if err == nil {
+		t.Fatal("buildServerTLSConfig() error = nil, want an error when neither a token nor a stored identity is available")
+	}
+	if !strings.Contains(err.Error(), pki.IdentityDirEnvVar) || !strings.Contains(err.Error(), pki.BootstrapTokenEnvVar) {
+		t.Fatalf("buildServerTLSConfig() error = %q, want it to name both %s and %s",
+			err.Error(), pki.IdentityDirEnvVar, pki.BootstrapTokenEnvVar)
+	}
+}

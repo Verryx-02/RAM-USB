@@ -65,7 +65,11 @@ services:
       RAM_USB_STORAGE_SERVICE_URL: "https://storage-service:8448"
       RAM_USB_MASTER_KEY: "${RAM_USB_MASTER_KEY:?generate with: openssl rand -base64 32}"
       RAM_USB_PASSWORD_PEPPER: "${RAM_USB_PASSWORD_PEPPER:?set any dev-only string}"
-      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:?mint with: docker exec certificate-authority step ca token DatabaseVault --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only}"
+      # Needed only on this service's very first start (CA-F-04, KI-126) -
+      # once the mTLS identity is persisted under the pki-identity volume
+      # below, restarts reuse it and never touch this variable again. Mint
+      # with: docker exec certificate-authority step ca token DatabaseVault --ca-url https://certificate-authority:9000 --root /home/step/certs/root_ca.crt --provisioner admin --password-file /run/secrets/ca-password.dev-only
+      RAM_USB_CA_BOOTSTRAP_TOKEN: "${RAM_USB_CA_BOOTSTRAP_TOKEN:-}"
       # DV-F-16/DV-F-17: metrics publish, reuses the same mTLS identity
       # bootstrapped via RAM_USB_CA_BOOTSTRAP_TOKEN above - no separate
       # static MQTT certificate/key.
@@ -98,6 +102,16 @@ services:
       # file. Leave this volume unmounted once RAM_USB_TAILSCALE_CONTROL_URL
       # carries a publicly-trusted-root certificate.
       - ../../third-party/headscale/dev-tls/cert.dev-only.pem:/usr/local/share/ca-certificates/headscale-dev.crt:ro
+      # CA-F-04: pkg/pki's persisted mTLS identity (certificate, key, and
+      # the CA URL/root fingerprint needed to resume renewal) - without
+      # this, the single-use RAM_USB_CA_BOOTSTRAP_TOKEN above (fixed at
+      # `docker compose up` time, unchanged across restarts) is presented
+      # a second time on every container restart and is refused by the
+      # Certificate-Authority (KI-126). This container runs entirely as
+      # root (see .claude/agent-memory/code-agent/s6-overlay.md), so the
+      # default path (pkg/pki's own defaultIdentityDir) needs no ownership
+      # fix here.
+      - ramusb-database-vault-pki-identity:/var/lib/ram-usb/pki-identity
     # No "ports:" for the register/login listener - it binds exclusively to
     # this node's Tailscale interface address, never 0.0.0.0/ramusb-net
     # (NET-F-01). ST-F-11's public-key listener stays on ramusb-net (see
@@ -113,3 +127,4 @@ networks:
 volumes:
   ramusb-database-vault-mesh-state:
   ramusb-postgres-data:
+  ramusb-database-vault-pki-identity:

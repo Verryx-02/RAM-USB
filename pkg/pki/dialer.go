@@ -8,8 +8,6 @@ import (
 	"net"
 	"net/http"
 
-	stepca "github.com/smallstep/certificates/ca"
-
 	"github.com/Verryx-02/RAM-USB/pkg/dial"
 )
 
@@ -32,24 +30,40 @@ var ErrUnexpectedTransportType = errors.New("pki: client.Transport is not a *htt
 // call behave identically to NewClient (and NewClient is defined in terms
 // of this function, with a nil dial).
 //
-// Not covered: the single initial certificate-signing exchange (the
-// root-of-trust pinning fetch, then the Version/Sign requests)
-// stepca.BootstrapClient performs internally before this function ever
-// returns a handle to the caller. The vendored library gives no hook to
-// reach that transport from outside the ca package - it is built and used
-// entirely inside ca.createBootstrap/ca.Bootstrap, called before
-// BootstrapClient constructs the *http.Client this function receives. That
-// one-time exchange therefore still goes out over the process's default
-// network path even when dial is non-nil; only traffic through the
-// returned *http.Client afterward is routed.
+// Not covered: on a genuine first run (no stored identity yet, see
+// identity.go), the single initial certificate-signing exchange (the
+// root-of-trust pinning fetch, then the Version/Sign requests) this
+// function performs to consume the bootstrap token. That one-time exchange
+// always goes out over the process's default network path even when dial
+// is non-nil, the same limitation stepca.BootstrapClient itself has (its
+// internal ca.createBootstrap/ca.Bootstrap gives no hook to reach that
+// transport from outside the ca package); only traffic through the
+// returned *http.Client afterward - including every renewal once an
+// identity, stored or freshly bootstrapped, is in hand - is routed.
 //
 // See RouteThroughDialer's doc comment for the mechanism and the specific
 // undocumented library behavior it relies on.
 func NewClientWithDialer(ctx context.Context, token string, dialFn dial.DialFunc) (*http.Client, error) {
-	client, err := stepca.BootstrapClient(ctx, token, forceTLS13)
+	id, err := establishIdentity(token, identityDir())
 	if err != nil {
 		return nil, err
 	}
+
+	stepClient, err := newStepClientFor(id)
+	if err != nil {
+		return nil, err
+	}
+	version, err := stepClient.Version()
+	if err != nil {
+		return nil, err
+	}
+
+	transport, err := stepClient.Transport(ctx, id.sign, id.pk, rootsOptionsFor(version, false)...)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{Transport: transport}
 	if dialFn == nil {
 		return client, nil
 	}

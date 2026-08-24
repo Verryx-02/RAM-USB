@@ -1,8 +1,10 @@
 // Command storage-service wires every already-implemented Storage-Service
 // package into a running mTLS HTTP server: ST-F-01's connection-acceptance
-// TLS config, the httpapi handler (ST-F-06, ST-F-10), and the real
-// OS-level POSIX-user creation (ST-F-06, ST-F-08) via execrunner.Real and
-// posixuser.RealDirMaker.
+// TLS config, the httpapi handler (ST-F-06, ST-F-10, ST-F-16), and the
+// real OS-level POSIX-user creation (ST-F-06, ST-F-08) via execrunner.Real
+// and posixuser.RealDirMaker. readHostPublicKey loads ST-F-16's SSH host
+// public key from disk once, here, at startup - see its own doc comment
+// for why.
 //
 // Storage-Service has only one mTLS listener here, unlike Database-Vault's
 // two: its other inbound surface is SFTP itself (ST-F-03/ST-F-04),
@@ -63,6 +65,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -116,6 +119,17 @@ const metricsPublishInterval = time.Minute
 // connection (metrics) to complete.
 const connectTimeout = 10 * time.Second
 
+// hostPublicKeyPath is where sshd's own Ed25519 host key public half lives
+// (ST-F-16), generated once by `ssh-keygen -A` in the sshd-hostkeys s6
+// oneshot (deployments/docker/storage-service/rootfs/etc/s6-overlay/
+// s6-rc.d/sshd-hostkeys/up), which this longrun depends on and which
+// therefore always runs first (see this longrun's own
+// dependencies.d/sshd-hostkeys entry). Ed25519 is preferred over the
+// RSA/ECDSA host keys ssh-keygen -A also generates - it is the smallest,
+// most current key type and the one CL-F-11's pinning is meant to check
+// against.
+const hostPublicKeyPath = "/etc/ssh/ssh_host_ed25519_key.pub"
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("storage-service: fatal startup error", "error", logging.Sanitize(err.Error()))
@@ -137,6 +151,19 @@ func run() error {
 		return fmt.Errorf("build server tls config: %w", err)
 	}
 
+	hostPublicKey, err := readHostPublicKey(hostPublicKeyPath)
+	if err != nil {
+		// ST-F-16: read once at startup, not per-request. The host key is
+		// generated once (before this process ever starts, see
+		// hostPublicKeyPath's doc comment) and never changes for the
+		// container's lifetime, so there is nothing to gain from a
+		// per-request read - and failing here means this server never
+		// starts accepting create-user requests it could not answer
+		// correctly (RD-04, fail-secure), rather than deferring the
+		// failure to the first registration.
+		return fmt.Errorf("read ssh host public key: %w", err)
+	}
+
 	creator := &posixuser.Creator{
 		Runner:   execrunner.Real{},
 		DirMaker: posixuser.RealDirMaker{},
@@ -145,8 +172,9 @@ func run() error {
 	counters := &metrics.RequestCounters{}
 
 	handler := &httpapi.Handler{
-		Creator: creator,
-		Metrics: counters,
+		Creator:       creator,
+		Metrics:       counters,
+		HostPublicKey: hostPublicKey,
 	}
 
 	mux := http.NewServeMux()
@@ -199,6 +227,27 @@ func run() error {
 	}
 }
 
+// readHostPublicKey reads and returns sshd's host public key from path, in
+// its on-disk authorized_keys one-line format (ST-F-16), with any trailing
+// newline trimmed. A non-nil error means the file is missing, unreadable,
+// or empty - all treated identically by the caller (run), which aborts
+// startup rather than let this server ever answer a create-user request
+// without a key to return (CL-F-11 depends on the Client always receiving
+// one).
+func readHostPublicKey(path string) (string, error) {
+	raw, err := os.ReadFile(path) //nolint:gosec // path is always the hostPublicKeyPath constant, never external input
+	if err != nil {
+		return "", err
+	}
+
+	key := strings.TrimSpace(string(raw))
+	if key == "" {
+		return "", fmt.Errorf("%s is empty", path)
+	}
+
+	return key, nil
+}
+
 // buildServerTLSConfig bootstraps this server's one TLS identity from the
 // Certificate-Authority (CA-F-04, PKI-F-01), using pki.LoadBootstrapToken's
 // single-use token exactly once. The returned *tls.Config carries no
@@ -216,14 +265,26 @@ func run() error {
 // extracting TLSConfig is sufficient - the real *http.Server run actually
 // serves (httpServer) is constructed separately in run.
 func buildServerTLSConfig(ctx context.Context) (*tls.Config, error) {
-	token, err := pki.LoadBootstrapToken()
-	if err != nil {
-		return nil, fmt.Errorf("load ca bootstrap token: %w", err)
+	// A missing bootstrap token is not fatal on its own (CA-F-04's
+	// persistence clause, KI-126): pki.NewServer falls back to an
+	// already-persisted identity when one exists on disk, and the token is
+	// only ever consulted on a genuine first run. Any other LoadBootstrapToken
+	// error (e.g. a value set but unreadable) still fails fast here. tokenErr
+	// is kept so the error below can name the missing variable specifically,
+	// instead of surfacing only the lower-level bootstrap-token-parse failure.
+	token, tokenErr := pki.LoadBootstrapToken()
+	if tokenErr != nil && !errors.Is(tokenErr, pki.ErrBootstrapTokenMissing) {
+		return nil, fmt.Errorf("load ca bootstrap token: %w", tokenErr)
 	}
 
 	base := &http.Server{ReadHeaderTimeout: 10 * time.Second}
 	bootstrapped, err := pki.NewServer(ctx, token, base)
 	if err != nil {
+		if errors.Is(tokenErr, pki.ErrBootstrapTokenMissing) {
+			return nil, fmt.Errorf(
+				"bootstrap server identity from certificate-authority: neither a persisted identity under %s nor a token in %s is available (the token is only needed on this service's very first start): %w",
+				pki.IdentityDirEnvVar, pki.BootstrapTokenEnvVar, err)
+		}
 		return nil, fmt.Errorf("bootstrap server identity from certificate-authority: %w", err)
 	}
 

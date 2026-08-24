@@ -18,6 +18,9 @@ const (
 	testEmail        = "user@example.com"
 	testPassword     = "Str0ng!Pass"
 	testSSHPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJl6r+SEQfM50WkfR/4iZpu9NDXCBs4RwIKidjhOCbdw user@client"
+	// testHostPublicKey is a fixture value in authorized_keys one-line
+	// format (ST-F-16), standing in for Storage-Service's real host key.
+	testHostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleTestHostKeyOnly root@storage-service"
 )
 
 // newStub starts an httptest.Server presenting a Database-Vault-organization
@@ -69,6 +72,7 @@ func newStub(t *testing.T, handler http.HandlerFunc) (string, *http.Client, func
 }
 
 // Requirement: SS-F-04
+// Requirement: ST-F-16
 func TestRegister_Success(t *testing.T) {
 	baseURL, client, stop := newStub(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != RegisterPath {
@@ -82,7 +86,7 @@ func TestRegister_Success(t *testing.T) {
 			t.Fatalf("forwarded email = %q, want %q", got.Email, testEmail)
 		}
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(registerResponse{PosixUsername: "user7k2m9x"})
+		_ = json.NewEncoder(w).Encode(registerResponse{PosixUsername: "user7k2m9x", HostPublicKey: testHostPublicKey})
 	})
 	defer stop()
 
@@ -97,6 +101,9 @@ func TestRegister_Success(t *testing.T) {
 	}
 	if result.PosixUsername != "user7k2m9x" {
 		t.Fatalf("PosixUsername = %q, want %q", result.PosixUsername, "user7k2m9x")
+	}
+	if result.HostPublicKey != testHostPublicKey {
+		t.Fatalf("HostPublicKey = %q, want %q", result.HostPublicKey, testHostPublicKey)
 	}
 }
 

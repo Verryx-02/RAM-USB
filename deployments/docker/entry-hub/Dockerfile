@@ -8,8 +8,11 @@
 # creation, no chroot, no real kernel TUN device - real mesh membership
 # (KI-27) comes from a SEPARATE tailscale/tailscale sidecar container
 # sharing this container's network namespace (deployments/compose/
-# entry-hub.yml's entry-hub-mesh, network_mode: "service:entry-hub"), the
-# same sidecar pattern already used for step-ca/Mosquitto/Grafana - see
+# entry-hub.yml's entry-hub-mesh, which OWNS the shared namespace -
+# this container joins it via network_mode: "service:entry-hub-mesh",
+# see that compose file's own top comment for why the ownership is
+# this way round and not the reverse, KI-122), the same sidecar pattern
+# already used for step-ca/Mosquitto/Grafana - see
 # services/entry-hub/cmd/entry-hub/main.go's package doc comment, "Mesh
 # membership". That sidecar - not this image - carries NET_ADMIN/NET_RAW/
 # the /dev/net/tun device, so this image stays a minimal, more restrictive
@@ -91,6 +94,13 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/entry-hub \
     ./services/entry-hub/cmd/entry-hub
 
+# CA-F-04 (KI-126): a placeholder directory, owned by the distroless
+# ":nonroot" base image's own fixed uid/gid (65532), for the runtime
+# stage below to COPY --chown into place - see that COPY's own comment
+# for why this has to happen here (this build stage has a shell/chown;
+# the runtime stage does not).
+RUN mkdir -p /tmp/pki-identity && chown 65532:65532 /tmp/pki-identity
+
 # ---- runtime stage -------------------------------------------------------
 # distroless/static-debian12:nonroot: no shell, no package manager, only
 # the minimal runtime files a static Go binary needs (CA certificate
@@ -101,6 +111,24 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/entry-hub \
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=build /out/entry-hub /usr/local/bin/entry-hub
+
+# CA-F-04 (KI-126): pkg/pki's persisted mTLS identity directory (default
+# path, RAM_USB_PKI_IDENTITY_DIR unset - see pkg/pki/identity.go). Without
+# this, the single-use RAM_USB_CA_BOOTSTRAP_TOKEN (fixed at `docker
+# compose up` time, unchanged across restarts) is presented a second time
+# on every container restart and refused by the Certificate-Authority.
+# This runtime stage has no shell/useradd tooling to create or chown a
+# directory directly (it is distroless), so it is created in the BUILD
+# stage instead - which does have a shell - and copied in with explicit
+# ownership: --chown=65532:65532 matches the ":nonroot" base image's own
+# pre-baked "nonroot" uid/gid (confirmed by that image's own /etc/passwd
+# entry), the same account this image's ENTRYPOINT already runs as. A
+# named volume later mounted onto this path inherits this ownership from
+# the image (Docker copies a volume mount point's existing content/
+# ownership into a brand-new named volume on first mount - same mechanism
+# already relied on by deployments/docker/certificate-authority/
+# Dockerfile's own access-log directory).
+COPY --from=build --chown=65532:65532 /tmp/pki-identity /var/lib/ram-usb/pki-identity
 
 # Entry-Hub's own public listen port is operator/env configured
 # (RAM_USB_ENTRY_HUB_LISTEN_ADDR) and has no single SRS-fixed value to

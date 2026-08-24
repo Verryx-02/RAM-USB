@@ -1,6 +1,8 @@
 // Package httpapi implements Storage-Service's HTTP-receiving side of the
 // POSIX-user-creation request Database-Vault sends over mTLS (ST-F-06), and
-// reports the outcome back in the HTTP response (ST-F-10).
+// reports the outcome back in the HTTP response (ST-F-10), including this
+// server's own SSH host public key on success (ST-F-16) so it can be
+// relayed all the way back to the Client and pinned there (CL-F-11).
 //
 // The JSON contract here is not invented by this package: it must match
 // exactly what Database-Vault's DV-F-09 client
@@ -64,6 +66,13 @@ var ErrMalformedRequestBody = errors.New("httpapi: malformed create-user request
 // username field does not match usernamePattern.
 var ErrInvalidUsername = errors.New("httpapi: username does not match the required format")
 
+// ErrHostPublicKeyUnavailable means Handler.HostPublicKey is unset when a
+// create-user request would otherwise succeed (ST-F-16). Per this
+// requirement's own rationale, the Client cannot pin a host key it never
+// receives (CL-F-11), so a missing key is treated as a hard failure of the
+// whole request, never a silently-omitted field.
+var ErrHostPublicKeyUnavailable = errors.New("httpapi: ssh host public key unavailable")
+
 // UserCreator abstracts the actual POSIX-user-creation step (ST-F-07
 // through ST-F-09's OS-level work), so this HTTP boundary (ST-F-06,
 // ST-F-10) can be implemented and tested without it. A production
@@ -86,15 +95,32 @@ type createUserRequest struct {
 // the outcome of POSIX-user creation (ST-F-10). Must stay identical in
 // shape to database-vault/internal/posix's createUserResponse: Error is
 // omitted entirely on success, never populated alongside Success=true.
+// HostPublicKey (ST-F-16) is populated only on success, in the same
+// authorized_keys one-line format sshd itself stores it in (e.g.
+// "ssh-ed25519 AAAA... root@storage-service") - Database-Vault relays it
+// unchanged all the way back to the Client (CL-F-11) without ever parsing
+// its internal structure.
 type createUserResponse struct {
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
+	Success       bool   `json:"success"`
+	Error         string `json:"error,omitempty"`
+	HostPublicKey string `json:"host_public_key,omitempty"`
 }
 
 // Handler wires UserCreator to net/http for ST-F-06/ST-F-10.
 type Handler struct {
 	// Creator performs the actual POSIX-user creation. Must not be nil.
 	Creator UserCreator
+
+	// HostPublicKey is this server's own SSH host public key, in
+	// authorized_keys one-line format, returned on every successful
+	// create-user response (ST-F-16). Loaded once at startup by
+	// cmd/storage-service/main.go (the host key never changes across this
+	// container's lifetime - ssh-keygen -A only generates it once, before
+	// this process ever starts) and never mutated afterward, so it is
+	// safe to read concurrently without a lock. An empty value makes
+	// CreateUser fail every request (ErrHostPublicKeyUnavailable) rather
+	// than silently omit the field.
+	HostPublicKey string
 
 	// Metrics accumulates request/error/response-time counts feeding
 	// ST-F-12/ST-F-13's periodic MQTT publish (pkg/metrics.Run, wired in
@@ -157,8 +183,20 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.HostPublicKey == "" {
+		// ST-F-16: the POSIX user now exists, but this request cannot be
+		// reported as a success without the host key the Client needs to
+		// pin (CL-F-11) - fail-secure (RD-04) rather than silently omit
+		// the field. Database-Vault's DV-F-10 rollback treats this the
+		// same as any other create-user failure.
+		isError = true
+		h.logger().Error("create-user: ssh host public key unavailable", "error", ErrHostPublicKeyUnavailable)
+		writeResult(w, apperrors.NewInternal(ErrHostPublicKeyUnavailable))
+		return
+	}
+
 	h.logger().Info("create-user: POSIX user created")
-	apperrors.WriteJSON(w, http.StatusCreated, createUserResponse{Success: true})
+	apperrors.WriteJSON(w, http.StatusCreated, createUserResponse{Success: true, HostPublicKey: h.HostPublicKey})
 }
 
 // decodeCreateUserRequest reads and decodes r's body as a createUserRequest,

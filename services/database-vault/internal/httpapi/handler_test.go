@@ -46,12 +46,26 @@ func (f *fakeRegistrationStorage) DeleteUser(_ context.Context, _ string) error 
 
 // fakePOSIX is a hand-written fake implementing registration.POSIXProvisioner.
 type fakePOSIX struct {
-	createErr error
+	createErr     error
+	hostPublicKey string
 }
 
-func (f *fakePOSIX) CreatePOSIXUser(_ context.Context, _ string) error {
-	return f.createErr
+func (f *fakePOSIX) CreatePOSIXUser(_ context.Context, _ string) (string, error) {
+	if f.createErr != nil {
+		return "", f.createErr
+	}
+	hostPublicKey := f.hostPublicKey
+	if hostPublicKey == "" {
+		hostPublicKey = testHostPublicKey
+	}
+	return hostPublicKey, nil
 }
+
+// testHostPublicKey is a fixture value in authorized_keys one-line format
+// (ST-F-16), standing in for Storage-Service's real host key. fakePOSIX
+// defaults to it so every existing success-path test keeps working without
+// having to set it explicitly.
+const testHostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleTestHostKeyOnly root@storage-service"
 
 // fakeLoginStorage is a hand-written fake implementing login.Storage, same
 // shape as login_test.go's fakeStorage.
@@ -103,6 +117,7 @@ func loginRequestBody(email, password string) string {
 
 // Requirement: DV-F-09
 // Requirement: DV-F-11
+// Requirement: ST-F-16
 func TestHandler_Register_Success(t *testing.T) {
 	h, _ := newTestHandler(&fakeRegistrationStorage{}, &fakePOSIX{}, &fakeLoginStorage{})
 
@@ -121,6 +136,9 @@ func TestHandler_Register_Success(t *testing.T) {
 	}
 	if resp.PosixUsername == "" {
 		t.Fatal("expected a non-empty posix_username in the response")
+	}
+	if resp.HostPublicKey != testHostPublicKey {
+		t.Fatalf("HostPublicKey = %q, want %q", resp.HostPublicKey, testHostPublicKey)
 	}
 
 	if got := h.Metrics.Snapshot(); got.RequestCount != 1 || got.ErrorCount != 0 {

@@ -49,7 +49,8 @@ func (f *fakeStorage) DeleteUser(ctx context.Context, emailHash string) error {
 // fakePOSIX is a hand-written fake implementing this package's
 // POSIXProvisioner interface.
 type fakePOSIX struct {
-	createErr error
+	createErr     error
+	hostPublicKey string
 
 	// cancelRequest, when set, is called before returning, reproducing the
 	// real failure mode where the client disconnects (or the upstream
@@ -62,14 +63,17 @@ type fakePOSIX struct {
 	createUsername string
 }
 
-func (f *fakePOSIX) CreatePOSIXUser(ctx context.Context, username string) error {
+func (f *fakePOSIX) CreatePOSIXUser(ctx context.Context, username string) (string, error) {
 	f.createCalled = true
 	f.createUsername = username
 	if f.cancelRequest != nil {
 		f.cancelRequest()
-		return fmt.Errorf("fake posix: storage-service call aborted: %w", ctx.Err())
+		return "", fmt.Errorf("fake posix: storage-service call aborted: %w", ctx.Err())
 	}
-	return f.createErr
+	if f.createErr != nil {
+		return "", f.createErr
+	}
+	return f.hostPublicKey, nil
 }
 
 // testInput is a fixed fixture of already-computed, non-secret test values
@@ -87,10 +91,14 @@ func testInput() Input {
 	}
 }
 
+// testHostPublicKey is a fixture value in authorized_keys one-line format
+// (ST-F-16), standing in for Storage-Service's real host key.
+const testHostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleTestHostKeyOnly root@storage-service"
+
 // Requirement: DV-F-11
 func TestRegister_SuccessPath(t *testing.T) {
 	store := &fakeStorage{}
-	posixSvc := &fakePOSIX{}
+	posixSvc := &fakePOSIX{hostPublicKey: testHostPublicKey}
 	input := testInput()
 
 	result := Register(context.Background(), store, posixSvc, input)
@@ -100,6 +108,9 @@ func TestRegister_SuccessPath(t *testing.T) {
 	}
 	if result.Err != nil {
 		t.Fatalf("Err = %v, want nil", result.Err)
+	}
+	if result.HostPublicKey != testHostPublicKey {
+		t.Fatalf("HostPublicKey = %q, want %q", result.HostPublicKey, testHostPublicKey)
 	}
 	if !usernamePattern.MatchString(result.PosixUsername) {
 		t.Fatalf("PosixUsername = %q, want match of %s", result.PosixUsername, usernamePattern)
