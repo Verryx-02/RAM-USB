@@ -1,0 +1,22 @@
+\abstract
+RAM-USB è un servizio di backup multi-utente, geo-distribuito e accessibile da remoto, progettato
+secondo tre principi di sicurezza: zero-knowledge, nessun componente lato server accede mai al
+contenuto dei backup in chiaro; zero-trust, nessun componente si fida implicitamente dei dati ricevuti
+da un altro; defense-in-depth, ogni strato rivalida indipendentemente l'input ricevuto. Il progetto nasce 
+come caso di studio approfondito sulla progettazione di sistemi di backup distribuiti.
+
+Il sistema è un'architettura a microservizi n-tier: ogni registrazione o login attraversa quattro
+processi distinti, ciascuno dei quali rivalida l'input senza fidarsi dello strato precedente, mentre
+l'accesso allo spazio di backup, isolato per utente tramite chroot dinamico, resta possibile solo dopo
+l'autenticazione, su una rete privata mesh che applica confini di raggiungibilità distinti per ogni fase
+del ciclo di vita dell'utente. I requisiti sono raccolti in un unico documento tracciabile fino al
+codice, con un modello a spirale per l'analisi e un modello a V per l'implementazione.
+
+L'analisi critica delle proprietà di sicurezza quantifica il costo di un attacco offline alle password,
+giorni per la lunghezza minima ammessa, ordini di grandezza superiori per password più lunghe, e
+verifica componente per componente che la compromissione isolata di un servizio non si propaghi agli
+altri. Ogni scelta architetturale è messa a bilancio con il prezzo che comporta, dalla latenza
+introdotta dalla separazione in più processi alla complessità della rivalidazione indipendente.
+
+Il sistema è stato distribuito e verificato end-to-end su un'infrastruttura reale. 
+I suoi limiti del sisitema sono dichiarati insieme agli sviluppi che potrebbero mitigarli.
