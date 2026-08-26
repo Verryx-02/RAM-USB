@@ -351,20 +351,6 @@
   howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/cd4b9fcaf3b1f503d96040287d4849c8cc17f2ac/services/network-manager/internal/grants/meshusers.go\#L20-L25}}
 }
 
-@misc{ramusb-code-headscale-config,
-  author       = {Francesco Verrengia},
-  title        = {{RAM-USB}: relay map configured for the mesh network},
-  year         = {2026},
-  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/third-party/headscale/config/config.yaml\#L69-L71}}
-}
-
-@misc{ramusb-code-headscale-dns,
-  author       = {Francesco Verrengia},
-  title        = {{RAM-USB}: {MagicDNS} settings and mesh base domain},
-  year         = {2026},
-  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/third-party/headscale/config/config.yaml\#L80-L86}}
-}
-
 @misc{ramusb-code-headscale-proxy,
   author       = {Francesco Verrengia},
   title        = {{RAM-USB}: {mTLS} enforcement on {Headscale}'s administrative path},
@@ -388,38 +374,11 @@
   howpublished = {\url{https://headscale.net/stable/about/faq/}}
 }
 
-@misc{tailscale-filter,
-  author       = {{Tailscale}},
-  title        = {\texttt{wgengine/filter}: il filtro dei pacchetti del client {Tailscale}},
-  year         = {2026},
-  howpublished = {\url{https://github.com/tailscale/tailscale/blob/main/wgengine/filter/filter.go}},
-  note         = {Il comportamento è descritto solo nel sorgente del client, non nella documentazione di
-                  Tailscale né in quella di Headscale; verificato sulla versione \texttt{v1.101.0-pre},
-                  quella fissata da questo progetto}
-}
-
-@misc{tailscale-magicsock,
-  author       = {{Tailscale}},
-  title        = {\texttt{wgengine/magicsock}: trasporto e attraversamento del {NAT} del client {Tailscale}},
-  year         = {2026},
-  howpublished = {\url{https://github.com/tailscale/tailscale/blob/main/wgengine/magicsock/magicsock.go}},
-  note         = {Il percorso diretto usa socket \texttt{udp4}/\texttt{udp6}; quello di ripiego passa da
-                  \texttt{derp/derphttp}, che parla {HTTPS}. Verificato sulla versione
-                  \texttt{v1.101.0-pre}, quella fissata da questo progetto}
-}
-
 @misc{ramusb-test-plan,
   author       = {Francesco Verrengia},
   title        = {{RAM-USB}: Software Test Plan},
   year         = {2026},
   howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/docs/Test_Plan.md}}
-}
-
-@misc{ramusb-code-test-traceability,
-  author       = {Francesco Verrengia},
-  title        = {{RAM-USB}: convenzione di tracciabilità fra test e requisito},
-  year         = {2026},
-  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/9576f3979d397f4acd57c7012c792c01e3f73095/services/database-vault/internal/password/hash_test.go}}
 }
 
 @misc{golangci-lint,
@@ -450,6 +409,41 @@
   howpublished = {\url{https://github.com/aquasecurity/trivy}}
 }
 
+@misc{gosec,
+  author       = {{securego}},
+  title        = {\texttt{gosec}: analizzatore di sicurezza statico per {Go}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/securego/gosec}}
+}
+
+@misc{bodyclose,
+  author       = {{timakin}},
+  title        = {\texttt{bodyclose}: rilevamento di corpi di risposta {HTTP} non chiusi},
+  year         = {2026},
+  howpublished = {\url{https://github.com/timakin/bodyclose}}
+}
+
+@misc{sqlclosecheck,
+  author       = {{ryanrolds}},
+  title        = {\texttt{sqlclosecheck}: rilevamento di righe e statement {SQL} non chiusi},
+  year         = {2026},
+  howpublished = {\url{https://github.com/ryanrolds/sqlclosecheck}}
+}
+
+@misc{contextcheck,
+  author       = {{kkHAIKE}},
+  title        = {\texttt{contextcheck}: verifica della propagazione del {context.Context}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/kkHAIKE/contextcheck}}
+}
+
+@misc{errorlint,
+  author       = {{polyfloyd}},
+  title        = {\texttt{errorlint}: verifica delle convenzioni di wrapping degli errori in {Go}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/polyfloyd/go-errorlint}}
+}
+
 @misc{mosquitto-github,
   author       = {{Eclipse Foundation}},
   title        = {{Eclipse Mosquitto}: an open source {MQTT} broker},
@@ -471,30 +465,186 @@
   howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/dd0302834b0222ec9ef1899a01735d16725c5137/pkg/metrics/payload.go\#L50-L57}}
 }
 
-@misc{ramusb-code-metrics-publish,
-  author       = {Francesco Verrengia},
-  title        = {{RAM-USB}: {QoS} level and publish timeout for metrics},
-  year         = {2026},
-  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/dd0302834b0222ec9ef1899a01735d16725c5137/pkg/metrics/publish.go\#L12-L20}}
-}
-
-@misc{ramusb-code-mosquitto-conf,
-  author       = {Francesco Verrengia},
-  title        = {{RAM-USB}: {Mosquitto} listener configuration ({mTLS}, identity-as-username)},
-  year         = {2026},
-  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/1082038bcca583d3d9542145b64ea59ae34cce9a/third-party/mosquitto/mosquitto.conf\#L16-L35}}
-}
-
-@misc{ramusb-code-mosquitto-acl,
-  author       = {Francesco Verrengia},
-  title        = {{RAM-USB}: {Mosquitto} access-control list for the metrics topics},
-  year         = {2026},
-  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/287d74c76d61baf288100c8010cecfca8b2e5e33/third-party/mosquitto/acl.conf\#L30-L56}}
-}
-
 @misc{ramusb-code-metrics-schema,
   author       = {Francesco Verrengia},
   title        = {{RAM-USB}: hypertable, retention, and compression policy for the metrics table},
   year         = {2026},
   howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/17dffbd13729426591f7052f8e2b782d41332d67/services/metrics-collector/migrations/000001_create_metrics_table.up.sql\#L56-L76}}
+}
+
+@misc{s6-overlay-github,
+  author       = {{just-containers}},
+  title        = {{s6-overlay}: process supervisor for {Docker} containers, built on \texttt{s6}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/just-containers/s6-overlay}}
+}
+
+@misc{proxmox-ve,
+  author       = {{Proxmox Server Solutions GmbH}},
+  title        = {{Proxmox VE}: open-source server virtualization ({KVM} and {LXC})},
+  year         = {2026},
+  howpublished = {\url{https://www.proxmox.com/en/proxmox-virtual-environment/overview}}
+}
+
+@misc{ramusb-proxmox-storage-service,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: Storage-Service {Proxmox} deployment notes},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/deployments/proxmox/storage-service.md}}
+}
+
+@misc{ramusb-proxmox-database-vault,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: Database-Vault {Proxmox} deployment notes},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/deployments/proxmox/database-vault.md}}
+}
+
+@misc{ramusb-proxmox-security-switch,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: Security-Switch {Proxmox} deployment notes},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/deployments/proxmox/security-switch.md}}
+}
+
+@misc{ramusb-vps-entry-hub,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: Entry-Hub {VPS} deployment notes},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/deployments/vps/entry-hub.md}}
+}
+
+@misc{ramusb-code-dockerfile-entry-hub,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: Entry-Hub's \texttt{distroless} runtime stage},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/deployments/docker/entry-hub/Dockerfile\#L100-L111}}
+}
+
+@misc{ramusb-code-dockerfile-storage-service,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: Storage-Service's \texttt{debian:bookworm-slim} runtime stage},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/deployments/docker/storage-service/Dockerfile\#L60-L79}}
+}
+
+@misc{ramusb-code-storage-s6-tree,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: Storage-Service's \texttt{s6-overlay} service directories},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/tree/b7b2914230f844745df007057315c19f57d1a576/deployments/docker/storage-service/rootfs/etc/s6-overlay/s6-rc.d}}
+}
+
+@misc{ramusb-code-compose-tree,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: one {Docker Compose} file per service},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/tree/b7b2914230f844745df007057315c19f57d1a576/deployments/compose}}
+}
+
+@misc{ramusb-code-errors-constructors,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: {HTTP}-status-bound error constructors},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/pkg/errors/errors.go\#L58-L104}}
+}
+
+@misc{ramusb-code-logging-redacted,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: the \texttt{Redacted} log-value type},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/pkg/logging/logging.go\#L24-L33}}
+}
+
+@misc{hashcat-v7-release-notes,
+  author       = {{hashcat project}},
+  title        = {\texttt{hashcat} v7.0.0 Release Notes},
+  year         = {2025},
+  howpublished = {\url{https://github.com/hashcat/hashcat/blob/master/docs/releases_notes_v7.0.0.md}}
+}
+
+@article{eum2023argon2gpu,
+  author  = {Siwoo Eum and Hyunjun Kim and Minho Song and Hwajeong Seo},
+  title   = {Optimized Implementation of {Argon2} Utilizing the Graphics Processing Unit},
+  journal = {Applied Sciences},
+  volume  = {13},
+  number  = {16},
+  pages   = {9295},
+  year    = {2023},
+  note    = {\url{https://doi.org/10.3390/app13169295}}
+}
+
+@article{goldwasser1989knowledge,
+  author  = {Shafi Goldwasser and Silvio Micali and Charles Rackoff},
+  title   = {The Knowledge Complexity of Interactive Proof Systems},
+  journal = {SIAM Journal on Computing},
+  volume  = {18},
+  number  = {1},
+  pages   = {186--208},
+  year    = {1989},
+  note    = {\url{https://doi.org/10.1137/0218012}}
+}
+
+@misc{tarsnap-crypto,
+  author       = {{Tarsnap}},
+  title        = {Tarsnap: online backups for the truly paranoid, cryptography},
+  year         = {2026},
+  howpublished = {\url{https://www.tarsnap.com/crypto.html}}
+}
+
+@misc{borgbackup-docs,
+  author       = {{Borg Collective}},
+  title        = {{BorgBackup} documentation},
+  year         = {2026},
+  howpublished = {\url{https://borgbackup.readthedocs.io/en/stable/}}
+}
+
+@misc{bitwarden-encryption,
+  author       = {{Bitwarden}},
+  title        = {What encryption is used?},
+  year         = {2026},
+  howpublished = {\url{https://bitwarden.com/help/what-encryption-is-used/}}
+}
+
+@misc{tresorit-security,
+  author       = {{Tresorit}},
+  title        = {Tresorit Security},
+  year         = {2026},
+  howpublished = {\url{https://tresorit.com/security}}
+}
+
+@misc{tailscale-how-it-works,
+  author       = {{Tailscale}},
+  title        = {How Tailscale works},
+  year         = {2026},
+  howpublished = {\url{https://tailscale.com/blog/how-tailscale-works}}
+}
+
+@misc{ramusb-readme,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: project {README}, "Use of {AI} assistance"},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/README.md}}
+}
+
+@misc{ramusb-code-makefile-diagrams,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: \texttt{make diagrams}, rendering {PlantUML} sources on every change},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/Makefile\#L1-L2}}
+}
+
+
+@misc{ramusb-code-login-test-dv-f-15,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB}: test che email inesistente e password errata producano lo stesso esito},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/services/database-vault/internal/login/login_test.go\#L88-L125}}
+}
+
+@misc{ramusb-known-issues,
+  author       = {Francesco Verrengia},
+  title        = {{RAM-USB} Known Issues (scratch cache)},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Verryx-02/RAM-USB/blob/b7b2914230f844745df007057315c19f57d1a576/docs/Known_Issues.md}}
 }
