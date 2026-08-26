@@ -1,16 +1,181 @@
 \chapter{Testing e validazione}
+\label{chap:testing}
 
 \section{Il modello V e i quattro livelli di test}
-%% TODO: unit/component, integration (UC-01..05), system (RNF-*), acceptance (RU-*) — legati alla granularità della specifica, non alla fase di progetto.
+Per il testing di RAM-USB è stato adottato il modello a V, un'estensione del modello a cascata in cui 
+ad ogni fase di specifica viene affiancata una fase di verifica corrispondente, scritta di pari passo con 
+la specifica. 
+
+Questo approccio è stato adottato in quanto si è scelto di trattare RAM-USB come un sistema 
+safety-critical, in cui un difetto in produzione ha conseguenze serie sugli utilizzatori del sistema. 
+Era pertanto fondamentale che un errore nella specifica venisse rilevato molto prima dell'implementazione e 
+che il testing venisse applicato su vari livelli di specifica.  
+
+La \autoref{tab:livelli-test} riporta la corrispondenza tra la categoria del requisito e il livello di
+test che lo verifica, con la tecnica usata a quel livello.
+
+\begin{table}[H]
+\centering
+\caption{Livello di verifica associato a ciascun livello di specifica.}
+\label{tab:livelli-test}
+\begin{tabular}{@{}l p{\dimexpr0.55\linewidth\relax}@{}}
+\hline
+\textbf{Livello di specifica} & \textbf{Livello di verifica} \\
+\hline
+Requisito di componente & Test di unità con il pacchetto \texttt{testing} di Go \\
+Caso d'uso & Test di integrazione, bottom up con driver e stub \\
+Requisito non funzionale & Test di sistema, sull'intero stack \\
+Requisito utente & Lista di accettazione, percorsa a mano sul caso d'uso corrispondente \\
+\hline
+\end{tabular}
+\end{table}
 
 \section{Strategia di integrazione bottom-up}
-%% TODO: perché si parte da Database-Vault (meno dipendenze uscenti, più requisiti concentrati DV-F-01..20), driver/stub scritti a mano.
+
+L'integrazione parte dal componente più interno e procede verso l'esterno, nell'ordine Database-Vault,
+Storage-Service, Security-Switch, Network-Manager, Entry-Hub.
+
+La scelta di partire da Database-Vault è dettata dal fatto che questo è contemporaneamente il componente 
+con meno dipendenze uscenti e quello su cui si concentra il maggior numero di requisiti funzionali. 
+Costruirlo per primo, sostituendo con stub tutto ciò che gli sta sopra, fa sì che il
+componente più sensibile sia anche quello verificato più a lungo.
+
 
 \section{TDD: criteri di ingresso e uscita}
-%% TODO: test scritto e fallito prima dell'implementazione, decision coverage sulle funzioni di validazione, tracciabilità bidirezionale via doc comment. Pipeline di verifica automatizzata prima di ogni commit come meccanismo che applica questi criteri: golangci-lint con set esteso (gosec per la sicurezza, poi bodyclose/sqlclosecheck/contextcheck/errorlint aggiunti per resource leak e gestione errori), go test -race (ha già trovato un bug reale in un fake di test), govulncheck (vulnerabilità code-path-aware), gitleaks (ha già intercettato una chiave dev committata per errore), trivy (secondo scanner indipendente, ridondante di proposito) — lo stesso principio di defense-in-depth dell'architettura, applicato al processo di sviluppo stesso.
+
+Il criterio di ingresso è che per ogni requisito esista un test, e che l'eventuale fallimento di quel test
+avvenga prima dell'implementazione del requisito da testare.
+
+Un esempio: il requisito DV-F-15 richiede che un'email inesistente e una password sbagliata producano lo 
+stesso esito di login, indistinguibile dall'esterno.
+
+Il test che lo verifica, \texttt{TestLogin\_NonexistentEmailAndWrongPassword\_AreIndistinguishable}
+\cite{ramusb-code-login-test-dv-f-15}, chiama \texttt{Login} con le due credenziali diverse e pretende
+che l'esito coincida esattamente.
+
+Un test mai visto fallire, magari scritto dopo il codice e passato al primo colpo, non garantisce di 
+verificare nulla: potrebbe confrontare due valori uguali per costruzione, o non chiamare affatto la 
+funzione che dovrebbe testare.
+Per questo motivo, il test è scritto prima che il body della funzione \texttt{Login} esista davvero, e 
+fallisce fornendo la prova che il confronto nel test sa riconoscere un esito sbagliato e ritorna l'output 
+atteso: \texttt{Outcome differs: nonexistent email = ..., wrong password = ...}.
+
+Solo dopo il fallimento del test ha senso scrivere il body completo di \texttt{Login}, e solo allora il 
+passaggio da test fallito a test passato diventa un'informazione utile. 
+
+Scrivere i test prima ha anche un'altro vantaggio: aiuta a disambiguare e a chiarire i requisiti. Se per un
+requisito non si riesce a scrivere un test, infatti, significa che il requisito è poco chiaro o ambiguo, 
+di conseguenza, viene riformulato meglio.
+
+I criteri di uscita sono tre, e dipendono dal codice da testare. Il primo riguarda solo la libreria di
+validazione, che richiede test più approfonditi perché considerata particolarmente sensibile.
+
+\begin{itemize}
+    \item nella libreria di validazione condivisa da Entry-Hub, Security-Switch e Database-Vault
+    (\autoref{sec:ciclo-richiesta}), ogni ramo di ogni \texttt{if} o \texttt{switch} che decide se
+    accettare o rifiutare un campo deve essere attraversato da almeno un caso di test;
+    \item nessun test già passato sulla catena di componenti già integrata può fallire;
+    \item una modifica non riesegue solo il test scritto apposta per lei, ma l'intera suite di test.
+\end{itemize}
 
 \section{Copertura e lacune del piano di test}
-%% TODO: cosa il Test Plan dichiara non coperto (load/stress testing rimandato, nessun test per RISK-01/02) — solo lacune di test, i rischi di progetto più ampi restano nel cap. 11.
+
+\texttt{go test -cover} misura, per ogni pacchetto della codebase, la percentuale di istruzioni eseguite
+almeno una volta: \texttt{pkg/validation} ad esempio, arriva al 98\%, perché lì vive la logica applicativa,
+mentre i pacchetti \texttt{cmd} che avviano ciascun servizio restano al 10-20\%, perché verificarli è
+compito dei test di integrazione e di sistema.
+
+Il criterio di uscita citato sopra, per \texttt{pkg/validation}, è una misura più severa e si aggiunge a
+questa: non basta eseguire quasi tutte le istruzioni, ogni singolo ramo di ogni \texttt{if} o
+\texttt{switch} deve essere stato preso da almeno un test.
+
+Il piano di test però, non è esente da limitazioni:
+Non esiste alcun test previsto né per la protezione dei backup dalla manomissione, né per la rotazione della 
+master key, attualmente fuori perimetro, ma fondamentali in un progetto di questo tipo. 
+I test di carico e di stress, inoltre, sono previsti, ma non ancora progettati. Non si hanno quindi 
+benchmark affidabili del comportamento del sistema. 
+Ogni test end to end sull'host ha riguardato un solo utente con un solo piccolo file nel backup, quindi né 
+la concorrenza né l'isolamento reciproco fra due utenti sono stati messi alla prova.
+
+\section{Verifica automatica pre-commit}
+
+Oltre ai criteri di ingresso e di uscita, una catena di verifica automatica viene eseguita prima di ogni
+commit \cite{ramusb-contributing}. \texttt{golangci-lint} \cite{golangci-lint} è un esecutore che aggrega
+più linter in un solo passaggio; quello configurato per RAM-USB ne abilita quindici in tutto.
+
+Tra questi, \texttt{gosec} \cite{gosec} cerca pattern di sicurezza noti nel codice, ed è presente fin dalle
+prime fasi di implementazione.
+
+Una seconda estensione ha introdotto quattro linter mirati a risorse mai rilasciate e a errori gestiti male:
+
+\begin{itemize}
+    \item \texttt{bodyclose} \cite{bodyclose} segnala una risposta HTTP il cui corpo non viene mai
+    chiuso, che porta quindi ad una perdita di risorse;
+    \item \texttt{sqlclosecheck} \cite{sqlclosecheck} fa lo stesso per righe e statement SQL rimasti
+    aperti;
+    \item \texttt{contextcheck} \cite{contextcheck} individua una funzione che non propaga il
+    \texttt{context.Context} ricevuto dal chiamante;
+    \item \texttt{errorlint} \cite{errorlint} verifica che gli errori vengano confrontati nel modo
+    corretto.
+\end{itemize}
+
+A questi si affianca il rilevatore di race-condition di Go, invocato con \texttt{go test -race}.
+
+Completano la catena \texttt{govulncheck} \cite{govulncheck}, che confronta le dipendenze con un database
+di vulnerabilità note ma segnala un problema solo se il codice raggiunge davvero la funzione vulnerabile,
+e due scanner pensati per sovrapporsi tra loro:
+\texttt{gitleaks} \cite{gitleaks}, che cerca segreti già committati nella storia del repository, e
+\texttt{trivy} \cite{trivy}, invocato in modalità di scansione del filesystem (\texttt{trivy fs .}), che
+verifica sia le dipendenze sia i segreti in modo indipendente dai due strumenti precedenti.
+
+La ridondanza degli ultimi due è l'applicazione ai test del concetto di difesa in profondità.
 
 \section{Risultati: verifiche completate}
-%% TODO: copertura raggiunta, soglie di latenza misurate p50/p95/p99 (RNF-PERF-01), isolamento verificato spegnendo un container (RNF-REL-01), esposizione di rete verificata dall'esterno della mesh (NET-F-01). La verifica di Storage-Service (chroot/SFTP) è un registro vivo, non un controllo una tantum: procedura in un file dedicato con una data di ultima verifica aggiornata ogni volta che viene rieseguita.
+
+La campagna più significativa è stata eseguita su hardware reale, un host Proxmox con i componenti
+distribuiti secondo la collocazione descritta nel \autoref{chap:deployment}. 
+
+I quattro casi d'uso sono passati: registrazione e login sono riusciti, il backup si è concluso e il
+ripristino ha restituito un file identico all'originale. 
+
+La \autoref{tab:verifiche} riporta le proprietà controllate sul sistema in esecuzione.
+
+\begin{table}[H]
+\centering
+\caption{Proprietà verificate sul sistema in esecuzione.}
+\label{tab:verifiche}
+\begin{tabular}{@{}p{\dimexpr0.34\linewidth\relax} p{\dimexpr0.56\linewidth\relax}@{}}
+\hline
+\textbf{Proprietà} & \textbf{Riscontro} \\
+\hline
+Parametri di hashing & La stringa salvata nel record riporta \texttt{argon2id}, versione 19,
+memoria 47104 KiB, due passaggi, parallelismo uno \\
+Isolamento su filesystem & Radice del confinamento di proprietà di root con permessi 711,
+sottodirectory dell'utente 700 \\
+Identità sulla mesh & Ogni nodo risulta di proprietà dell'utente sintetico
+\texttt{tagged-devices}, mai dell'account creato per la persona \\
+Durata del permesso & Scadenza registrata a dodici ore esatte dall'istante del login \\
+Confini di raggiungibilità & Nessun nodo elenca fra i propri peer un componente che la
+politica gli vieta di contattare \\
+Zero-knowledge & Nessuna occorrenza del testo in chiaro fra i blocchi salvati, e la
+configurazione del repository era essa stessa cifrata \\
+Sopravvivenza al riavvio & Un servizio fermato e riavviato torna in servizio riusando
+l'identità su disco, senza ripresentare il token monouso già consumato \\
+\hline
+\end{tabular}
+\end{table}
+
+Durante l'esecuzione del piano di test completo, sono emersi diversi difetti non 
+intercettati dai test di unità che li precedevano \cite{ramusb-known-issues}.
+
+Due riguardavano il client e impedivano del tutto il backup. Il primo era la porta SSH: il client si
+collegava su quella predefinita, mentre il server ascolta su un'altra. Il secondo era l'assenza di
+qualunque politica sulla chiave host: \texttt{ssh}, invocato da Restic senza terminale, non aveva un
+\texttt{known\_hosts} da controllare né modo di chiedere conferma, e rifiutava la connessione anziché
+chiederla, quindi il primo backup su ogni macchina nuova falliva sempre. Un terzo riguardava la configurazione,
+perché il client dispone di un solo indirizzo per un servizio che ne espone due su listener diversi. Un
+quarto era una stringa d'uso che documentava una sintassi che il parsing degli argomenti non può accettare.
+
+Un quinto, più grave: l'identità mTLS non veniva conservata fra un avvio e il successivo, quindi
+nessun servizio sopravviveva al riavvio del proprio container, perché ritentava il bootstrap con un token
+monouso ormai speso.
