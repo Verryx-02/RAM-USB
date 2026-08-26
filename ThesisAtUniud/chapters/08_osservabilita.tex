@@ -9,8 +9,8 @@ iniziativa (\emph{push}).
 RAM-USB adotta il secondo: ogni servizio pubblica le proprie metriche una volta al minuto,
 sul proprio topic MQTT dedicato verso il broker Mosquitto \cite{mosquitto-github}. 
 La scelta deriva dal fatto che un modello \emph{pull} richiederebbe che Metrics-Collector apra una 
-connessione verso ciascuno dei sei servizi, ampliando le regole di reachability della mesh discusse nel 
-capitolo 7.
+connessione verso ciascuno dei sei servizi, ampliando le regole di reachability della mesh discusse nel
+\autoref{chap:rete}.
 Pubblicando di propria iniziativa, sono invece i servizi ad aprire la connessione verso il broker.
 Da lì, Metrics-Collector legge le metriche e le persiste in un database.
 
@@ -18,18 +18,8 @@ Le metriche operative non contengono dati degli utenti, ma i metadati del sistem
 stessa cura, per questo le comunicazioni avvengono all'interno della rete privata e protette dal mTLS, 
 certificato dalla CA interna.
 
-Ogni pubblicazione usa \emph{QoS 1}, (at least once) nella classificazione MQTT \cite{oasis-mqtt-311}: il
-broker garantisce che il messaggio arrivi almeno una volta, al costo di un possibile duplicato. \emph{QoS 0},
-(at most once), è escluso perché RAM-USB non può permettersi di perdere metriche in silenzio; \emph{QoS 2},
-(exactly once), è escluso perché la garanzia in più che offre (l'assenza di duplicati) qui non serve
-visto che un duplicato si traduce solo in due punti sovrapposti nello stesso istante, invisibili sul
-grafico.
-
 Ogni pubblicazione porta come corpo un payload di sei campi, riportato nel \autoref{lst:metrics-payload}.
-I campi sono rispettivamente: l'identificativo del servizio che sta pubblicando, l'istante della 
-pubblicazione, il numero di richieste gestite nell'ultimo minuto, il numero di errori rilevati nell'ultimo 
-minuto, il tempo di risposta medio dell'ultimo minuto in millisecondi e il numero di connessioni che 
-risultano aperte in quel momento. 
+Le metriche nel payload fanno riferimento al minuto in cui sono state inviate.
 
 \Needspace{10\baselineskip}
 \begin{lstlisting}[caption={Struttura del payload delle metriche, da \texttt{payload.go}
@@ -43,6 +33,13 @@ type Payload struct {
 	ActiveConnections     int64   `json:"active_connections"`
 }
 \end{lstlisting}
+
+Le pubblicazioni usano tutte \emph{QoS 1}, (at least once) nella classificazione MQTT \cite{oasis-mqtt-311}: il
+broker garantisce che il messaggio arrivi almeno una volta, al costo di un possibile duplicato. \emph{QoS 0},
+(at most once), è escluso perché RAM-USB non può permettersi di perdere metriche in silenzio; \emph{QoS 2},
+(exactly once), è escluso perché la garanzia in più che offre (l'assenza di duplicati) qui non serve
+visto che un duplicato si traduce solo in due punti sovrapposti nello stesso istante, invisibili sul
+grafico.
 
 \section{Ricezione e controllo di coerenza}
 
@@ -93,7 +90,7 @@ Grafana \cite{grafana-github} legge da TimescaleDB direttamente.
 
 Per contattare TimescaleDB, oltre alla raggiungibilità sulla rete mesh e al certificato mTLS di Grafana, 
 è richiesta anche una password, sullo stesso principio di difesa in profondità già visto per l'API 
-amministrativa di Headscale nel capitolo 7.
+amministrativa di Headscale nel \autoref{chap:rete}.
 
 La dashboard mostra tre pannelli, ciascuno una query diretta sulla tabella \texttt{metrics}: tempo medio di
 risposta, throughput e connessioni attive. 
