@@ -69,7 +69,8 @@ Database-Vault tratta i dati che riceve in tre modi diversi:
 
 \begin{itemize}
     \item la chiave SSH è pubblica, quindi non necessita di segretezza;
-    \item l'email è insieme una chiave di ricerca e un dato personale da proteggere;
+    \item l'email è insieme una chiave di ricerca e un dato personale da proteggere, ma deve anche essere 
+		recuperabile in caso di necessità
     \item la password non deve essere recuperabile, nemmeno da chi amministra il database.
 \end{itemize}
 
@@ -79,8 +80,9 @@ produca la stessa chiave della registrazione.
 Questo hash è deterministico per necessità, perché deve permettere il lookup. Il limite fondamentale di 
 questo approccio, insieme alla sua mitigazione, è discusso nel \autoref{chap:sicurezza}.
 
-Accanto al digest che fa da chiave di ricerca, il record conserva una copia cifrata, così che 
-l'indirizzo resti recuperabile. Da una master key e da un salt casuale di 16 byte, generato per quel record, 
+Accanto al digest che fa da chiave di ricerca, il record conserva una copia cifrata,
+così che l'indirizzo resti recuperabile. 
+Da una master key e da un salt casuale di 16 byte, generato per quel record,
 viene derivata con HKDF-SHA256 \cite{rfc5869} una chiave dedicata, con cui l'email è cifrata in
 AES-256-GCM \cite{nist-sp-800-38d} usando un nonce casuale di 12 byte. Salt, nonce e testo cifrato
 vengono salvati nel record, mentre la chiave derivata viene azzerata appena il cifrario l'ha consumata.
