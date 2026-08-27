@@ -2,17 +2,133 @@
 \label{chap:deployment}
 
 \section{Containerizzazione e supervisione s6-overlay}
-%% TODO: pattern comune a più servizi, processi multipli supervisionati nello stesso container (es. tailscaled reale + binario Go).
+\label{sec:s6-overlay}
+
+Alcuni servizi di RAM-USB devono far girare più processi indipendenti nello stesso container e 
+necessitano quindi di un supervisore che li avvii nell'ordine giusto e li riavvii quando cadono.
+Quello usato da RAM-USB è \texttt{s6-overlay} \cite{s6-overlay-github}. 
+
+Ogni processo supervisionato è una directory sotto \texttt{s6-rc.d/}, dichiarata di tipo \texttt{longrun}; 
+le sue dipendenze sono file dentro una sottodirectory \texttt{dependencies.d/}, uno per ogni processo che 
+deve essere avviato: se, ad esempio, il processo A deve aspettare che il processo B sia pronto, 
+\texttt{A/dependencies.d/} contiene un file vuoto chiamato \texttt{B}. 
+L'ordine di avvio nasce quindi da un grafo dichiarato tra directory.
+
+Storage-Service è il caso più complesso: lo stesso container Docker è condiviso da 4 processi
+\cite{ramusb-code-storage-s6-tree}: \texttt{tailscaled}, il client mesh reale; \texttt{sshd}, il server
+SFTP (\autoref{chap:storage}); \texttt{identity-provisioner}, che mantiene aggiornato il certificato X.509 
+per il mTLS; e il binario Go dello stesso Storage-Service, che espone l'API HTTP interna. 
+
+Ogni processo \texttt{longrun} ha anche un file \texttt{run} e un file \texttt{finish}. Il primo è lo 
+script che lancia il binario vero e proprio \cite{ramusb-code-storage-s6-tree}. 
+Se quel processo termina, il supervisore lo rilancia da capo;
+il secondo è opzionale e serve a ritardare il rilancio di qualche secondo, in modo da evitare che un errore
+di avvio irreversibile diventi un ciclo di crash continuo.
+
+Non tutti i servizi, però, hanno bisogno di questa complessità. Entry-Hub non supervisiona alcun processo
+secondario: la sua appartenenza alla mesh vive in un sidecar Docker separato, \texttt{entry-hub-mesh}, 
+che condivide il suo network namespace. Il paragrafo seguente spiega in che modo questa differenza 
+è legata alla scelta dell'immagine di base di ciascun servizio.
 
 \section{Perché non tutti i container sono distroless}
-%% TODO: la policy dichiarata dalla SRS (distroless come default) vs la realtà per servizio — solo Entry-Hub usa gcr.io/distroless/static-debian12, gli altri cinque usano debian:bookworm-slim, ciascuno con una motivazione specifica documentata nel proprio Dockerfile (bisogno di un tailscaled reale, non in-process; sshd per Storage-Service).
+\label{sec:distroless}
+
+Un'immagine distroless \cite{distroless-github} non ha shell né gestore di pacchetti, riducendo così
+la maggior parte delle vulnerabilità critiche note nei container \cite{nist-sp-800-190}.
+Un supervisore come \texttt{s6-overlay}, però, ha bisogno di una shell per i propri script di avvio.
+Qualunque servizio debba far girare più di un solo binario Go non può quindi essere distroless.
+Di conseguenza, l'unico servizio distroless è Entry-Hub \cite{ramusb-code-dockerfile-entry-hub}, mentre 
+gli altri cinque usano \texttt{debian:bookworm-slim} \cite{ramusb-code-dockerfile-storage-service}, come 
+riportato in \autoref{tab:immagini-base}.
+
+\begin{table}[H]
+\centering
+\caption{Immagine di base per servizio e motivo del bisogno OS-level.}
+\label{tab:immagini-base}
+\begin{tabular}{@{}l l p{\dimexpr0.48\linewidth\relax}@{}}
+\hline
+\textbf{Servizio} & \textbf{Immagine di base} & \textbf{Bisogno OS-level} \\
+\hline
+Entry-Hub & distroless & nessuno: mesh esternalizzata in un sidecar \\
+Security-Switch & debian:bookworm-slim & \texttt{tailscaled} reale \\
+Storage-Service & debian:bookworm-slim & \texttt{tailscaled} reale, \texttt{sshd}, utenti POSIX \\
+Network-Manager & debian:bookworm-slim & \texttt{tailscaled} reale \\
+Database-Vault & debian:bookworm-slim & \texttt{tailscaled} reale \\
+Metrics-Collector & debian:bookworm-slim & \texttt{tailscaled} reale \\
+\hline
+\end{tabular}
+\end{table}
+
+Estendere distroless a più servizi resta un problema aperto: al momento, \texttt{debian:bookworm-slim} è
+l'unica base che li fa funzionare tutti.
 
 \section{Docker locale vs Proxmox VE: due livelli di isolamento}
-%% TODO: perché non sono alternativi (Docker per portabilità/isolamento per-servizio, Proxmox per isolamento più forte e HA potenziale), KVM per Storage-Service/Database-Vault/Network-Manager vs LXC per gli altri (RNF-ORG-04).
+\label{sec:docker-vs-proxmox}
+
+Sarebbe naturale pensare a Docker e a Proxmox VE \cite{proxmox-ve} come due alternative per la stessa
+esigenza di isolamento. In realtà svolgono due ruoli differenti: 
+Docker garantisce portabilità su ogni sistema operativo e isolamento per-servizio, identici in
+sviluppo e in produzione, mentre Proxmox aggiunge sopra ciascun container Docker un confine di isolamento
+più forte, quello di una macchina virtuale o di un container di sistema. 
+Ogni servizio gira quindi dentro il proprio container Docker, ma quel container Docker gira a sua volta 
+dentro la sua macchina virtuale KVM o il suo container LXC.
+
+La scelta di Proxmox porta anche un altro vantaggio: apre la strada alla migrazione a caldo delle VM KVM
+e, con più nodi, all'alta disponibilità.
+
+Storage-Service, Database-Vault e Network-Manager sono assegnati a guest KVM, mentre i restanti 
+servizi sono assegnati a container LXC non privilegiati, in cui quindi l'utente root del container è mappato 
+su un utente non root dell'host. 
+
+Entry-Hub e Headscale restano fuori da Proxmox del tutto, su un VPS pubblico dedicato ciascuno, per i
+motivi spiegati nel \autoref{chap:rete}.
+
+La scelta tra KVM e LXC dipende, per quasi tutti i servizi, dal livello di isolamento che questi richiedono. 
+I container LXC condividono il kernel con il sistema host, perciò non sono completamente isolati, ma 
+necessitano di pochissime risorse, quindi l'host può sopportarne diversi contemporaneamente. Per questo 
+motivo sono la scelta di default. 
+I servizi che tengono i dati degli utenti, la gestione delle politiche di rete e i backup, necessitano di 
+maggiore isolamento, perché la loro compromissione potrebbe causare dei danni irrimediabili. 
+
+Storage-Service ha inoltre bisogno di eseguire \texttt{setuid} e \texttt{chroot} per isolare gli utenti
+POSIX (\autoref{sec:isolamento}): farlo dentro un container LXC, già esso stesso un namespace,
+aggiungerebbe un secondo livello di mappatura degli UID. Una KVM evita di sovrapporre
+due meccanismi di isolamento che non compongono in modo pulito \cite{ramusb-proxmox-storage-service}.
 
 \section{Topologia distribuita}
-%% TODO: perché non un unico file merged, ma tanti quanti i servizi, per rispecchiare la reale distribuzione su VM/host Proxmox separati.
+\label{sec:topologia-distribuita}
+
+Il repository contiene undici file separati, uno per componente \cite{ramusb-code-compose-tree}. 
+Questo perché ogni servizio è pensato per poter essere riavviato su un nodo proxmox diverso, in una KVM o LXC
+differente. 
 
 \section{Alta disponibilità e resilienza: stato attuale e limiti}
-%% TODO: cosa esiste oggi (supervisione s6-overlay che riavvia i processi caduti dentro un container, sweep periodico dei grant di Network-Manager come auto-pulizia), cosa è solo potenziale (HA reale via cluster Proxmox iperconvergente, live migration/failover — non ancora costruito), e il rischio noto accettato (RISK-04: dipendenza circolare di Network-Manager da MagicDNS, nessun recovery automatico, richiede intervento manuale).
-%% TODO: rispondere qui alla domanda che il 4.2 lascia aperta (il servizio è disponibile solo finché lo sono i suoi sette componenti fondamentali), distinguendo tre piani invece di rispondere "ci pensa Proxmox": (1) oggi esiste solo il riavvio dei processi caduti dentro un container, che copre il crash di un processo e non la caduta della macchina che lo ospita; (2) un cluster Proxmox iperconvergente darebbe live migration e failover, ma richiede almeno tre nodi per il quorum e storage replicato (Ceph), e nel deployment attuale non esiste, quindi è una direzione e non una mitigazione già in campo (la nota della SRS sezione 2.4 lo mette al condizionale); (3) anche una volta costruito, il failover copre la caduta di un nodo fisico e non un errore di configurazione o un processo che risponde male, e costa comunque il riavvio della VM sull'altro nodo, quindi minuti di indisponibilità invece che continuità di servizio. La sintesi costo/beneficio complessiva resta nel cap. 11, qui solo il piano infrastrutturale.
+\label{sec:ha-limiti}
+
+Il servizio resta disponibile agli utenti solo finché restano disponibili i sette componenti che partecipano 
+al percorso di una richiesta.
+
+Oggi, la supervisione di \texttt{s6-overlay} riavvia un processo caduto dentro
+un container Docker (\autoref{sec:s6-overlay}), ma non copre l'indisponibilità del nodo fisico su cui gira 
+il servizio.
+
+Quanta di questa resilienza sia raggiungibile dipende dal numero di nodi fisici disponibili: ogni nodo 
+aggiunto sblocca una proprietà in più.
+
+Con un solo nodo fisico, il massimo che si può ottenere è la ridondanza locale dei dischi, per esempio con
+un RAID-10.
+
+Un secondo nodo sblocca la migrazione a caldo delle VM KVM da un nodo all'altro, per bilanciare il carico
+o liberarne uno per manutenzione \cite{proxmox-qm-migration}. I container LXC, invece, non sono migrabili
+a caldo, solo riavviabili altrove \cite{proxmox-pct-migration}.
+
+Solo con almeno tre nodi, per il quorum, e uno storage replicato con Ceph, il sistema diventa davvero un
+cluster iperconvergente, in grado di offrire anche il recupero automatico dopo la caduta di un nodo
+fisico, oltre allo spostamento pianificato di uno sano.
+
+Questa direzione risolve però solo il guasto di un nodo nella stessa sede, non la perdita di un'intera
+sede o regione. Non si presta quindi alla geo-distribuzione. 
+Il cluster Proxmox richiede una rete affidabile sotto i 5ms tra tutti i nodi, prestazioni
+da LAN \cite{proxmox-cluster-manager}: anche con la migliore fibra disponibile, due nodi lontani tra loro 
+restano oltre quel limite. 
+Una vera resilienza geografica richiederebbe un meccanismo diverso, per cui RAM-USB non è stato pensato.
