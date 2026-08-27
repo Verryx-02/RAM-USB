@@ -118,17 +118,18 @@ aggiunto sblocca una proprietà in più.
 Con un solo nodo fisico, il massimo che si può ottenere è la ridondanza locale dei dischi, per esempio con
 un RAID-10.
 
-Un secondo nodo sblocca la migrazione a caldo delle VM KVM da un nodo all'altro, per bilanciare il carico
+Un secondo nodo sblocca la migrazione a caldo delle KVM da un nodo all'altro, per bilanciare il carico
 o liberarne uno per manutenzione \cite{proxmox-qm-migration}. I container LXC, invece, non sono migrabili
-a caldo, solo riavviabili altrove \cite{proxmox-pct-migration}.
+a caldo, solo riavviabili altrove \cite{proxmox-pct-migration}. I due nodi però, devono stare sulla stessa 
+rete a bassa latenza poiché lo stack del cluster Proxmox richiede una latenza inferiore ai 5ms tra
+tutti i nodi \cite{proxmox-cluster-manager} per operare in modo stabile.
 
-Solo con almeno tre nodi, per il quorum, e uno storage replicato con Ceph, il sistema diventa davvero un
+Solo con almeno tre nodi, per il quorum, e uno storage replicato con Ceph, il sistema diventa un
 cluster iperconvergente, in grado di offrire anche il recupero automatico dopo la caduta di un nodo
-fisico, oltre allo spostamento pianificato di uno sano.
+fisico, oltre allo spostamento pianificato di uno sano, con lo stesso vincolo di rete visto sopra. Questa
+direzione risolve però solo il guasto di un nodo nella stessa sede, non la perdita di un'intera sede o
+regione: anche con la migliore fibra disponibile, due nodi lontani tra loro restano oltre il limite dei
+5ms. Estendere il backend su Proxmox a più sedi richiederebbe un meccanismo diverso, non ancora previsto.
 
-Questa direzione risolve però solo il guasto di un nodo nella stessa sede, non la perdita di un'intera
-sede o regione. Non si presta quindi alla geo-distribuzione. 
-Il cluster Proxmox richiede una rete affidabile sotto i 5ms tra tutti i nodi, prestazioni
-da LAN \cite{proxmox-cluster-manager}: anche con la migliore fibra disponibile, due nodi lontani tra loro 
-restano oltre quel limite. 
-Una vera resilienza geografica richiederebbe un meccanismo diverso, per cui RAM-USB non è stato pensato.
+Con gli strumenti scelti qui, Proxmox e Ceph, iperconvergenza e geo-distribuzione si escludono a vicenda: 
+ottenerle entrambe resta un problema aperto fuori dal perimetro di RAM-USB.
