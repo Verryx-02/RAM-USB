@@ -31,6 +31,14 @@
 \usepackage[a-1b]{pdfx}
 %% hyperref: Regola le impostazioni della creazione del PDF... più tante altre cose. Ricordarsi di usare l'opzione pdfa.
 \usepackage[pdfa]{hyperref}
+%% xurl: gli URL lunghi nella bibliografia (i permalink GitHub in particolare) vanno a capo solo dopo
+%% "/", lasciando righe cortissime seguite da una lunghissima. xurl permette di spezzarli a qualunque
+%% carattere, distribuendo il testo in modo più uniforme.
+\usepackage{xurl}
+%% Di default \UrlFont è solo \ttfamily, senza una dimensione propria, quindi eredita quella del
+%% contesto: la lascio così (non forzo una dimensione qui) in modo che le dimensioni scelte entro
+%% ogni singola voce del .bib (\small per le fonti esterne, \footnotesize per le autocitazioni,
+%% così da restare meno invadenti) restino effettive invece di essere sovrascritte qui.
 \usepackage{float}
 %% float: gli schemi di flusso crittografico non sono figure né tabelle, quindi hanno un proprio
 %% tipo di float, numerato per capitolo come gli altri. \floatname fissa la parola che compare
