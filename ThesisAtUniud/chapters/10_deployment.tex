@@ -25,10 +25,10 @@ Se quel processo termina, il supervisore lo rilancia da capo;
 il secondo è opzionale e serve a ritardare il rilancio di qualche secondo, in modo da evitare che un errore
 di avvio irreversibile diventi un ciclo di crash continuo.
 
-Non tutti i servizi, però, hanno bisogno di questa complessità. Entry-Hub non supervisiona alcun processo
-secondario: la sua appartenenza alla mesh vive in un sidecar Docker separato, \texttt{entry-hub-mesh}, 
-che condivide il suo network namespace. Il paragrafo seguente spiega in che modo questa differenza 
-è legata alla scelta dell'immagine di base di ciascun servizio.
+Non tutti i servizi, però, hanno bisogno di questa complessità. Entry-Hub, ad esempio, non supervisiona 
+alcun processo secondario: la sua appartenenza alla mesh vive in un sidecar Docker separato, 
+\texttt{entry-hub-mesh}, che condivide il suo network namespace. Il paragrafo seguente spiega in che modo 
+questa differenza è legata alla scelta dell'immagine di base di ciascun servizio.
 
 \section{Perché non tutti i container sono distroless}
 \label{sec:distroless}
@@ -38,40 +38,45 @@ la maggior parte delle vulnerabilità critiche note nei container \cite{nist-sp-
 Un supervisore come \texttt{s6-overlay}, però, ha bisogno di una shell per i propri script di avvio.
 Qualunque servizio debba far girare più di un solo binario Go non può quindi essere distroless.
 Di conseguenza, l'unico servizio distroless è Entry-Hub \cite{ramusb-code-dockerfile-entry-hub}, mentre 
-gli altri cinque usano \texttt{debian:bookworm-slim} \cite{ramusb-code-dockerfile-storage-service}, come 
-riportato in \autoref{tab:immagini-base}.
+gli altri sei usano \texttt{debian:bookworm-slim} o \texttt{alpine}, come riportato in 
+\autoref{tab:immagini-base}.
 
 \begin{table}[H]
 \centering
-\caption{Immagine di base per servizio e motivo del bisogno OS-level.}
+\caption{Immagine di base per servizio e processi che condividono lo stesso container.}
 \label{tab:immagini-base}
-\begin{tabular}{@{}l l p{\dimexpr0.48\linewidth\relax}@{}}
+\begin{tabular}{@{}l p{\dimexpr0.3\linewidth\relax} p{\dimexpr0.38\linewidth\relax}@{}}
 \hline
-\textbf{Servizio} & \textbf{Immagine di base} & \textbf{Bisogno OS-level} \\
+\textbf{Servizio} & \textbf{Immagine di base} & \textbf{Condivide il container con} \\
 \hline
-Entry-Hub & distroless & nessuno: mesh esternalizzata in un sidecar \\
-Security-Switch & debian:bookworm-slim & \texttt{tailscaled} reale \\
-Storage-Service & debian:bookworm-slim & \texttt{tailscaled} reale, \texttt{sshd}, utenti POSIX \\
-Network-Manager & debian:bookworm-slim & \texttt{tailscaled} reale \\
-Database-Vault & debian:bookworm-slim & \texttt{tailscaled} reale \\
-Metrics-Collector & debian:bookworm-slim & \texttt{tailscaled} reale \\
+Entry-Hub & distroless & nessuno (mesh in un sidecar separato) \\
+Security-Switch & debian:bookworm-slim & \texttt{tailscaled} \\
+Network-Manager & debian:bookworm-slim & \texttt{tailscaled} \\
+Storage-Service & debian:bookworm-slim & \texttt{tailscaled}, \texttt{identity-provisioner}, \texttt{sshd} \\
+Database-Vault & \texttt{postgres:17} (Debian) & \texttt{tailscaled}, \texttt{postgres} \\
+Metrics-Collector & \texttt{timescaledb} (Alpine) & \texttt{tailscaled}, \texttt{timescaledb} \\
+Certificate-Authority & \texttt{step-ca} (Alpine) & \texttt{step-ca} (mesh in un sidecar separato) \\
 \hline
 \end{tabular}
 \end{table}
 
-Estendere distroless a più servizi resta un problema aperto: al momento, \texttt{debian:bookworm-slim} è
-l'unica base che li fa funzionare tutti.
+Estendere distroless a più servizi o scegliere delle distribuzioni diverse da quelle elencate in 
+\autoref{tab:immagini-base} è un problema non ancora affrontato.
 
 \section{Docker locale vs Proxmox VE: due livelli di isolamento}
 \label{sec:docker-vs-proxmox}
 
 Sarebbe naturale pensare a Docker e a Proxmox VE \cite{proxmox-ve} come due alternative per la stessa
-esigenza di isolamento. In realtà svolgono due ruoli differenti: 
-Docker garantisce portabilità su ogni sistema operativo e isolamento per-servizio, identici in
-sviluppo e in produzione, mentre Proxmox aggiunge sopra ciascun container Docker un confine di isolamento
-più forte, quello di una macchina virtuale o di un container di sistema. 
-Ogni servizio gira quindi dentro il proprio container Docker, ma quel container Docker gira a sua volta 
-dentro la sua macchina virtuale KVM o il suo container LXC.
+esigenza di isolamento. In realtà operano a due livelli diversi. Docker è un motore di containerizzazione:
+isola un processo a livello di sistema operativo, condividendo il kernel con l'host, così che ogni container 
+veda un proprio filesystem, una propria rete e un proprio albero di processi senza il costo di un secondo 
+kernel \cite{docker-overview}. Garantisce così portabilità su ogni sistema operativo e isolamento 
+per-servizio, identici in sviluppo e in produzione.
+
+Proxmox aggiunge invece, sopra ciascun container Docker, il confine di isolamento di una macchina virtuale 
+KVM, con il proprio kernel emulato, o quello di un container di sistema LXC, più leggero ma ancora 
+condiviso con il kernel host. Ogni servizio gira quindi dentro il proprio container Docker, ma quel 
+container Docker gira a sua volta dentro la sua macchina virtuale KVM o dentro il suo container LXC.
 
 La scelta di Proxmox porta anche un altro vantaggio: apre la strada alla migrazione a caldo delle VM KVM
 e, con più nodi, all'alta disponibilità.
@@ -98,38 +103,48 @@ due meccanismi di isolamento che non compongono in modo pulito \cite{ramusb-prox
 \section{Topologia distribuita}
 \label{sec:topologia-distribuita}
 
-Il repository contiene undici file separati, uno per componente \cite{ramusb-code-compose-tree}. 
-Questo perché ogni servizio è pensato per poter essere riavviato su un nodo proxmox diverso, in una KVM o LXC
-differente. 
+Il repository contiene undici file Compose separati sotto \texttt{deployments/compose/}
+\cite{ramusb-code-compose-tree}. Dieci corrispondono ai componenti interni
+(\autoref{chap:architettura}); l'undicesimo, \texttt{tailscale-test.yml}, è il client. 
+Il file di ciascun componente resta indipendente dagli altri perché ogni servizio è pensato per poter 
+essere avviato, fermato o spostato su un nodo Proxmox diverso, in una KVM o LXC differente.
+
+La \autoref{fig:architecture-deployment} riassume la topologia di produzione.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/02-architecture-deployment.pdf}
+\caption{Topologia di produzione target.}
+\label{fig:architecture-deployment}
+\end{figure}
 
 \section{Alta disponibilità e resilienza: stato attuale e limiti}
 \label{sec:ha-limiti}
 
-Il servizio resta disponibile agli utenti solo finché restano disponibili i sette componenti che partecipano 
+Il servizio resta disponibile agli utenti solo finché restano disponibili i componenti che partecipano 
 al percorso di una richiesta.
 
-Oggi, la supervisione di \texttt{s6-overlay} riavvia un processo caduto dentro
+Il numero di nodi fisici disponibili determina quanta resilienza e tolleranza ai guasti sia raggiungibile da 
+RAM-USB: ogni nodo aggiunto sblocca una proprietà in più.
+
+Con un solo nodo fisico, la supervisione di \texttt{s6-overlay} riavvia un processo caduto dentro
 un container Docker (\autoref{sec:s6-overlay}), ma non copre l'indisponibilità del nodo fisico su cui gira 
-il servizio.
-
-Quanta di questa resilienza sia raggiungibile dipende dal numero di nodi fisici disponibili: ogni nodo 
-aggiunto sblocca una proprietà in più.
-
-Con un solo nodo fisico, il massimo che si può ottenere è la ridondanza locale dei dischi, per esempio con
+il servizio. Inoltre si può al massimo ottenere la ridondanza locale dei dischi, per esempio con
 un RAID-10.
 
-Un secondo nodo sblocca la migrazione a caldo delle KVM da un nodo all'altro, per bilanciare il carico
-o liberarne uno per manutenzione \cite{proxmox-qm-migration}. I container LXC, invece, non sono migrabili
-a caldo, solo riavviabili altrove \cite{proxmox-pct-migration}. I due nodi però, devono stare sulla stessa 
-rete a bassa latenza poiché lo stack del cluster Proxmox richiede una latenza inferiore ai 5ms tra
-tutti i nodi \cite{proxmox-cluster-manager} per operare in modo stabile.
+Un secondo nodo sblocca la migrazione senza downtime delle KVM da un nodo all'altro, per bilanciare il 
+carico o liberarne uno per manutenzione \cite{proxmox-qm-migration}. 
+I container LXC, invece, non sono migrabili a caldo, solo riavviabili altrove \cite{proxmox-pct-migration}. 
 
-Solo con almeno tre nodi, per il quorum, e uno storage replicato con Ceph, il sistema diventa un
-cluster iperconvergente, in grado di offrire anche il recupero automatico dopo la caduta di un nodo
-fisico, oltre allo spostamento pianificato di uno sano, con lo stesso vincolo di rete visto sopra. Questa
-direzione risolve però solo il guasto di un nodo nella stessa sede, non la perdita di un'intera sede o
-regione: anche con la migliore fibra disponibile, due nodi lontani tra loro restano oltre il limite dei
-5ms. Estendere il backend su Proxmox a più sedi richiederebbe un meccanismo diverso, non ancora previsto.
+Con almeno tre nodi e lo storage replicato con Ceph, il sistema diventa un cluster iperconvergente, 
+in grado di offrire anche il recupero automatico dopo la caduta di un nodo fisico, oltre allo spostamento 
+pianificato di uno sano. 
 
-Con gli strumenti scelti qui, Proxmox e Ceph, iperconvergenza e geo-distribuzione si escludono a vicenda: 
-ottenerle entrambe resta un problema aperto fuori dal perimetro di RAM-USB.
+I nodi però, per poter cooperare devono trovarsi sulla stessa rete a bassa latenza poiché lo stack del cluster 
+Proxmox richiede una latenza inferiore ai 5ms tra tutti i nodi \cite{proxmox-cluster-manager} per operare 
+in modo stabile.
+
+Anche con la migliore fibra disponibile, due nodi lontani tra loro non possono raggiungere una latenza così 
+bassa. Estendere il backend su Proxmox a più sedi richiederebbe un meccanismo diverso, non ancora previsto.
+Iperconvergenza e geo-distribuzione, allo stato attuale, si escludono a vicenda
+Ottenerle entrambe contemporaneamente resta un problema aperto fuori dal perimetro di RAM-USB.
