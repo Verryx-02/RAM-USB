@@ -224,8 +224,6 @@ osservabilità può cadere senza che l'utente se ne accorga.
 I due costi non sono però dello stesso tipo. La latenza è definitiva, e si accetta insieme
 all'architettura; la disponibilità è invece un problema di deployment, e il
 \autoref{chap:deployment} discute fino a che punto l'infrastruttura sottostante possa attenuarlo.
-Il \autoref{chap:sicurezza} riprende invece il bilancio complessivo, mettendo accanto a ogni costo la
-proprietà che compra.
 
 \section{Trust zones e confini di sicurezza}
 \label{sec:trust-zones}
@@ -237,14 +235,20 @@ non ancora autenticato, che appartiene quindi alla \emph{Unauthenticated User Zo
 solo Entry-Hub. Dopo il login, lo stesso nodo entra nella \emph{Authenticated User Zone} e ottiene la 
 raggiungibilità temporanea verso lo Storage-Service.
 
-Solo la Certificate-Authority ha un accesso davvero universale: raggiunge, ed è raggiunta da ogni altro
-componente interno, per permettergli di rinnovare il proprio certificato X.509 senza un intermediario.
+La Certificate-Authority raggiunge soltanto il broker MQTT, ma è raggiunta da ogni altro
+componente interno, per permettergli di rinnovare il proprio certificato X.509.
 
 La quarta zona, \emph{Public Zone}, contiene soltanto Headscale, il quale è raggiungibile dalla rete 
 pubblica. La \autoref{sec:paradosso-coordinatore} ne spiega il motivo nel dettaglio. Tuttavia, le 
 chiamate di Network-Manager verso Headscale sono comunque protette dall'autenticazione mTLS o dal token di 
 bootstrap.
 
+%% TODO: la legenda del diagramma sorgente (docs/design/diagrams/09-security-trust-zones.puml,
+%% dentro il blocco "legend") cita ancora NM-F-04 nella sua direzione superata ("Certificate-
+%% Authority can reach, and be reached by, every internal component") - va aggiornata per
+%% riflettere che la CA raggiunge solo il broker MQTT (vedi il paragrafo appena sopra, corretto
+%% il 2026-08-31). Le frecce disegnate non sono coinvolte, solo il testo della legenda. Da
+%% affidare a diagram-agent per la modifica e il re-render del PDF.
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.55\textwidth]{figures/09-security-trust-zones.pdf}
