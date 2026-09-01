@@ -1,6 +1,6 @@
 ![banner](assets/banner.png)
 
-A multi-user, geo-distributed, remotely accessible backup service, designed around **zero-knowledge**, **zero-trust**, and **defense-in-depth** principles.
+A multi-user, distributed, remotely accessible backup service, designed around **zero-trust**, and **defense-in-depth** principles.
 
 This is my Bachelor's degree thesis project in Computer Science at the **University of Udine**, supervised by [**Prof. Ivan Scagnetto**](https://users.dimi.uniud.it/~ivan.scagnetto/).
 
@@ -16,7 +16,6 @@ The [Software Requirements Specification](https://github.com/Verryx-02/RAM-USB/b
 
 ### Design principles
 
-- **Zero-knowledge**: no server-side component can access backup file contents in plaintext.
 - **Zero-trust**: no component implicitly trusts data received from another, even when mutually authenticated.
 - **Defense-in-depth**: every layer independently re-validates input, regardless of upstream checks.
 
@@ -57,18 +56,7 @@ RAM-USB is an [n-tier client-server microservices architecture](https://en.wikip
 ## Getting started (development)
 
 > [!WARNING] The project is under active implementation.
-> Every service is containerized and merged; Certificate-Authority is the only component still in progress (CA-F-03, its own metrics publishing, is not yet built).
 
-```bash
-git clone https://github.com/Verryx-02/RAM-USB.git
-cd RAM-USB
-```
-
-(ONLY) Local development runs the full stack one terminal per service,
-per `MANUAL-DISTRIBUTED-RUN.md` (`deployments/compose/*.yml`, one Docker
-Compose file per container, joined via the external `ramusb-net` Docker
-network) — deliberately mirroring how these services are actually
-distributed across separate Proxmox VMs/hosts in production (RNF-ORG-04).
 
 ---
 
