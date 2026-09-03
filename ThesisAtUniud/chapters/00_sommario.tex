@@ -1,22 +1,35 @@
 \abstract
-RAM-USB è un servizio di backup multi-utente, geo-distribuito e accessibile da remoto, progettato
-secondo tre principi di sicurezza: zero-knowledge, nessun componente lato server accede mai al
-contenuto dei backup in chiaro; zero-trust, nessun componente si fida implicitamente dei dati ricevuti
-da un altro; defense-in-depth, ogni strato rivalida indipendentemente l'input ricevuto. Il progetto nasce 
-come caso di studio approfondito sulla progettazione di sistemi di backup distribuiti.
+La tesi presenta la progettazione, l'implementazione e la distribuzione di RAM-USB,
+un servizio di backup multi-utente accessibile da remoto, progettato secondo i principi zero-trust e
+defense-in-depth.
 
-Il sistema è un'architettura a microservizi n-tier: ogni registrazione o login attraversa quattro
-processi distinti, ciascuno dei quali rivalida l'input senza fidarsi dello strato precedente, mentre
-l'accesso allo spazio di backup, isolato per utente tramite chroot dinamico, resta possibile solo dopo
-l'autenticazione, su una rete privata mesh che applica confini di raggiungibilità distinti per ogni fase
-del ciclo di vita dell'utente. I requisiti sono raccolti in un unico documento tracciabile fino al
-codice, con un modello a spirale per l'analisi e un modello a V per l'implementazione.
+La metodologia adottata combina il modello a spirale per la definizione e l'evoluzione dei requisiti, 
+l'approccio Test-Driven Development per l'implementazione e il modello a V per la loro verifica. 
+Garantisce, inoltre, la tracciabilità monodirezionale dal requisito al codice e bidirezionale dal requisito
+al commit e dal requisito al test.
 
-L'analisi critica delle proprietà di sicurezza quantifica il costo di un attacco offline alle password,
-giorni per la lunghezza minima ammessa, ordini di grandezza superiori per password più lunghe, e
-verifica componente per componente che la compromissione isolata di un servizio non si propaghi agli
-altri. Ogni scelta architetturale è messa a bilancio con il prezzo che comporta, dalla latenza
-introdotta dalla separazione in più processi alla complessità della rivalidazione indipendente.
+Il lavoro approfondisce in particolare la progettazione dei servizi di autenticazione e controllo dinamico
+degli accessi, nonché le soluzioni adottate per la protezione delle credenziali degli utenti, analizzandone
+criticamente vantaggi, svantaggi e implicazioni in termini di sicurezza. Il sistema che li realizza è
+un'architettura client-server a microservizi n-tier, articolata in componenti dedicati all'accesso, alla
+registrazione, alla gestione dei backup e all'osservabilità delle metriche, distribuiti in container Docker
+a loro volta isolati in Kernel-based Virtual Machines e Linux Containers su uno o più host Proxmox.
 
-Il sistema è stato distribuito e verificato end-to-end su un'infrastruttura reale. 
-I suoi limiti del sisitema sono dichiarati insieme agli sviluppi che potrebbero mitigarli.
+Le comunicazioni interne avvengono tramite API REST, esclusivamente all'interno della rete mesh coordinata
+da Headscale, autenticate reciprocamente via mTLS con certificati X.509 emessi da una Certificate-Authority
+interna.
+
+In accordo con il principio zero-trust, ogni componente rivalida il formato e il contenuto
+di ogni richiesta, senza dare per scontato che il componente precedente lo abbia già fatto. A seguito
+dell'autenticazione e dell'autorizzazione, il sistema modifica dinamicamente le regole di accesso della rete
+mesh, consentendo all'utente di raggiungere il proprio spazio di backup tramite SFTP, isolato da quello
+degli altri utenti mediante chroot. I file dei backup vengono deduplicati, compressi e cifrati tramite
+Restic prima di lasciare il dispositivo dell'utente, e la loro riservatezza resta quindi garantita dalla
+cifratura lato client.
+
+La tesi si conclude con una valutazione critica delle proprietà di sicurezza, riservatezza e funzionalità
+del sistema nello scenario di compromissione totale di un singolo servizio. L'analisi permette di valutare
+l'efficacia delle misure di isolamento e delle strategie di defense-in-depth adottate, evidenziandone al
+contempo i limiti e le proprietà che verrebbero preservate anche in presenza di una grave compromissione
+del servizio.
+
