@@ -290,7 +290,7 @@ NET-F-02 & Il TLS utilizzato deve essere in versione 1.3. \\
 \endfoot
 \hline
 \endlastfoot
-RNF-SEC-01 & Zero-knowledge: nessun componente server-side accede mai al contenuto dei file di backup in chiaro, poiché la cifratura avviene lato client prima della trasmissione. Questo non si estende alle credenziali di accesso: email e password transitano, cifrate (TLS/mTLS), attraverso Entry-Hub, Security-Switch e Database-Vault per la validazione e l'hashing, pur senza mai essere persistite o registrate nei log in chiaro (cfr. DV-F-03, RD-01). \\
+RNF-SEC-01 & Nessun componente server-side accede mai al contenuto dei file di backup in chiaro, poiché la cifratura avviene lato client prima della trasmissione. Questo non si estende alle credenziali di accesso: email e password transitano, cifrate (TLS/mTLS), attraverso Entry-Hub, Security-Switch e Database-Vault per la validazione e l'hashing, pur senza mai essere persistite o registrate nei log in chiaro (cfr. DV-F-03, RD-01). \\
 RNF-SEC-02 & Zero-trust: nessun servizio deve fidarsi implicitamente dei dati ricevuti da un altro, anche se autenticato via mTLS. \\
 RNF-SEC-03 & Defense-in-depth: ogni livello ri-valida l'input in modo indipendente. \\
 RNF-SEC-04 & Tutta la comunicazione tra servizi deve usare mTLS, senza eccezioni. \\
