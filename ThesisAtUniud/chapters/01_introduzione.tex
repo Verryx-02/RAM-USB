@@ -1,19 +1,129 @@
 \chapter{Introduzione}
+\label{chap:introduzione}
 
-\section{Contesto e motivazione}
-%% TODO: zero-knowledge/zero-trust/defense-in-depth, framing da SRS §1.2.
+\section{Contesto}
+
+Un backup, nell'ambito della sicurezza informatica, è un processo di disaster recovery: un procedimento
+che consente di recuperare dati andati persi, per esempio in seguito a un attacco, un guasto hardware o
+software, o un errore umano. Una delle prime risposte tecniche alla perdita di dati è la ridondanza dei dischi su
+cui questi sono memorizzati: nel 1988 Patterson, Gibson e Katz formalizzano il RAID (Redundant Array of
+Inexpensive Disks), che distribuisce lo stesso dato su più dischi economici per ottenere un'affidabilità
+paragonabile a quella di un singolo disco più costoso \cite{patterson-gibson-katz-raid-1988}.
+
+Questa ridondanza, però, resta locale e non protegge da un evento che distrugga l'intero apparato. Da
+qui nasce l'esigenza di un backup remoto: una copia dei dati conservata in un luogo diverso da quello
+degli originali. Il modo più semplice è affidarli a terzi, un conoscente che possiede l'hardware o
+un'attività commerciale che offre questo tipo di servizio, ma questo richiede di fidarsi che quei dati
+non vengano letti, modificati o venduti da chi li conserva.
+
+Chi offre il servizio, dal canto suo, trova conveniente servire più utenti contemporaneamente. Questo
+richiede però di distinguere gli utenti, e di garantire che ciascuno acceda solo ai propri dati: in
+pratica, richiede un sistema di autenticazione e controllo degli accessi.
+
+Tra i diversi sistemi di autenticazione esistenti, quello adottato e discusso in questa tesi è basato su 
+email e password che, in quanto dati sensibili, richiedono un livello di protezione elevata. 
+Il principio su cui si fonda questo tipo di autenticazione è semplice:
+l'utente si registra inviando al server le proprie credenziali; durante il login le invia di nuovo, e il
+server le confronta con quelle salvate in fase di registrazione. Se coincidono, l'utente è autenticato.
+
+Il fatto che il server possieda le credenziali espone quindi tutti gli utenti al rischio che vengano
+rubate. Esistono numerosi sistemi per impedirlo; uno tra tutti, approfondito in questa tesi, è l'uso di
+una funzione di hash.
+Il server, al posto di salvare le credenziali in chiaro, le salva
+sotto forma di hash. Durante il login, ricalcola gli hash delle credenziali fornite dall'utente e
+verifica se coincidono con quelli salvati.
+
+\subsection{Funzioni di hash}
+
+Le funzioni di hash sono funzioni non invertibili che trasformano un input di lunghezza
+arbitraria in un output di lunghezza fissa e strettamente correlato con i dati di input, chiamato hash.
+Indicata con $H$ una funzione di hash, questa gode delle seguenti proprietà fondamentali:
+
+\begin{itemize}
+    \item \textbf{resistenza alla preimmagine:} dato $h$, è computazionalmente intrattabile trovare $x$
+    tale che $H(x) = h$;
+    \item \textbf{resistenza alla seconda preimmagine:} data $x$, è computazionalmente intrattabile
+    trovare $y \neq x$ tale che $H(x) = H(y)$;
+    \item \textbf{resistenza alle collisioni:} è computazionalmente intrattabile trovare una coppia
+    $(x, y)$ con $x \neq y$ tale che $H(x) = H(y)$.
+\end{itemize}
+
 
 \section{Problema affrontato}
-%% TODO: scelte di design deliberate (login classico, backup su filesystem via SFTP).
 
-\section{Obiettivi e perimetro}
-%% TODO: architettura a microservizi (NON fermarsi al numero "11 container" della SRS — la topologia reale si è consolidata oltre quella cifra, vedi cap. 4), cosa è fuori perimetro (temporaneo/permanente).
+Tra le cause di perdita dei dati elencate sopra, RAM-USB si concentra sull'attacco da parte di un 
+malintenzionato, affidandosi ai principi zero-trust e defense-in-depth nel tentativo di garantire la 
+sicurezza dei dati anche quando un componente qualsiasi del sistema viene compromesso.
+
+\section{Obiettivi}
+
+RAM-USB, Remotely Accessible Multi-User Secure Backup è un caso di studio approfondito sulla progettazione, 
+implementazione e distribuzione di un servizio di backup che soddisfi i requisiti
+descritti nel \autoref{chap:requisiti}. Non è pensato per competere con le soluzioni 
+commerciali esistenti, ma per discuterne le scelte di design, illustrandone pro e contro in modo 
+trasparente, con un approccio security first e concentrato sulla difesa del sistema da attacchi esterni.
+
 
 \section{Metodologia}
-%% TODO: TDD/V-model, linguaggio/stack (Go). Uso di AI assistita (vedi README) — non solo "ho usato Claude", ma il confine di responsabilità (design/architettura/review restano miei, l'AI implementa solo quanto specificato) imposto meccanicamente a livello di permessi degli strumenti, non solo dichiarato come policy. Un cenno anche a due pratiche di processo minori: i gap trovati durante l'implementazione tracciati separatamente dalle decisioni di scope deliberate della SRS, e i diagrammi versionati come codice (PlantUML, rigenerati via Makefile) invece che immagini statiche.
+Parte dei componenti di RAM-USB nascono dalla fase di brainstorming condotta insieme a Riccardo 
+Gottardi \cite{gottardi-github}.
+
+La metodologia adottata combina il modello a spirale per la definizione e l'evoluzione dei 
+requisiti \cite{Boehm88} con l'approccio Test-Driven Development per l'implementazione e il modello a V per 
+la loro verifica \cite{ramusb-contributing}.
+
+Il linguaggio usato per l'intero stack è Go, un linguaggio compilato progettato esplicitamente per gestire 
+in modo efficiente molte connessioni di rete simultanee.
+
+Per orchestrare l'infrastruttura attorno al codice Go (avvio dei servizi, supervisione dei processi nei 
+container, sequenziamento all'avvio) è stato usato il linguaggio Bash. 
+
+Il codice è versionato con Git e pubblicato gratuitamente, in versione integrale su GitHub, distribuito con 
+licenza MIT. 
+
+L'implementazione è stata interamente realizzata con l'assistenza dei Large Language Model Claude 
+Sonnet 4.5 e Sonnet 5, in forma multi-agentica tramite l'harness Claude Code eseguito in una macchina 
+virtuale su Proxmox per questioni di sicurezza e privacy.
+
+L'intelligenza artificiale generativa è stata impiegata esclusivamente come strumento sotto stretta 
+supervisione umana. 
+La progettazione, la struttura del codice, i confini dei moduli, la firma, il comportamento delle singole 
+funzioni, e i test corrispondenti restano una decisione umana; l'assistente ha implementato solo quanto 
+specificato, in passi piccoli, incrementali e verificabili, prendendosi la libertà implementativa di basso 
+livello.
+Ogni modifica è stata revisionata ed esplicitamente approvata prima di essere introdotta nella codebase.
+Le numerose strategie di mitigazione degli errori implementativi e allucinazioni dei due modelli, nonchè la 
+getione dei multipli agenti utilizzati non sono oggetto di questa tesi. 
 
 \section{Struttura della tesi}
-%% TODO: breve roadmap dei capitoli 2-11.
-Il \autoref{chap:architettura} presenta i componenti che partecipano alla registrazione e al
-login. Il \autoref{chap:autenticazione} segue le credenziali lungo quel percorso, dal confine
-pubblico fino al record salvato, e descrive le regole che ogni strato applica.
+
+Il \autoref{chap:principi-fondanti} approfondisce i due principi di sicurezza su cui RAM-USB è costruito,
+zero-trust e defense-in-depth, dalle loro origini alla loro applicazione all'informatica.
+
+Il \autoref{chap:requisiti} descrive la metodologia con cui i requisiti sono stati raccolti e tracciati,
+e i casi d'uso che ne derivano.
+
+Il \autoref{chap:architettura} presenta i componenti che partecipano alla registrazione e al login.
+
+Il \autoref{chap:autenticazione} segue le credenziali lungo quel percorso, dal confine pubblico fino al
+record salvato, e descrive le regole che ogni strato applica.
+
+Il \autoref{chap:storage} segue il backup fino al proprio spazio isolato su Storage-Service.
+
+Il \autoref{chap:rete} descrive come la rete mesh applichi i confini di raggiungibilità tra i
+componenti.
+
+Il \autoref{chap:osservabilita} chiude il ciclo di vita di una richiesta con la pipeline di
+osservabilità che la rende misurabile.
+
+Il \autoref{chap:testing} verifica il sistema così costruito attraverso i quattro livelli del modello a
+V, dal test di unità alla lista di accettazione, e riporta cosa ha trovato eseguendolo su hardware reale.
+
+Il \autoref{chap:deployment} descrive come questi componenti siano effettivamente distribuiti, tra
+container Docker, macchine Proxmox e un VPS pubblico.
+
+Il \autoref{chap:sicurezza} rilegge l'intero sistema dal punto di vista di chi tenta di comprometterlo,
+verificando quali garanzie resistano anche alla sua compromissione totale.
+
+Il \autoref{chap:conclusioni} chiude la tesi bilanciando i risultati ottenuti con i limiti riscontrati,
+e indicando gli sviluppi futuri più rilevanti.
