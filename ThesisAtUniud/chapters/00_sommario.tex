@@ -15,8 +15,9 @@ un'architettura client-server a microservizi n-tier, articolata in componenti de
 registrazione, alla gestione dei backup e all'osservabilità delle metriche, distribuiti in container Docker
 a loro volta isolati in Kernel-based Virtual Machines e Linux Containers su uno o più host Proxmox.
 
-Le comunicazioni interne avvengono tramite API REST, esclusivamente all'interno della rete mesh coordinata
-da Headscale, autenticate reciprocamente via mTLS con certificati X.509 emessi da una Certificate-Authority
+Le comunicazioni interne avvengono tramite API REST per le operazioni di registrazione e login, e tramite 
+MQTT per la pubblicazione delle metriche operative; tutte restano confinate alla rete mesh coordinata da 
+Headscale, autenticate reciprocamente via mTLS con certificati X.509 emessi da una Certificate-Authority 
 interna.
 
 In accordo con il principio zero-trust, ogni componente rivalida il formato e il contenuto
