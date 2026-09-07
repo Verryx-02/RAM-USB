@@ -205,6 +205,15 @@
 %Maecenas tempor elit sed arcu commodo, dapibus sagittis leo egestas. Praesent at ultrices urna. Integer et nibh in augue mollis facilisis sit amet eget magna. Fusce at porttitor sapien. Phasellus imperdiet, felis et molestie vulputate, mauris sapien tincidunt justo, in lacinia velit nisi nec ipsum. Duis elementum pharetra lorem, ut pellentesque nulla congue et. Sed eu venenatis tellus, pharetra cursus felis. Sed et luctus nunc. Aenean commodo, neque a aliquam bibendum, mauris augue fringilla justo, et scelerisque odio mi sit amet diam. Nulla at placerat nibh, nec rutrum urna. Donec ut egestas magna. Aliquam erat volutpat. Phasellus vestibulum justo sed purus mattis, vitae lacinia magna viverra. Nulla rutrum diam dui, vel semper mi mattis ac. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Donec id vestibulum lectus, eget tristique est.
 
 %% Bibliografia (praticamente obbligatoria)
+%% \bibliography da solo non si aggiunge all'indice (a differenza di \chapter, che lo fa in automatico):
+%% serve un \addcontentsline esplicito; \phantomsection garantisce che hyperref punti all'ancora giusta.
+%% \cleardoublepage va PRIMA di \addcontentsline, non dopo: \bibliography inserisce il salto pagina
+%% al suo interno, quindi chiamare prima addcontentsline registrerebbe ancora la pagina vecchia.
+%% openright (default di book, twoside, nessun openany in thud.cls) vuole pagina dispari, come ogni
+%% altro \chapter della tesi.
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{chapter}{\bibname}
 \bibliographystyle{plain_\languagename}%% Carica l'omonimo file .bst, dove \languagename è la lingua attiva.
 %% Nel caso in cui si usi un file .bib (consigliato)
 \bibliography{thud}
