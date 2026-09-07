@@ -1,0 +1,24 @@
+\chapter{Principi fondanti}
+\label{chap:principi-fondanti}
+
+\section{Zero-trust}
+\label{sec:sota-zero-trust}
+
+Il termine "zero trust" venne coniato nel 2010 dall'analista Forrester John Kindervag. L'idea di fondo 
+era quella di non concedere fiducia in base alla posizione di rete, ma verificare ogni accesso
+indipendentemente da essa.
+
+Il NIST Special Publication 800-207 \cite{nist-sp-800-207} formalizza oggi questo principio come l'assunzione che nessuna rete,
+interna o esterna, debba essere considerata implicitamente affidabile, e che ogni richiesta di accesso
+vada valutata indipendentemente dalla sua provenienza.
+
+RAM-USB estende il principio zero-trust evitando di credere persino all'identità di un componente 
+autenticato via mTLS. 
+
+
+\section{Defense-in-depth}
+\label{sec:sota-defence-in-depth}
+
+Il NIST Special Publication 800-53 Revision 5 definisce la defense-in-depth come una strategia che integra persone, tecnologia e capacità operative per 
+stabilire barriere ridondanti su più livelli di un'organizzazione, in modo che il guasto o l'aggiramento di 
+una singola barriera non comprometta il sistema nel suo complesso \cite{nist-sp-800-53r5}.
