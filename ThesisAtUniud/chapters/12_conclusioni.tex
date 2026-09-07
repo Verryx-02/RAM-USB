@@ -2,13 +2,121 @@
 \label{chap:conclusioni}
 
 \section{Risultati raggiunti}
-%% TODO: richiamo agli obiettivi del cap. 1, cosa è stato effettivamente realizzato.
+
+Il \autoref{chap:introduzione} affida a RAM-USB l'obiettivo di progettare, implementare e validare un
+servizio di backup remoto multi-utente rispetto ai requisiti della SRS \cite{ramusb-srs}, affidandosi ai
+principi zero-trust e defense-in-depth per difendere il sistema da attacchi esterni, non per competere
+con le soluzioni commerciali esistenti ma per discuterne le scelte di design in modo trasparente.
+
+I dieci requisiti utente elencati nel \autoref{chap:requisiti} sono, con una sola eccezione, coperti da requisiti di
+sistema implementati e tracciati fino al codice. Un utente può registrarsi fornendo solo email, password
+e chiave pubblica SSH (RU-01), autenticarsi nelle sessioni successive (RU-02), caricare e recuperare
+backup cifrati lato client da qualunque luogo (RU-03, RU-07), farlo solo dopo essersi autenticato (RU-04),
+con la garanzia che né la password né il contenuto dei backup siano mai leggibili da un amministratore
+(RU-05, RU-06), in uno spazio isolato da quello degli altri utenti (RU-08). Un amministratore può
+osservare la salute e le prestazioni del sistema senza mai toccare i dati dei singoli utenti (RU-10).
+
+L'unica eccezione è RU-09, la garanzia che nessuno possa modificare o cancellare un backup: è stata
+dichiarata fuori perimetro fin dalla SRS, per i tempi stretti del progetto piuttosto che per una scelta di
+design, ed è ripresa nella prossima sezione.
+
+Le cinque sequenze d'uso che attraversano il sistema, registrazione, login, backup, restore e
+consultazione delle metriche, non sono rimaste un esercizio sulla carta: sono state eseguite end-to-end
+sul deployment reale su Proxmox, non solo sullo stack Docker di sviluppo, con gli stessi risultati
+riportati nel \autoref{chap:testing}.
 
 \section{Limiti noti}
-%% TODO: i 4 rischi accettati della SRS (§8): RU-09 fuori scope (RISK-01), master key senza backup/rotazione (RISK-02), client non containerizzato (RISK-03), dipendenza circolare di Network-Manager da MagicDNS (RISK-04).
+
+La SRS accetta esplicitamente quattro rischi come costo del rilascio nei tempi previsti, non come
+sviste \cite{ramusb-srs}. Dichiararli qui, uno per uno, è la stessa disciplina di onestà già applicata nel
+\autoref{chap:sicurezza}, dove ogni proprietà che regge viene dichiarata insieme a quella che cade.
+
+RISK-01 è RU-09 stesso: nessun requisito di sistema impedisce a un amministratore di modificare o
+cancellare un backup. Resta un miglioramento desiderabile, non ancora costruito.
+
+RISK-02 riguarda la master key: risiede in una variabile d'ambiente, senza una procedura di backup
+(DV-F-18) né di rotazione (DV-F-19), entrambe requisiti "dovrebbe" e non "deve". La sua perdita
+comporterebbe la perdita irreversibile dell'accesso a tutti i dati cifrati; la sua compromissione
+romperebbe la garanzia zero-knowledge per ogni utente.
+
+RISK-03 riguarda il client, pensato per girare nativamente sulla macchina dell'utente e non come
+container Docker. Containerizzarlo è stato considerato e scartato per ora: un container non vede percorsi
+arbitrari dell'host, come il Desktop dell'utente, a meno di un bind mount esplicito, e l'insieme dei file
+da salvare si sceglie liberamente al momento del backup, non è noto in anticipo come per ogni altro
+componente. L'opzione che perde meno isolamento, se il tema fosse ripreso, è un bind mount per singola
+invocazione, limitato alla sola cartella oggetto del backup.
+
+RISK-04 è la dipendenza circolare della risoluzione DNS di Network-Manager dal proprio stesso MagicDNS: se
+Network-Manager pubblicasse una policy ACL non funzionante, potrebbe perdere anche la capacità di
+risolvere l'hostname di Headscale di cui avrebbe bisogno per correggerla. La scelta di accettare comunque
+il MagicDNS, invece di costruire un percorso di recupero automatico, è un rischio accettato per scelta
+esplicita, non un difetto scoperto in seguito: in questo scenario di guasto, un operatore interviene
+manualmente.
 
 \section{Sviluppi futuri}
-%% TODO: requisiti "should" non implementati (quote e replica CephFS, backup/rotazione master key), load/stress testing.
-%% TODO: mitigazione dell'enumerazione degli indirizzi email analizzata nel cap. 11 (RISK-05 della SRS). Comportamento ideale: la registrazione risponde in modo identico sia che l'indirizzo sia libero sia che sia già registrato (per esempio sempre 202), e l'esito reale viaggia fuori banda in un'email di conferma all'indirizzo indicato, così chi possiede la casella riceve il seguito e chi sonda riceve sempre la stessa risposta. Effetto collaterale positivo: sparisce anche l'occupazione abusiva degli indirizzi, perché senza conferma l'account non diventa attivo. Dichiarare i costi, altrimenti la sezione invita la domanda "perché non l'hai fatto": serve una capacità di invio email che il sistema oggi non ha (SMTP, token di conferma con scadenza, deliverability), e cambia UC-01, perché la pre-auth key oggi viaggia dentro la risposta 201 e con una registrazione in due tempi andrebbe consegnata solo dopo la conferma.
-%% TODO: valutare se le due regole della policy delle password debbano coesistere. Il cap. 5 misura che, sotto scelta uniforme, il vincolo di almeno tre categorie vale meno di un decimo di bit mentre un carattere in piu' ne vale 6,57: sotto quell'ipotesi la regola e' inutile per costruzione, perche' una password casuale usa gia' tre categorie da se'. Il suo scopo pero' e' vincolare la scelta umana, e li' il suo valore non e' misurabile senza la distribuzione reale delle password scelte dagli utenti. Le due direzioni da confrontare: tenere entrambe le regole, oppure togliere il vincolo di composizione e alzare la lunghezza minima, che e' la strada delle linee guida NIST correnti (SP 800-63B rev. 4, sezione 3.1.1.2: i verificatori non devono imporre regole di composizione, e il minimo per una password usata da sola sale a 15 caratteri). Dichiarare il costo della seconda: senza una lista di password compromesse si toglie una protezione debole senza metterne una forte, e 'password' tornerebbe accettabile.
-%% TODO: hash dell'email con pepper (DV-F-03/DV-F-13). Oggi l'email e' ridotta a uno SHA-256 secco: veloce da calcolare e su uno spazio di indirizzi piccolo e indovinabile, quindi chi ottiene una copia del database puo' testare un indirizzo candidato a ritmi enormi. Comportamento ideale: derivare la chiave di ricerca con una funzione con chiave, HMAC-SHA256 sotto il pepper, e non con la concatenazione ingenua che basta invece nel percorso della password perche' li' interviene Argon2id. Un pepper e' compatibile con il lookup, a differenza di un salt: essendo un unico segreto globale il digest resta deterministico e la ricerca al login funziona identica. Guadagno: una copia del database, da sola, non permette piu' di verificare se un indirizzo sia registrato, cioe' la stessa difesa che il cap. 5 rivendica gia' per la password. Non risolve invece RISK-05, che e' un attacco online contro l'API e resta identico: sono due superfici diverse. Costi da dichiarare: e' una modifica di livello requisito, invalida tutti gli email_hash esistenti (ricostruibili pero' decifrando l'email con la master key, visto che e' cifrata e non solo hashata, quindi la scelta e' reversibile), e rende il pepper portante anche per le ricerche e non solo per la verifica delle password, spostando la conseguenza della sua perdita da "non si verificano piu' le password" a "non si trovano piu' i record": da valutare accanto a RISK-02.
+
+\subsection{Mitigazione dell'enumerazione degli indirizzi email}
+
+Il \autoref{sec:scenari-attacco} analizza RISK-05: la registrazione rivela, tramite il codice HTTP
+restituito, se un indirizzo è già registrato. Il comportamento ideale risponderebbe in modo identico in
+entrambi i casi, per esempio sempre con un 202, mentre l'esito reale viaggerebbe fuori banda, in un'email
+di conferma inviata all'indirizzo indicato: solo chi possiede davvero quella casella riceverebbe il
+seguito, mentre chi sonda l'endpoint riceverebbe sempre la stessa risposta. Un effetto collaterale
+positivo scomparirebbe insieme al problema: senza un account attivato dalla conferma, sparirebbe anche
+l'occupazione abusiva di un indirizzo altrui.
+
+Il costo non va taciuto: servirebbe una capacità di invio email che il sistema oggi non ha,
+un client SMTP, token di conferma con scadenza, e una deliverability affidabile. Cambierebbe inoltre
+UC-01, perché la pre-auth key oggi viaggia dentro la risposta 201 della registrazione, mentre con una
+registrazione in due tempi dovrebbe essere consegnata solo dopo la conferma.
+
+\subsection{Le due regole della policy delle password}
+
+Il \autoref{sec:entropia} misura che, sotto scelta uniforme, il vincolo di almeno tre categorie di
+carattere vale meno di un decimo di bit di entropia, mentre un carattere aggiuntivo ne vale 6,57: sotto
+quell'ipotesi la regola di composizione è ridondante per costruzione, perché una password davvero casuale
+usa già più categorie da sé. Il suo scopo reale, però, non è aumentare l'entropia, ma vincolare la scelta
+di una persona, e lì il suo valore non è misurabile senza la distribuzione reale delle password scelte
+dagli utenti.
+
+Restano due direzioni da confrontare: tenere entrambe le regole così come sono, oppure eliminare il
+vincolo di composizione e alzare la lunghezza minima, la strada indicata dalle linee guida NIST correnti
+\cite{nist-sp-800-63b}, che raccomandano ai verificatori di non imporre regole di composizione e portano
+il minimo per una password usata da sola a 15 caratteri. Anche la seconda strada ha però un costo da non
+nascondere: senza una lista di password compromesse note, togliere il vincolo di composizione rimuove
+una protezione debole senza sostituirla con una forte, e una password come \texttt{password} tornerebbe
+accettabile.
+
+\subsection{Hash con chiave per la ricerca dell'email}
+
+Il \autoref{sec:scenari-attacco} analizza anche RISK-06: la chiave di ricerca dell'email è oggi uno
+SHA-256 senza chiave, veloce da calcolare su uno spazio di indirizzi piccolo e indovinabile. Il
+comportamento ideale deriverebbe quella chiave con una funzione dotata di chiave, HMAC-SHA256 sotto il
+pepper, e non con la concatenazione ingenua che nel percorso della password basta solo perché lì
+interviene Argon2id. Un pepper è compatibile con la ricerca, a differenza di un salt: essendo un unico
+segreto globale, il digest resta deterministico e la ricerca al login continua a funzionare identica. Il
+guadagno sarebbe che una copia del database, da sola, non permetterebbe più di verificare se un indirizzo
+sia registrato, la stessa protezione che Argon2id offre già per la password. Non
+risolverebbe invece RISK-05, che resta un attacco online contro l'API: sono due superfici diverse.
+
+Il costo dichiarato dalla SRS per questa modifica presuppone però una reversibilità che oggi non esiste
+ancora nel codice, e va corretto qui. La SRS descrive ogni \texttt{email\_hash} come ricostruibile
+decifrando l'email con la master key, dato che è cifrata e non solo hashata; il record salvato, insieme
+alla master key, contiene sì in linea di principio tutto il necessario.
+
+\texttt{encryption.go}, però, dichiara oggi solo \texttt{EncryptEmail}, non la funzione inversa: nessun
+percorso del codice decifra mai quella colonna. La reversibilità è quindi, per ora, una proprietà dei dati
+salvati, non ancora del sistema: la migrazione dovrebbe prima scrivere quel percorso di decifratura
+mancante, non solo invalidare e ricalcolare gli hash esistenti.
+
+Il costo resta comunque reale anche a percorso scritto: il pepper diventerebbe portante anche per la
+ricerca dei record, non solo per la verifica delle password, spostando la conseguenza della sua perdita da
+"non si verificano più le password" a "non si trovano più i record", da valutare accanto a RISK-02.
+
+\subsection{Altri requisiti "dovrebbe" non implementati}
+
+Oltre a DV-F-18 e DV-F-19, già discussi come RISK-02, restano "dovrebbe" e non ancora costruiti il limite
+di quota per utente (ST-F-14) e la replica automatica dei backup su CephFS (ST-F-15), entrambi rimandati
+nella SRS come miglioramenti desiderabili piuttosto che vincoli del progetto. Resta inoltre da fare, sul
+piano della verifica piuttosto che dell'implementazione, un test di carico e di stress che misuri il
+sistema oltre le condizioni già esercitate in questa tesi.
