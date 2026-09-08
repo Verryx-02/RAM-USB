@@ -78,7 +78,7 @@ KVM, con il proprio kernel emulato, o quello di un container di sistema LXC, pi�
 condiviso con il kernel host. Ogni servizio gira quindi dentro il proprio container Docker, ma quel 
 container Docker gira a sua volta dentro la sua macchina virtuale KVM o dentro il suo container LXC.
 
-La scelta di Proxmox porta anche un altro vantaggio: apre la strada alla migrazione a caldo delle VM KVM
+La scelta di Proxmox porta anche un altro vantaggio: apre la strada alla migrazione a caldo delle KVM
 e, con più nodi, all'alta disponibilità.
 
 Storage-Service, Database-Vault e Network-Manager sono assegnati a guest KVM, mentre i restanti 
@@ -105,7 +105,8 @@ due meccanismi di isolamento che non compongono in modo pulito \cite{ramusb-prox
 
 Il repository contiene undici file Compose separati sotto \texttt{deployments/compose/}
 \cite{ramusb-code-compose-tree}. Dieci corrispondono ai componenti interni
-(\autoref{chap:architettura}); l'undicesimo, \texttt{tailscale-test.yml}, è il client. 
+(\autoref{chap:architettura}); l'undicesimo, \texttt{tailscale-test.yml}, è di supporto ai test.
+La containerizzazione del client è invece affidata agli sviluppi futuri.
 Il file di ciascun componente resta indipendente dagli altri perché ogni servizio è pensato per poter 
 essere avviato, fermato o spostato su un nodo Proxmox diverso, in una KVM o LXC differente.
 
@@ -140,11 +141,11 @@ Con almeno tre nodi e lo storage replicato con Ceph, il sistema diventa un clust
 in grado di offrire anche il recupero automatico dopo la caduta di un nodo fisico, oltre allo spostamento 
 pianificato di uno sano. 
 
-I nodi però, per poter cooperare devono trovarsi sulla stessa rete a bassa latenza poiché lo stack del cluster 
+I nodi, però, per poter cooperare devono trovarsi sulla stessa rete a bassa latenza poiché lo stack del cluster 
 Proxmox richiede una latenza inferiore ai 5ms tra tutti i nodi \cite{proxmox-cluster-manager} per operare 
 in modo stabile.
 
 Anche con la migliore fibra disponibile, due nodi lontani tra loro non possono raggiungere una latenza così 
 bassa. Estendere il backend su Proxmox a più sedi richiederebbe un meccanismo diverso, non ancora previsto.
-Iperconvergenza e geo-distribuzione, allo stato attuale, si escludono a vicenda
+Iperconvergenza e geo-distribuzione, allo stato attuale, si escludono a vicenda.
 Ottenerle entrambe contemporaneamente resta un problema aperto fuori dal perimetro di RAM-USB.
