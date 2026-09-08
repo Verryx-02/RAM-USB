@@ -35,7 +35,7 @@ $\begin{array}{rl}
 
 Il login invece, nasconde molto meglio questa informazione restituendo lo stesso 401 sia per un'email
 inesistente sia per una password sbagliata, con lo stesso log e con lo stesso tempo di risposta
-(\autoref{sec:ciclo-richiesta}). Quella protezione, non è mai stata estesa alla registrazione.
+(\autoref{sec:login}). Quella protezione non è mai stata estesa alla registrazione.
 
 Esiste anche un effetto collaterale ben più grave dell'enumerazione sull'endpoint di registrazione, causato 
 dal fatto che il sistema non verifica che chi ha inviato le credenziali per la registrazione le possieda 
@@ -103,8 +103,8 @@ ottenere le email in tempi ragionevoli.
 
 Il furto delle credenziali degli utenti, seppur molto grave, non compromette i backup e non impedisce 
 all'utente di accedervi. Per quello serve la chiave privata SSH, che è tenuta localmente dall'utente.
-Non è nemmeno sufficiente ad eliminare o modificare l'account dell'utente perché il sistema non espone 
-endpoint appositi.
+Non è nemmeno sufficiente ad eliminare o modificare l'account dell'utente perché il sistema non 
+garantisce il diritto all'oblio agli utenti.
 
 \section{Isolamento dei fallimenti}
 
@@ -148,7 +148,7 @@ Può tuttavia bloccare o alterare le nuove richieste di registrazione e login.
 La compromissione, se rilevata, può essere facilmente contenuta. Network-Manager può revocare
 l'appartenenza di un nodo alla mesh, tagliando fuori dalla rete l'istanza di Entry-Hub compromessa, e mentre 
 si indaga sulla causa della compromissione, una nuova istanza di Entry-Hub può essere avviata in una KVM su 
-Proxmox, idealmente su un nodo diverso (\autoref{sec:docker-vs-proxmox}). In questo modo, la registrazione dei nuovi utenti rimane impossibilitata, visto che la KVM potrebbe
+Proxmox, idealmente su un nodo diverso (\autoref{sec:docker-vs-proxmox}). In questo modo, la registrazione dei nuovi utenti rimane impossibile, visto che la KVM potrebbe
 non disporre di un indirizzo pubblico raggiungibile, ma il login degli utenti può avvenire senza problemi, 
 visto che avviene sull'handler raggiungibile solo dalla rete privata mesh.
 
@@ -159,7 +159,7 @@ Un attaccante che ottenga il controllo della Certificate-Authority potrebbe firm
 valido per qualunque \texttt{organization} (\autoref{sec:pki}) e impersonare così qualsiasi servizio
 interno, oppure rifiutarsi di rilasciare i certificati aggiornati per i servizi che richiedono un rinnovo.
 
-Realisticamente però, non può contattare nessuno, perché secondo le regole ACL di Headscale, può soltanto
+Realisticamente però, non può contattare nessuno a parte il broker MQTT, perché secondo le regole ACL di Headscale, può soltanto
 rispondere alle chiamate dei servizi interni, senza poter iniziare nuove comunicazioni (\autoref{sec:trust-zones}).
 
 Non intacca RU-05 o RU-06, visto che la CA non ha alcun ruolo nella cifratura dei backup
@@ -182,8 +182,8 @@ Un attaccante che ottenga il controllo totale di Database-Vault ottiene il peppe
 quest'ultima decifra ogni email salvata nel database. 
 Tuttavia non ottiene la password con la stessa facilità. Per quello, l'attaccante ha due possibili strade:  
 la prima è rubare il database e attaccarlo offline, al costo del tempo di calcolo di Argon2id (\autoref{tab:phc}).
-Questo approccio, normalmente richiede molto tempo e risorse computazionali considerevoli, diventando 
-praticamente infattibile o esageratamente costoso. 
+Questo approccio normalmente richiede molto tempo e risorse computazionali considerevoli, diventando 
+praticamente inpraticabile. 
 Senza il pepper a proteggerle però, le password deboli e molto comuni possono facilmente essere bucate con 
 un attacco a dizionario, anche se protette da un algoritmo di hashing lento e costoso come Argon2id.
 
@@ -193,20 +193,20 @@ seguendole fino al database, può identificare a quali hash corrispondono le pas
 Questo richiede che il malintenzionato rimanga nascosto per il tempo necessario a ricevere le richieste di 
 login da tutti gli utenti registratisi prima della sua infiltrazione.  
 
-RU-06 cade quindi per intero sull'email, e si riduce a un costo temporale per la password complesse e poco 
+RU-06 cade quindi per intero sull'email, e si riduce a un costo temporale per le password complesse e poco
 comuni.
 
 Resta comunque garantito RU-05: Database-Vault non ha accesso al filesystem di Storage-Service, ha solo la
 facoltà di chiedergli di creare un account (\autoref{chap:architettura}). Resta garantito anche RU-08, per
 lo stesso motivo.
 
-In questo caso, anche se l'attacco attivo venisse rilevato, ormai non ci sarebbe nulla da fare, bisogna dare
+In questo caso, anche se l'attacco attivo venisse rilevato, ormai non ci sarebbe nulla da fare; bisogna dare
 per scontato che il database sia già stato rubato.
 Se invece fosse stato l'attacco passivo ad essere rilevato, mentre si indaga sulla compromissione, 
 si possono interrompere completamente i servizi di registrazione e login e concedere agli 
 utenti già autenticati un tag di raggiungibilità verso Storage-Service, più duraturo di quello da 12 ore che
-già possiedono (\autoref{chap:rete}). In questo modo, gli utenti loggati possono continuare a gestire i backup senza doversi
-riautenticare. 
+già possiedono (\autoref{chap:rete}). In questo modo, gli utenti loggati possono continuare a gestire i 
+backup senza doversi riautenticare. 
 
 In entrambi i casi però, sarebbe più sensato interrompere il servizio e dichiarare l'incidente.
 
@@ -220,8 +220,8 @@ RU-04 è quindi compromesso.
 Non può comunque accedere ai dati degli utenti o alle loro credenziali (\autoref{chap:autenticazione}), quindi
 RU-05, RU-06 e RU-08 restano validi.
 
-In caso di compromissione, mentre si indaga sulle cause, si può comunque interrompere Network-Manager e avviarne una 
-nuova istanza in una KVM differente, magari su un nodo diverso.
+In caso di compromissione, mentre si indaga sulle cause, si può comunque interrompere Network-Manager e 
+avviarne una nuova istanza in una KVM differente, idealmente su un nodo diverso.
 
 \subsection{Storage-Service}
 
