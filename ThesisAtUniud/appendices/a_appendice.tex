@@ -118,7 +118,7 @@ DV-F-05 & La master key dovrebbe provenire da una sorgente configurabile, con va
 DV-F-06 & Deve mantenere un pepper come variabile d'ambiente. \\
 DV-F-07 & Deve calcolare l'hash della password con Argon2id: memoria 47104 KiB (46 MiB), 2 iterazioni, parallelismo 1, output a 32 byte, usando un salt casuale per record e il pepper (DV-F-06). \\
 DV-F-08 & Deve salvare il record utente in una transazione atomica. \\
-DV-F-09 & Deve richiedere a Storage-Service la creazione dell'utente POSIX univoco sul server, con username \texttt{user\textless{}xxxxxx\textgreater{}} (\texttt{xxxxxx}: 6 caratteri casuali da un alfabeto base-36), e attenderne la risposta. \\
+DV-F-09 & Deve richiedere a Storage-Service la creazione dell'utente POSIX univoco sul server, con username \texttt{user<xxxxxx>} (\texttt{xxxxxx}: 6 caratteri casuali da un alfabeto base-36), e attenderne la risposta. \\
 DV-F-10 & Se la creazione dell'utente POSIX fallisce, deve eliminare l'utente dal database e informare Security-Switch che la registrazione è fallita. \\
 DV-F-11 & Dopo aver creato il record utente e l'utente POSIX, deve informare Security-Switch che l'utente è stato registrato. \\
 DV-F-12 & Deve rifiutare (HTTP 409) le registrazioni con un'email o una chiave SSH già esistenti, senza fornire dettagli sull'errore. \\
@@ -153,7 +153,7 @@ ST-F-02 & Deve fornire upload/download di file già cifrati lato client, senza m
 ST-F-03 & L'accesso deve avvenire esclusivamente via SFTP sulla porta TCP 2222, autenticato con la chiave pubblica SSH registrata dall'utente. \\
 ST-F-04 & Deve vietare esplicitamente qualsiasi forma di connessione SSH diversa da SFTP. \\
 ST-F-05 & Ogni utente deve disporre di uno spazio di storage isolato, non accessibile dagli altri utenti. \\
-ST-F-06 & Su richiesta di Database-Vault via mTLS, deve creare sul sistema un utente POSIX con username \texttt{user\textless{}xxxxxx\textgreater{}} (\texttt{xxxxxx}: 6 caratteri casuali da un alfabeto base-36). \\
+ST-F-06 & Su richiesta di Database-Vault via mTLS, deve creare sul sistema un utente POSIX con username \texttt{user<xxxxxx>} (\texttt{xxxxxx}: 6 caratteri casuali da un alfabeto base-36). \\
 ST-F-07 & Deve garantire che l'utente POSIX non possa mai uscire dalla propria directory. \\
 ST-F-08 & L'account POSIX creato non deve avere una home directory tradizionale né una shell interattiva; l'unico spazio scrivibile è la sottodirectory dedicata all'interno del chroot. \\
 ST-F-09 & La configurazione sshd di Storage-Service deve avere \texttt{PasswordAuthentication no} e \texttt{PermitRootLogin no}, indipendentemente dal fatto che gli account creati non abbiano una password impostata. \\
