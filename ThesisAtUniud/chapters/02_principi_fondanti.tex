@@ -12,13 +12,14 @@ Il NIST Special Publication 800-207 \cite{nist-sp-800-207} formalizza oggi quest
 interna o esterna, debba essere considerata implicitamente affidabile, e che ogni richiesta di accesso
 vada valutata indipendentemente dalla sua provenienza.
 
-RAM-USB estende il principio zero-trust evitando di credere persino all'identità di un componente 
-autenticato via mTLS. 
+RAM-USB estende il principio zero-trust diffidando persino dell'identità di un componente autenticato via mTLS. 
+Questo perché ogni componente suppone che gli altri siano sotto il controllo di un attaccante.
 
 
 \section{Defense-in-depth}
 \label{sec:sota-defence-in-depth}
 
-Il NIST Special Publication 800-53 Revision 5 definisce la defense-in-depth come una strategia che integra persone, tecnologia e capacità operative per 
-stabilire barriere ridondanti su più livelli di un'organizzazione, in modo che il guasto o l'aggiramento di 
-una singola barriera non comprometta il sistema nel suo complesso \cite{nist-sp-800-53r5}.
+Il NIST Special Publication 800-53 Revision 5 definisce la defense-in-depth come una strategia che integra 
+persone, tecnologia e capacità operative per stabilire barriere ridondanti su più livelli di 
+un'organizzazione, in modo che il guasto o l'aggiramento di una singola barriera non comprometta il sistema 
+nel suo complesso \cite{nist-sp-800-53r5}.
