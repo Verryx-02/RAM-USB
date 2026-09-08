@@ -11,7 +11,7 @@ ed è quindi pronto per gestire i suoi backup.
 Prima di trasmetterli però, il client dell'utente, tramite Restic \cite{restic-github}, deduplica, comprime e 
 cifra i backup dell'utente. Storage-Service riceve quindi una sequenza di blocchi cifrati che non è 
 in grado di decifrare.
-Il client, all'inizializzazione della repository Restic, prende 32 byte da \texttt{crypto/rand}, li
+Il client, all'inizializzazione della repository Restic, estrae 32 byte da \texttt{crypto/rand}, li
 codifica in base64 e li usa come password del repository \cite{ramusb-code-reposecret}. 
 Da quella password Restic ricava la chiave che apre il file in cui custodisce la chiave di cifratura vera, 
 generata a caso alla creazione del repository \cite{restic-design}: è quest'ultima a proteggere i blocchi.
@@ -28,7 +28,7 @@ L'unico modo per raggiungere i blocchi è infatti una sessione SFTP autenticata,
 privata mesh. Su quella sessione, l'unica operazione possibile è trasferire file, e l'unica credenziale 
 accettata è la chiave SSH \cite{openssh-sshd-config}. 
 
-Restano fuori gli altri modi di autenticarsi e gli altri usi che SSH consente di norma: eseguire un comando, 
+Restano fuori gli altri modi di autenticarsi e gli altri usi che SSH consente di norma, come eseguire un comando, 
 aprire una shell, o servirsi della connessione come tramite per raggiungere altre macchine.
 
 Inoltre, solo gli account creati dal servizio possono presentarsi, perché il server accetta esclusivamente
@@ -99,7 +99,7 @@ Il percorso indicato al repository è già relativo alla radice del confinamento
 
 Il client risolve Storage-Service tramite MagicDNS sulla rete mesh,
 e la risoluzione riesce solo finché è attivo il permesso temporaneo concesso dall'ultimo login:
-scaduto quello, il nodo dell'utente non vede più il servizio e la connessione non parte nemmeno. Il
+scaduto quello, il nodo dell'utente non vede più il servizio e la connessione non inizia nemmeno. Il
 \autoref{chap:rete} descrive come quel permesso venga concesso e revocato.
 
 La \autoref{fig:uc03} riassume la sequenza, dalla connessione SFTP fino ai dati scritti.
@@ -111,5 +111,5 @@ La \autoref{fig:uc03} riassume la sequenza, dalla connessione SFTP fino ai dati 
     \label{fig:uc03}
 \end{figure}
 
-Il restore percorre la stessa strada in senso opposto, l'unica differenza è il comando impartito a
+Il restore percorre la stessa strada del backup; l'unica differenza è il comando impartito a
 Restic, che scarica i blocchi richiesti e li decifra sul dispositivo dell'utente.
