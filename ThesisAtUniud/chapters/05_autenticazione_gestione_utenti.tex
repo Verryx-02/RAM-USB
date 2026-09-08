@@ -9,8 +9,7 @@ Entry-Hub, Security-Switch e Database-Vault. Tutti e tre applicano le stesse ver
 ognuno indipendentemente dagli altri.
 
 La validazione avviene in due fasi. La prima riguarda il corpo della richiesta: il payload viene
-letto fino a un limite di 2048 byte e rifiutato se lo supera, senza accumulare in memoria dati
-controllati da chi ha inviato la richiesta, e il decoder JSON respinge qualunque campo inatteso.
+letto fino a un limite di 2048 byte e rifiutato se lo supera e il decoder JSON respinge qualunque campo inatteso.
 
 La seconda fase riguarda i singoli campi \cite{ramusb-code-eh-f-04}. L'email deve essere un
 indirizzo singolo e sintatticamente valido secondo RFC 5322 \cite{rfc5322}; la password deve essere
@@ -60,7 +59,7 @@ la prima è il 403, che solo Security-Switch può emettere, perché è l'unico d
 rifiuto esplicito da un servizio interno. La seconda riguarda le chiamate scadute: Entry-Hub risponde 503, 
 Security-Switch 504.
 
-In tutti i casi il corpo della risposta è sanificato, e il dettaglio dell'errore resta nei log
+In tutti i casi, il corpo della risposta è sanificato e il dettaglio dell'errore resta nei log
 interni.
 
 \section{Cifratura e hashing delle credenziali}
@@ -70,7 +69,7 @@ Database-Vault tratta i dati che riceve in tre modi diversi:
 \begin{itemize}
     \item la chiave SSH è pubblica, quindi non necessita di segretezza;
     \item l'email è insieme una chiave di ricerca e un dato personale da proteggere, ma deve anche essere 
-		recuperabile in caso di necessità
+		recuperabile in caso di necessità;
     \item la password non deve essere recuperabile, nemmeno da chi amministra il database.
 \end{itemize}
 
@@ -80,7 +79,7 @@ produca la stessa chiave della registrazione.
 Questo hash è deterministico per necessità, perché deve permettere il lookup. Il limite fondamentale di 
 questo approccio, insieme alla sua mitigazione, è discusso nel \autoref{chap:sicurezza}.
 
-Accanto al digest che fa da chiave di ricerca, il record conserva una copia cifrata,
+Accanto al digest che fa da chiave di ricerca, il record conserva una copia dell'email cifrata,
 così che l'indirizzo resti recuperabile. 
 Da una master key e da un salt casuale di 16 byte, generato per quel record,
 viene derivata con HKDF-SHA256 \cite{rfc5869} una chiave dedicata, con cui l'email è cifrata in
@@ -126,8 +125,8 @@ passaggi, pagando quindi a ogni verifica il doppio del lavoro che OWASP consider
 costo che rende impraticabile recuperare le password da un database rubato. Il pepper complica
 ulteriormente un attacco offline: a differenza del salt, che è salvato nel record e impedisce
 soltanto che un tentativo valga per più utenti insieme, il pepper nel database non compare: in sua
-assenza nessun tentativo è calcolabile, e una copia del database non è quindi sufficiente a condurre
-l'attacco.
+assenza nessun tentativo è computazionalmente praticabile, e una copia del database non è quindi 
+sufficiente a condurre l'attacco.
 
 Il risultato viene salvato come stringa autodescrittiva in formato PHC, la convenzione di codifica
 nata dalla Password Hashing Competition. Ogni record porta quindi con sé i parametri con cui è stato creato, 
@@ -216,7 +215,7 @@ N   & = & \sum_i n_i = 95 & \mbox{caratteri disponibili in totale}
 \]
 
 Il vincolo di almeno tre categorie esclude le stringhe che ne usano al più due, quindi per contare le
-password valide conviene contare quelle che non lo sono: si parte da tutte le $N^L$ stringhe
+password valide conviene contare prima quelle che non lo sono: si parte da tutte le $N^L$ stringhe
 possibili e si sottraggono quelle che usano una sola categoria e quelle che ne usano esattamente due.
 
 Il primo gruppo è immediato, perché le stringhe scritte con la sola categoria $i$ sono $n_i^L$. Per
@@ -266,13 +265,13 @@ trasformazioni della sezione precedente e prova a scrivere il record in una sing
 atomica \cite{ramusb-code-saveuser}. Due vincoli di unicità proteggono la tabella, uno
 sull'hash dell'email e uno sulla chiave pubblica SSH: se uno dei due viene violato, la registrazione
 è rifiutata con HTTP 409, senza dire quale dei due abbia causato il conflitto. Quel codice
-resta però un'informazione: dice a un mittente non autenticato che uno dei due valori inviati era
+però dice a un mittente non autenticato che uno dei due valori inviati era
 già presente, e chi invia una chiave SSH appena generata sa che l'unico altro candidato è l'email.
 Il \autoref{chap:sicurezza} analizza questo problema e presenta una possibile mitigazione.
 
 A questo punto il record esiste, ma l'utente non ha ancora uno spazio in cui scrivere.
 Database-Vault genera allora un nome utente POSIX nella forma
-\texttt{user\textless{}xxxxxx\textgreater{}}, dove le sei cifre sono caratteri casuali di un
+\texttt{user<xxxxxx>}, dove le sei cifre sono caratteri casuali di un
 alfabeto base-36, e chiede a Storage-Service di creare l'account corrispondente. Come
 Storage-Service lo crei e lo isoli è oggetto del \autoref{chap:storage}.
 
@@ -309,6 +308,7 @@ capitolo.
 \end{figure}
 
 \section{Login}
+\label{sec:login}
 
 Durante il login, Database-Vault ricalcola il digest SHA-256 dell'email ricevuta e con quello cerca il 
 record.
