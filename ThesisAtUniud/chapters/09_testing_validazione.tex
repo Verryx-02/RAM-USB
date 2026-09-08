@@ -63,9 +63,9 @@ atteso: \texttt{Outcome differs: nonexistent email = ..., wrong password = ...}.
 Solo dopo il fallimento del test ha senso scrivere il body completo di \texttt{Login}, e solo allora il 
 passaggio da test fallito a test passato diventa un'informazione utile. 
 
-Scrivere i test prima ha anche un'altro vantaggio: aiuta a disambiguare e a chiarire i requisiti. Se per un
-requisito non si riesce a scrivere un test, infatti, significa che il requisito è poco chiaro o ambiguo, 
-di conseguenza, viene riformulato meglio.
+Scrivere i test prima aiuta anche a disambiguare e a chiarire i requisiti. Se per un
+requisito non si riesce a scrivere un test, infatti, significa che il requisito è poco chiaro o ambiguo e 
+di conseguenza, deve essere riformulato meglio.
 
 I criteri di uscita sono tre, e dipendono dal codice da testare. Il primo riguarda solo la libreria di
 validazione, che richiede test più approfonditi perché considerata particolarmente sensibile.
@@ -89,7 +89,7 @@ Il criterio di uscita citato sopra, per \texttt{pkg/validation}, è una misura p
 questa: non basta eseguire quasi tutte le istruzioni, ogni singolo ramo di ogni \texttt{if} o
 \texttt{switch} deve essere stato preso da almeno un test.
 
-Il piano di test però, non è esente da limitazioni:
+Il piano di test, però, non è esente da limitazioni:
 Non esiste alcun test previsto né per la protezione dei backup dalla manomissione, né per la rotazione della 
 master key, attualmente fuori perimetro, ma fondamentali in un progetto di questo tipo. 
 I test di carico e di stress, inoltre, sono previsti, ma non ancora progettati. Non si hanno quindi 
@@ -177,3 +177,6 @@ quarto era una stringa d'uso che documentava una sintassi che il parsing degli a
 Un quinto, più grave: l'identità mTLS non veniva conservata fra un avvio e il successivo, quindi
 nessun servizio sopravviveva al riavvio del proprio container, perché ritentava il bootstrap con un token
 monouso ormai speso.
+
+Altri piccoli errori di logica e implementazione, troppo numerosi per essere riportati in questa tesi, 
+sono stati rilevati e corretti grazie ai test
