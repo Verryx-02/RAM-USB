@@ -7,8 +7,8 @@ Un backup, nell'ambito della sicurezza informatica, è un processo di disaster r
 che consente di recuperare dati andati persi, per esempio in seguito a un attacco, un guasto hardware o
 software, o un errore umano. Una delle prime risposte tecniche alla perdita di dati è la ridondanza dei dischi su
 cui questi sono memorizzati: nel 1988 Patterson, Gibson e Katz formalizzano il RAID (Redundant Array of
-Inexpensive Disks), che distribuisce lo stesso dato su più dischi economici per ottenere un'affidabilità
-paragonabile a quella di un singolo disco più costoso \cite{patterson-gibson-katz-raid-1988}.
+Inexpensive Disks) \cite{patterson-gibson-katz-raid-1988}, che distribuisce lo stesso dato su più dischi 
+economici per ottenere un'affidabilità paragonabile a quella di un singolo disco più costoso.
 
 Questa ridondanza, però, resta locale e non protegge da un evento che distrugga l'intero apparato. Da
 qui nasce l'esigenza di un backup remoto: una copia dei dati conservata in un luogo diverso da quello
@@ -21,12 +21,12 @@ richiede però di distinguere gli utenti, e di garantire che ciascuno acceda sol
 pratica, richiede un sistema di autenticazione e controllo degli accessi.
 
 Tra i diversi sistemi di autenticazione esistenti, quello adottato e discusso in questa tesi è basato su 
-email e password che, in quanto dati sensibili, richiedono un livello di protezione elevata. 
+email e password che, in quanto dati sensibili, richiedono un livello di protezione elevato. 
 Il principio su cui si fonda questo tipo di autenticazione è semplice:
 l'utente si registra inviando al server le proprie credenziali; durante il login le invia di nuovo, e il
 server le confronta con quelle salvate in fase di registrazione. Se coincidono, l'utente è autenticato.
 
-Il fatto che il server possieda le credenziali espone quindi tutti gli utenti al rischio che vengano
+Il fatto che il server possieda le credenziali espone, però, tutti gli utenti al rischio che vengano
 rubate. Esistono numerosi sistemi per impedirlo; uno tra tutti, approfondito in questa tesi, è l'uso di
 una funzione di hash.
 Il server, al posto di salvare le credenziali in chiaro, le salva
@@ -44,16 +44,16 @@ Indicata con $H$ una funzione di hash, questa gode delle seguenti proprietà fon
     tale che $H(x) = h$;
     \item \textbf{resistenza alla seconda preimmagine:} data $x$, è computazionalmente intrattabile
     trovare $y \neq x$ tale che $H(x) = H(y)$;
-    \item \textbf{resistenza alle collisioni:} è computazionalmente intrattabile trovare una coppia
+    \item \textbf{resistenza alle collisioni:} è computazionalmente intrattabile trovare una qualsiasi coppia
     $(x, y)$ con $x \neq y$ tale che $H(x) = H(y)$.
 \end{itemize}
 
 
 \section{Problema affrontato}
 
-Tra le cause di perdita dei dati elencate sopra, RAM-USB si concentra sull'attacco da parte di un 
-malintenzionato, affidandosi ai principi zero-trust e defense-in-depth nel tentativo di garantire la 
-sicurezza dei dati anche quando un componente qualsiasi del sistema viene compromesso.
+Tra le diverse cause di perdita di dati, il progetto si concentra su quella derivante dall'attacco di un 
+malintenzionato, adottando i principi di zero-trust e defense-in-depth per garantire la 
+sicurezza dei dati anche in caso di compromissione di un componente qualsiasi del sistema.
 
 \section{Obiettivi}
 
@@ -87,18 +87,18 @@ virtuale su Proxmox per questioni di sicurezza e privacy.
 
 L'intelligenza artificiale generativa è stata impiegata esclusivamente come strumento sotto stretta 
 supervisione umana. 
-La progettazione, la struttura del codice, i confini dei moduli, la firma, il comportamento delle singole 
+La progettazione, la struttura del codice, i confini dei moduli, le firme, il comportamento delle singole 
 funzioni, e i test corrispondenti restano una decisione umana; l'assistente ha implementato solo quanto 
 specificato, in passi piccoli, incrementali e verificabili, prendendosi la libertà implementativa di basso 
 livello.
 Ogni modifica è stata revisionata ed esplicitamente approvata prima di essere introdotta nella codebase.
-Le numerose strategie di mitigazione degli errori implementativi e allucinazioni dei due modelli, nonchè la 
-getione dei multipli agenti utilizzati non sono oggetto di questa tesi. 
+Le numerose strategie di mitigazione degli errori implementativi e allucinazioni dei due modelli, nonché la
+gestione dei multipli agenti utilizzati non sono oggetto di questa tesi.
 
 \section{Struttura della tesi}
 
 Il \autoref{chap:principi-fondanti} approfondisce i due principi di sicurezza su cui RAM-USB è costruito,
-zero-trust e defense-in-depth, dalle loro origini alla loro applicazione all'informatica.
+zero-trust e defense-in-depth.
 
 Il \autoref{chap:requisiti} descrive la metodologia con cui i requisiti sono stati raccolti e tracciati,
 e i casi d'uso che ne derivano.
