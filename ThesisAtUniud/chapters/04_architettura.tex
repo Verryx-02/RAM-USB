@@ -4,16 +4,15 @@
 \section{Overview architetturale}
 
 RAM-USB è un'architettura a microservizi n-tier in cui ogni componente ha una responsabilità specifica. 
-Questa separazione riduce il rischio che la compromissione di un componente comprometta l'intero sistema.
+Questa separazione riduce il rischio che la compromissione di un componente si propaghi all'intero sistema.
 
-RAM-USB ha dieci componenti interni, organizzati in tre gruppi funzionali: 
+L'architettura interna di RAM-USB è composta da dieci componenti, organizzati in tre gruppi funzionali e 
+illustrati in \autoref{fig:architecture-container}, insieme al protocollo con cui interagiscono: 
 \begin{itemize}
     \item \textbf{Accesso e registrazione}: Entry-Hub, Security-Switch, Database-Vault, Network-Manager, Certificate-Authority, Headscale.
     \item \textbf{Backup e restore}: Storage-Service.
     \item \textbf{Osservabilità}: Mosquitto, Metrics-Collector, Grafana.
 \end{itemize}
-
-La \autoref{fig:architecture-container} mostra questi dieci componenti e il protocollo con cui interagiscono.
 
 \begin{figure}[H]
     \centering
@@ -42,7 +41,7 @@ limite di dimensione e rifiuta qualunque campo non atteso nel payload; poi valid
 campi email, password e, solo in fase di registrazione, la chiave SSH \cite{ramusb-code-eh-f-04}. Se una di
 queste verifiche fallisce, risponde HTTP 400 senza specificare quale sia il problema e senza inoltrare la
 richiesta agli strati più interni del sistema. Se la validazione riesce, inoltra la richiesta a
-Security-Switch via mTLS verificando che il certificato ricevuto appartenga davvero a un Security-Switch.
+Security-Switch via mutual TLS (mTLS) verificando che il certificato ricevuto appartenga davvero a un Security-Switch.
 Attende la risposta del Security-Switch e la rilancia al client.
 
 \subsection{Security-Switch}
@@ -50,10 +49,10 @@ Attende la risposta del Security-Switch e la rilancia al client.
 Security-Switch esiste per evitare che le responsabilità di contattare Database-Vault e Network-Manager
 siano in mano al punto di ingresso del sistema: riceve le richieste in ingresso solo da Entry-Hub, 
 autenticato via mTLS, le rivalida in modo indipendente e contatta i servizi interni. 
-
-Lo scopo della rivalidazione è l'applicazione del principio di defence in depth \cite{nist-sp-800-207}.
 La logica di validazione, gestione degli errori e logging viene riutilizzata da tutti i servizi principali 
 e vive in librerie interne condivise \cite{ramusb-pkg}.
+
+Lo scopo della rivalidazione è l'applicazione del principio di defence in depth \cite{nist-sp-800-207}.
 
 Se la validazione riesce, inoltra la richiesta a Database-Vault via mTLS. 
 
@@ -82,15 +81,15 @@ salvare, l'ER è piuttosto semplice.
 \end{figure}
 
 L'email è cifrata, recuperabile solo con la master key, mentre la password non è mai recuperabile, poiché
-viene hashata con Argon2id. Il furto o l'accesso non autorizzato al database non bastano quindi a leggere né
-l'una né l'altra.
+viene salvata solo in forma di hash, come digest di Argon2id. Il furto o l'accesso non autorizzato al 
+database non bastano quindi a leggere né l'una né l'altra.
 
 In fase di registrazione di un nuovo utente, in seguito alla rivalidazione dell'input, Database-Vault tenta
 di salvare i dati in una transazione atomica, rifiutando la richiesta se l'email o la chiave SSH sono già
 registrate, ma senza specificare quale delle due sia errata. 
-Se il salvataggio riesce, richiede a Storage-Service la
-creazione dello spazio POSIX dell'utente. In caso di fallimento dello Storage-Service, elimina il record 
-appena creato, altrimenti informa Security-Switch che la registrazione è andata a buon fine.
+Se il salvataggio riesce, richiede a Storage-Service la creazione dello spazio POSIX dell'utente. 
+In caso di fallimento dello Storage-Service, elimina il record appena creato, altrimenti informa 
+Security-Switch che la registrazione è andata a buon fine.
 
 Al login, ricalcola l'hash della password ricevuta e lo confronta con quello salvato, poi risponde a 
 Security-Switch. 
@@ -98,8 +97,8 @@ Security-Switch.
 Un'email inesistente e una password sbagliata producono la stessa risposta: in questo modo,
 chi tenta l'accesso non può usarla per scoprire quali email sono registrate.
 Il \autoref{chap:sicurezza}, tuttavia, spiega come un utente esterno può tentare di capire se 
-un'email è già registrata nel sistema e anche come un amministratore malintenzionato può ottenere le credenziali 
-di accesso di un utente.
+un'email è già registrata nel sistema e anche come un amministratore malintenzionato può ottenere le 
+credenziali di accesso di un utente.
 
 
 \subsection{Storage-Service}
@@ -119,9 +118,9 @@ La struttura del file system è illustrata in \autoref{fig:filesystem-storage}.
     \label{fig:filesystem-storage}
 \end{figure}
 
-L'accesso allo Storage-Service può avvenire solo via SFTP \cite{sftp-filexfer}, con la chiave
-pubblica SSH inviata dall'utente in fase di registrazione. Non sono quindi permessi né l'autenticazione con username e password, 
-né altre forme di accesso SSH al di fuori della SFTP.
+L'accesso allo Storage-Service può avvenire solo via Secure Shell File Transfer Protocol (SFTP) \cite{sftp-filexfer}, 
+con la chiave pubblica SSH inviata dall'utente in fase di registrazione. Non sono quindi permessi né 
+l'autenticazione con username e password, né altre forme di accesso Secure Shell al di fuori di SFTP.
 
 Ad ogni connessione, un binario \texttt{AuthorizedKeysCommand} dedicato interroga Database-Vault per 
 ottenere la chiave pubblica corrente dell'utente.
@@ -135,7 +134,7 @@ regole che permettono ad un utente della rete privata mesh di raggiungere gli al
 In fase di registrazione, crea un utente Headscale dedicato e la pre-auth key con cui il dispositivo 
 dell'utente si unirà alla rete.
 
-Durante il login, assegna al nodo dell'utente il tag ACL (Access Control List) che abilita l'accesso 
+Durante il login, assegna al nodo dell'utente il tag Access Control List (ACL) che abilita l'accesso 
 temporaneo di 12 ore allo Storage-Service.
 Un processo periodico controlla le scadenze e rimuove il tag dai nodi scaduti.
 
@@ -171,8 +170,8 @@ rete privata, ma è raggiungibile da chiunque su internet. La \autoref{sec:parad
 
 Mosquitto è il broker MQTT su cui ogni servizio, una volta al minuto, pubblica le proprie metriche operative. 
 
-Applica una ACL secondo la quale ogni servizio può solo scrivere sul proprio topic, mai leggerlo, mentre 
-Metrics-Collector può solo leggere l'intero spazio \texttt{metrics/*}, senza mai scrivervi.
+Applica una ACL secondo la quale ogni servizio può scrivere sul proprio topic, senza mai potervi leggere, 
+mentre Metrics-Collector può solo leggere l'intero spazio \texttt{metrics/*}, senza mai scrivervi.
 
 \subsection{Metrics-Collector}
 
@@ -196,7 +195,7 @@ Il \autoref{chap:osservabilita} tratta questa pipeline di osservabilità nel det
 
 Ogni servizio espone la propria API HTTPS sulla libreria standard di Go, \texttt{net/http}.
 Le richieste e le risposte sono corpi JSON ed ogni endpoint è registrato su un router minimale, 
-\texttt{http.ServeMux}. La versione di TLS ammessa è la 1.3.
+\texttt{http.ServeMux}. La versione minima di TLS ammessa è la 1.3.
 
 Gli endpoint qui elencati seguono le convenzioni REST \cite{fielding2000rest}.
 \begin{itemize}
@@ -212,18 +211,18 @@ essere letta con GET o cancellata con DELETE. Il token ACL di 12 ore che il logi
 interno a Network-Manager e scade autonomamente.
 
 La pubblicazione delle metriche inoltre, è asincrona: ogni servizio, infatti, pubblica i propri messaggi su
-un topic MQTT dedicato, e non c'è alcun bisogno di attendere una risposta.
+un topic Message Queuing Telemetry Transport (MQTT) dedicato senza alcun bisogno di attendere una risposta.
 
-La struttura del sistema ha un costo non indifferente: ogni registrazione e ogni login attraversano
+La struttura del sistema ha un costo non indifferente: ogni registrazione e login attraversa
 quattro processi distinti, ognuno con il proprio handshake mTLS e la propria rivalidazione. 
 La latenza è quindi ben più alta rispetto ad un sistema monolitico, e non è possibile ridurla saltando uno 
 dei passaggi qualora fosse necessario. Il servizio, inoltre, resta disponibile agli utenti solo finché 
 restano disponibili i sette componenti che partecipano al percorso di una richiesta, mentre la catena di 
 osservabilità può cadere senza che l'utente se ne accorga.
 
-I due costi non sono però dello stesso tipo. La latenza è definitiva, e si accetta insieme
+I due costi non sono però dello stesso tipo. La latenza è definitiva, e accettata insieme
 all'architettura; la disponibilità è invece un problema di deployment, e il
-\autoref{chap:deployment} discute fino a che punto l'infrastruttura sottostante possa attenuarlo.
+\autoref{chap:deployment} discute fino a che punto l'infrastruttura sottostante sia in grado di attenuarlo.
 
 \section{Trust zones e confini di sicurezza}
 \label{sec:trust-zones}
@@ -238,7 +237,7 @@ raggiungibilità temporanea verso lo Storage-Service.
 La Certificate-Authority raggiunge soltanto il broker MQTT, ma è raggiunta da ogni altro
 componente interno, per permettergli di rinnovare il proprio certificato X.509.
 
-La quarta zona, \emph{Public Zone}, contiene soltanto Headscale, il quale è raggiungibile dalla rete 
+La quarta zona, \emph{Public Zone}, contiene soltanto Headscale, raggiungibile dalla rete 
 pubblica. La \autoref{sec:paradosso-coordinatore} ne spiega il motivo nel dettaglio. Tuttavia, le 
 chiamate di Network-Manager verso Headscale sono comunque protette dall'autenticazione mTLS o dal token di 
 bootstrap.
@@ -266,7 +265,8 @@ pubblici. Questo perché il certificato deve essere verificabile da un client es
 alla rete interna del sistema. Un certificato firmato dalla Certificate-Authority privata di RAM-USB non 
 sarebbe attendibile.
 
-Ogni altra comunicazione usa invece una Certificate-Authority privata, basata su \texttt{smallstep/\allowbreak certificates}.
+Ogni altra comunicazione usa invece una Certificate-Authority privata, basata su 
+\texttt{smallstep/\allowbreak certificates}.
 
 Ogni certificato privato segue lo stesso schema di bootstrap: ogni servizio riceve, fuori
 banda e una sola volta, un token di bootstrap monouso, e lo presenta alla Certificate-Authority 
