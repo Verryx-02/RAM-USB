@@ -52,7 +52,7 @@ autenticato via mTLS, le rivalida in modo indipendente e contatta i servizi inte
 La logica di validazione, gestione degli errori e logging viene riutilizzata da tutti i servizi principali 
 e vive in librerie interne condivise \cite{ramusb-pkg}.
 
-Lo scopo della rivalidazione è l'applicazione del principio di defence in depth \cite{nist-sp-800-207}.
+Lo scopo della rivalidazione è l'applicazione del principio di defence in depth \cite{nist-sp-800-53r5}.
 
 Se la validazione riesce, inoltra la richiesta a Database-Vault via mTLS. 
 

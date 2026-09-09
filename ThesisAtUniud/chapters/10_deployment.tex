@@ -34,7 +34,7 @@ questa differenza è legata alla scelta dell'immagine di base di ciascun servizi
 \label{sec:distroless}
 
 Un'immagine distroless \cite{distroless-github} non ha shell né gestore di pacchetti, riducendo così
-la maggior parte delle vulnerabilità critiche note nei container \cite{nist-sp-800-190}.
+numerose vulnerabilità critiche note nei container \cite{wager2024distroless}.
 Un supervisore come \texttt{s6-overlay}, però, ha bisogno di una shell per i propri script di avvio.
 Qualunque servizio debba far girare più di un solo binario Go non può quindi essere distroless.
 Di conseguenza, l'unico servizio distroless è Entry-Hub \cite{ramusb-code-dockerfile-entry-hub}, mentre 
