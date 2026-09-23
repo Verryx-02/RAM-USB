@@ -1,17 +1,18 @@
-\chapter{Architettura generale e trust zones}
+\chapter{Architettura generale e zone di fiducia}
 \label{chap:architettura}
 
-\section{Overview architetturale}
+\section{Panoramica dell'architettura}
 
 RAM-USB è un'architettura a microservizi n-tier in cui ogni componente ha una responsabilità specifica. 
 Questa separazione riduce il rischio che la compromissione di un componente si propaghi all'intero sistema.
 
-L'architettura interna di RAM-USB è composta da dieci componenti, organizzati in tre gruppi funzionali e 
-illustrati in \autoref{fig:architecture-container}, insieme al protocollo con cui interagiscono: 
+L'architettura dei componenti di RAM-USB, illustrata in \autoref{fig:architecture-container} è composta da dieci 
+componenti, organizzati in quattro gruppi funzionali: 
 \begin{itemize}
-    \item \textbf{Accesso e registrazione}: Entry-Hub, Security-Switch, Database-Vault, Network-Manager, Certificate-Authority, Headscale.
-    \item \textbf{Backup e restore}: Storage-Service.
+    \item \textbf{Accesso e registrazione}: Entry-Hub, Security-Switch, Database-Vault.
+    \item \textbf{Backup e ripristino}: Storage-Service.
     \item \textbf{Osservabilità}: Mosquitto, Metrics-Collector, Grafana.
+    \item \textbf{Rete e certificati}: Network-Manager, Headscale, Certificate-Authority.
 \end{itemize}
 
 \begin{figure}[H]
@@ -113,8 +114,15 @@ La struttura del file system è illustrata in \autoref{fig:filesystem-storage}.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.5\textwidth]{figures/07-data-filesystem-storage.pdf}
-    \caption{Struttura del filesystem di Storage-Service.}
+    \begin{minipage}{0.85\linewidth}
+    \dirtree{%
+    .1 /storage/\DTcomment{radice di tutti gli utenti registrati}.
+    .2 user\textless{}xxxxxx\textgreater{}/\DTcomment{proprietario \texttt{root:root}, permessi 0711}.
+    .3 data/\DTcomment{proprietario \texttt{user\textless{}xxxxxx\textgreater{}}, permessi 0700}.
+    }
+    \end{minipage}
+    \caption{Struttura del filesystem di Storage-Service, da \texttt{creator.go} e \texttt{dirmaker.go}
+    \cite{ramusb-code-posixuser-owners,ramusb-code-posixuser-modes}.}
     \label{fig:filesystem-storage}
 \end{figure}
 
@@ -221,10 +229,10 @@ restano disponibili i sette componenti che partecipano al percorso di una richie
 osservabilità può cadere senza che l'utente se ne accorga.
 
 I due costi non sono però dello stesso tipo. La latenza è definitiva, e accettata insieme
-all'architettura; la disponibilità è invece un problema di deployment, e il
+all'architettura; la disponibilità è invece un problema di distribuzione, e il
 \autoref{chap:deployment} discute fino a che punto l'infrastruttura sottostante sia in grado di attenuarlo.
 
-\section{Trust zones e confini di sicurezza}
+\section{Zone di fiducia e confini di sicurezza}
 \label{sec:trust-zones}
 
 La \autoref{fig:trust-zones} mostra le regole di raggiungibilità che Network-Manager applica alla rete mesh.
@@ -251,7 +259,7 @@ bootstrap.
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.55\textwidth]{figures/09-security-trust-zones.pdf}
-    \caption{Trust zones e raggiungibilità sulla rete mesh.}
+    \caption{Zone di fiducia e raggiungibilità sulla rete mesh.}
     \label{fig:trust-zones}
 \end{figure}
 
