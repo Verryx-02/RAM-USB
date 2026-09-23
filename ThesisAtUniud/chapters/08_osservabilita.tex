@@ -9,7 +9,7 @@ iniziativa (\emph{push}).
 RAM-USB adotta il secondo: ogni servizio pubblica le proprie metriche una volta al minuto,
 sul proprio topic MQTT dedicato verso il broker Mosquitto \cite{mosquitto-github}. 
 La scelta deriva dal fatto che un modello \emph{pull} richiederebbe che Metrics-Collector apra una 
-connessione verso ciascuno dei sei servizi, ampliando le regole di reachability della mesh discusse nel
+connessione verso ciascuno dei sei servizi, ampliando le regole di raggiungibilità della mesh discusse nel
 \autoref{chap:rete}.
 Pubblicando di propria iniziativa, sono invece i servizi ad aprire la connessione verso il broker.
 Da lì, Metrics-Collector legge le metriche e le persiste in un database.
