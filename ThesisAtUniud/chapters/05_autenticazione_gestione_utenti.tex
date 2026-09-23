@@ -23,8 +23,8 @@ utente in buona fede, che le stesse verifiche le ha già ricevute dal proprio cl
 
 I tre servizi condividono la stessa libreria di validazione, quindi ripetere il controllo non
 introduce diversità algoritmica, ma garantisce che nessun servizio dia per scontato che il
-precedente abbia fatto il proprio lavoro. In questo modo, se a Database-Vault dovesse arrivare una
-richiesta proveniente da un servizio compromesso, la validazione verrebbe fatta comunque.
+precedente abbia fatto il proprio lavoro. In questo modo, se, per esempio, a Database-Vault dovesse arrivare una
+richiesta manomessa, proveniente da un servizio compromesso, la validazione verrebbe fatta comunque e farebbe scartare la richiesta.
 
 Gli errori interni vengono infine tradotti in codici HTTP. La \autoref{tab:codici-http} riassume i codici 
 che raggiungono l'utente, attribuendo ciascun codice a chi lo emette.
@@ -319,8 +319,7 @@ tempo costante, che non lascia quindi dedurre quanti byte iniziali dei due valor
 
 Un'email inesistente e una password sbagliata devono produrre la stessa risposta, e non devono
 essere distinguibili nemmeno nei log. Le due strade convergono quindi su un unico errore
-sentinella, e il contenuto dell'errore originale viene scartato invece che riportato
-\cite{ramusb-code-login}.
+sentinella, e il contenuto dell'errore originale viene scartato \cite{ramusb-code-login}.
 
 Rendere identici la risposta e il log non basta però a rendere indistinguibili i due casi, perché
 resta una terza differenza osservabile: il tempo. Argon2id, con i parametri della sezione
