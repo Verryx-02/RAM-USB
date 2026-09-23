@@ -27,7 +27,7 @@ tabelle sottostanti.
 \endlastfoot
 CL-F-01 & Deve generare autonomamente una coppia di chiavi SSH (pubblica/privata) prima della registrazione, senza mai trasmettere la chiave privata ad alcun componente del sistema. \\
 CL-F-02 & Su comando dell'utente, deve inviare a Entry-Hub, durante la registrazione (\texttt{POST /api/users}), solo la chiave pubblica SSH, insieme a email e password. \\
-CL-F-03 & Su comando dell'utente, deve ripetere il login (\texttt{POST /api/login}) prima della scadenza del grant ACL di 12 ore, per mantenere la continuità di accesso a Storage-Service. \\
+CL-F-03 & Su comando dell'utente, deve ripetere il login (\texttt{POST /api/login}) prima della scadenza del permesso ACL di 12 ore, per mantenere la continuità di accesso a Storage-Service. \\
 CL-F-04 & Deve configurare e avviare Tailscale usando la pre-auth key ricevuta nella risposta di registrazione, per unirsi alla rete mesh privata. \\
 CL-F-05 & Deve risolvere Storage-Service tramite MagicDNS sulla rete mesh, senza fare affidamento su indirizzi IP statici. \\
 CL-F-06 & Su comando dell'utente, deve invocare \texttt{restic backup} verso Storage-Service via SFTP sulla porta TCP 2222 (ST-F-03), autenticandosi con la chiave privata SSH generata in CL-F-01. \\
@@ -192,7 +192,7 @@ NM-F-07 & Deve garantire che gli utenti registrati e autenticati possano vedere 
 NM-F-08 & Su richiesta di Security-Switch, a seguito di una registrazione riuscita, deve creare un utente Headscale dedicato e generare una pre-auth key a breve durata per il nuovo account. \\
 NM-F-09 & Dopo un login riuscito, su richiesta di Security-Switch, deve assegnare al nodo dell'utente il tag ACL che abilita la raggiungibilità verso Storage-Service, registrando una scadenza a 12 ore da quel momento. \\
 NM-F-10 & Deve verificare periodicamente le scadenze registrate e rimuovere il tag ACL dai nodi scaduti, automaticamente e senza intervento manuale. \\
-NM-F-11 & La scadenza di ogni grant deve essere persistita, non mantenuta solo in memoria, per non perdere lo stato in caso di riavvio di Network-Manager. \\
+NM-F-11 & La scadenza di ogni permesso deve essere persistita, non mantenuta solo in memoria, per non perdere lo stato in caso di riavvio di Network-Manager. \\
 NM-F-12 & La creazione di pre-auth key e la gestione dei tag ACL devono essere ristrette specificamente a Network-Manager, verificato via mutual TLS (campo \texttt{organization} uguale a \texttt{NetworkManager}). \\
 NM-F-13 & La pre-auth key serve unicamente a registrare il nodo come membro della mesh; da sola, non concede raggiungibilità verso Storage-Service. \\
 NM-F-14 & L'endpoint di coordinamento di Headscale è deliberatamente raggiungibile dalla rete pubblica (idealmente ospitato su un proprio VPS con indirizzo pubblico). \\
@@ -318,7 +318,7 @@ RNF-MAINT-01 & Ogni servizio deve poter essere isolato, ri-certificato e riavvia
 \endlastfoot
 RNF-ORG-01 & Linguaggio di implementazione: Go. \\
 RNF-ORG-03 & Licenza open-source MIT. \\
-RNF-ORG-04 & Piattaforma di deployment: Proxmox VE (KVM per Storage-Service, Database-Vault, Network-Manager; LXC per gli altri servizi). \\
+RNF-ORG-04 & Piattaforma di distribuzione: Proxmox VE (KVM per Storage-Service, Database-Vault, Network-Manager; LXC per gli altri servizi). \\
 RNF-ORG-05 & Sviluppo ed esercizio garantiti su macOS e Linux (con Docker). \\
 \end{longtable}
 
