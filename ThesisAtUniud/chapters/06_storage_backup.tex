@@ -86,7 +86,7 @@ secondo il principio fail-secure \cite{owasp-fail-securely}.
 Non esiste alcun altro luogo al di fuori di Database-Vault in cui siano salvate le chiavi pubbliche SSH, 
 quindi un suo malfunzionamento impedisce agli utenti di avviare le sessioni SFTP. 
 
-\section{Backup e restore}
+\section{Backup e ripristino}
 \label{sec:backup-restore}
 
 Il backup avviene per intero sul dispositivo dell'utente. Il client invoca Restic indicando come
@@ -111,5 +111,5 @@ La \autoref{fig:uc03} riassume la sequenza, dalla connessione SFTP fino ai dati 
     \label{fig:uc03}
 \end{figure}
 
-Il restore percorre la stessa strada del backup; l'unica differenza è il comando impartito a
+Il ripristino percorre la stessa strada del backup; l'unica differenza è il comando impartito a
 Restic, che scarica i blocchi richiesti e li decifra sul dispositivo dell'utente.
