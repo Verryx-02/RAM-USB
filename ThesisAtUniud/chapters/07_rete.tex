@@ -1,9 +1,9 @@
 \chapter{Rete e coordinamento della mesh}
 \label{chap:rete}
 
-\section{Politiche di rete e confini di reachability}
+\section{Politiche di rete e confini di raggiungibilità}
 
-Le trust zones della \autoref{fig:trust-zones} descrivono chi può contattare chi. I confini di reachability
+Le zone di fiducia della \autoref{fig:trust-zones} descrivono chi può contattare chi. I confini di raggiungibilità
 che ne derivano sono resi effettivi da una politica di rete che Network-Manager pubblica su Headscale.
 
 Ogni nodo della rete mesh, sia esso un servizio o il dispositivo di un utente, porta una o più etichette
@@ -22,7 +22,7 @@ Le regole, inoltre, nominano soltanto chi apre la connessione, quindi le rispost
 nel verso opposto. In questo modo, ad esempio, Security-Switch può contattare Database-Vault, e quest'ultimo 
 può rispondere alla richiesta, ma non è in grado di avviare una comunicazione con lui. 
 
-\section{Ciclo di vita dei grant di accesso}
+\section{Ciclo di vita dei permessi di accesso}
 
 Le due regole che riguardano l'utente sono riportate nel \autoref{lst:acl-utente}. Il tag 
 \texttt{TagStorageAccess} è temporaneo e viene assegnato al login; \texttt{TagMeshMember} è permanente e 
@@ -72,7 +72,7 @@ un permesso di dodici ore in un permesso perpetuo. Lo schema della tabella che l
 \autoref{lst:grants-schema}.
 
 \Needspace{10\baselineskip}
-\begin{lstlisting}[language=sql, caption={Schema della tabella dei grant di accesso, da \texttt{store.go}
+\begin{lstlisting}[language=sql, caption={Schema della tabella dei permessi di accesso, da \texttt{store.go}
 \cite{ramusb-code-grants-schema}.}, label={lst:grants-schema}]
 CREATE TABLE IF NOT EXISTS grants (
 	email_hash TEXT PRIMARY KEY,
@@ -82,10 +82,10 @@ CREATE TABLE IF NOT EXISTS grants (
 );
 \end{lstlisting}
 
-Un processo periodico, ogni cinque minuti, cerca le scadenze passate e revoca i grant scaduti
+Un processo periodico, ogni cinque minuti, cerca le scadenze passate e revoca i permessi scaduti
 \cite{ramusb-code-sweep}. La riga viene cancellata dal database prima di chiamare Headscale per togliere 
 il tag, e la cancellazione è condizionata alla scadenza esatta appena letta.
-Se nel frattempo un login ha rinnovato il grant, la scadenza in tabella non coincide più, la cancellazione
+Se nel frattempo un login ha rinnovato il permesso, la scadenza in tabella non coincide più, la cancellazione
 non tocca nessuna riga, e lo sweep si ferma senza contattare Headscale. 
 Chiamare prima Headscale e cancellare poi avrebbe invece rischiato di cancellare anche la riga
 appena riscritta dal login concorrente, togliendo all'utente un permesso appena concesso.
