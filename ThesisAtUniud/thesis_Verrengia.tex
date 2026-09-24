@@ -159,10 +159,21 @@
 \tableofcontents
 
 %% Lista delle tabelle (se presenti)
-%\listoftables
+%% Niente \cleardoublepage qui: \listoftables apre già da sé un \chapter* su pagina dispari
+%% (stesso meccanismo automatico di Ringraziamenti/Sommario/Indice sopra) — aggiungerne uno
+%% esplicito raddoppierebbe il salto pagina e sfaserebbe la voce nell'indice di una pagina.
+\phantomsection
+\addcontentsline{toc}{chapter}{\listtablename}
+\listoftables
 
 %% Lista delle figure (se presenti)
-%\listoffigures
+\phantomsection
+\addcontentsline{toc}{chapter}{\listfigurename}
+\listoffigures
+
+%% Elenco degli acronimi: resta qui, prima di \mainmatter, così ha numerazione romana come le
+%% altre liste sopra e non ruba la pagina 1 (araba) al primo capitolo.
+\input{chapters/00_acronimi}
 
 %% Corpo principale del documento
 \mainmatter
@@ -185,9 +196,6 @@
 \input{chapters/10_deployment}
 \input{chapters/11_sicurezza}
 \input{chapters/12_conclusioni}
-
-%% Elenco degli acronimi, subito prima dell'appendice
-\input{chapters/00_acronimi}
 
 %% Fine dei capitoli normali, inizio dei capitoli-appendice (opzionali)
 \appendix
