@@ -7,18 +7,15 @@
 Alcuni servizi di RAM-USB devono far girare più processi indipendenti nello stesso container e 
 necessitano quindi di un supervisore che li avvii nell'ordine giusto e li riavvii quando cadono.
 Quello usato da RAM-USB è \texttt{s6-overlay} \cite{s6-overlay-github}. 
-
 Ogni processo supervisionato è una directory sotto \texttt{s6-rc.d/}, dichiarata di tipo \texttt{longrun}; 
 le sue dipendenze sono file dentro una sottodirectory \texttt{dependencies.d/}, uno per ogni processo che 
 deve essere avviato: se, ad esempio, il processo A deve aspettare che il processo B sia pronto, 
 \texttt{A/dependencies.d/} contiene un file vuoto chiamato \texttt{B}. 
 L'ordine di avvio nasce quindi da un grafo dichiarato tra directory.
-
 Storage-Service è il caso più complesso: lo stesso container Docker è condiviso da 4 processi
 \cite{ramusb-code-storage-s6-tree}: \texttt{tailscaled}, il client mesh reale; \texttt{sshd}, il server
 SFTP (\autoref{chap:storage}); \texttt{identity-provisioner}, che mantiene aggiornato il certificato X.509 
 per il mTLS; e il binario Go dello stesso Storage-Service, che espone l'API HTTP interna. 
-
 Ogni processo \texttt{longrun} ha anche un file \texttt{run} e un file \texttt{finish}. Il primo è lo 
 script che lancia il binario vero e proprio \cite{ramusb-code-storage-s6-tree}. 
 Se quel processo termina, il supervisore lo rilancia da capo;
@@ -77,14 +74,12 @@ Proxmox aggiunge invece, sopra ciascun container Docker, il confine di isolament
 KVM, con il proprio kernel emulato, o quello di un container di sistema LXC, più leggero ma ancora 
 condiviso con il kernel host. Ogni servizio gira quindi dentro il proprio container Docker, ma quel 
 container Docker gira a sua volta dentro la sua macchina virtuale KVM o dentro il suo container LXC.
-
 La scelta di Proxmox porta anche un altro vantaggio: apre la strada alla migrazione a caldo delle KVM
 e, con più nodi, all'alta disponibilità.
 
 Storage-Service, Database-Vault e Network-Manager sono assegnati a guest KVM, mentre i restanti 
 servizi sono assegnati a container LXC non privilegiati, in cui quindi l'utente root del container è mappato 
 su un utente non root dell'host. 
-
 Entry-Hub e Headscale restano fuori da Proxmox del tutto, su un VPS pubblico dedicato ciascuno, per i
 motivi spiegati nel \autoref{chap:rete}.
 
@@ -94,7 +89,6 @@ necessitano di pochissime risorse, quindi l'host può sopportarne diversi contem
 motivo sono la scelta di default. 
 I servizi che tengono i dati degli utenti, la gestione delle politiche di rete e i backup, necessitano di 
 maggiore isolamento, perché la loro compromissione potrebbe causare dei danni irrimediabili. 
-
 Storage-Service ha inoltre bisogno di eseguire \texttt{setuid} e \texttt{chroot} per isolare gli utenti
 POSIX (\autoref{sec:isolamento}): farlo dentro un container LXC, già esso stesso un namespace,
 aggiungerebbe un secondo livello di mappatura degli UID. Una KVM evita di sovrapporre
@@ -114,7 +108,7 @@ La \autoref{fig:architecture-deployment} riassume la topologia di produzione.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{figures/02-architecture-deployment.pdf}
+\includegraphics[width=0.95\textwidth]{figures/02-architecture-deployment.pdf}
 \caption{Topologia di produzione target.}
 \label{fig:architecture-deployment}
 \end{figure}
