@@ -974,34 +974,3 @@ trailer
 startxref
 164783
 %%EOF
-10 0 obj
-<< /CropBox [ 1.305645 78.22345 1000 577.6499 ] /LastModified (D:20260924130740+02'00')
-/MediaBox [ 0 0 1000 600 ] /Parent 3 0 R /Type /Page /TrimBox [ 0 0 1000 600
-] /Thumb 46 0 R /BleedBox [ 0 0 1000 600 ] /ArtBox [ 47.5 88.25 958.2 550.3
-] /Rotate 0 /PieceInfo << /Illustrator 12 0 R >> /Contents 11 0 R /Resources
-<< /Properties << /MC0 8 0 R >> /Shading << /Sh0 14 0 R /Sh1 15 0 R /Sh2 16 0 R
->> /XObject << /Fm17 26 0 R /Fm18 27 0 R /Fm19 28 0 R /Fm11 20 0 R /Fm0 17 0 R
-/Fm1 18 0 R /Fm2 29 0 R /Fm3 39 0 R /Fm4 40 0 R /Fm5 41 0 R /Fm6 42 0 R /Fm7
-43 0 R /Fm8 44 0 R /Fm9 45 0 R /Fm20 30 0 R /Fm21 31 0 R /Fm22 32 0 R /Fm23
-33 0 R /Fm24 34 0 R /Fm25 35 0 R /Fm26 36 0 R /Fm27 37 0 R /Fm28 38 0 R /Fm10
-19 0 R /Fm12 21 0 R /Fm13 22 0 R /Fm14 23 0 R /Fm15 24 0 R /Fm16 25 0 R >>
-/ExtGState << /GS0 13 0 R >> >> >>
-endobj
-95 0 obj
-<< /Producer (macOS Versione 26.6.2 \(Build 25G83\) Quartz PDFContext, AppendMode 1.1)
-/CreationDate (D:20260924130740+02'00') /ModDate (D:20260924125943Z00'00')
-/Title (08-security-pki-hierarchy copy) /Creator (Adobe Illustrator 26.0 \(Windows\))
->>
-endobj
-xref
-0 1
-0000000000 65535 f 
-10 1
-0000166860 00000 n 
-95 1
-0000167694 00000 n 
-trailer
-<< /ID [<3C3D5B7D96E06043BC85971302F8B832><041EFD0B716A0CC4DF09EBECFA63AC9A> ] /Root 1 0 R /Size 96 /Prev 164783 /Info 95 0 R >> 
-startxref
-167961
-%%EOF
