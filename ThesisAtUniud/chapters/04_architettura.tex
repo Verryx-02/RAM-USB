@@ -6,7 +6,7 @@
 RAM-USB è un'architettura a microservizi n-tier in cui ogni componente ha una responsabilità specifica. 
 Questa separazione riduce il rischio che la compromissione di un componente si propaghi all'intero sistema.
 
-L'architettura dei componenti di RAM-USB, illustrata in \autoref{fig:architecture-container} è composta da dieci 
+L'architettura di RAM-USB è composta da dieci 
 componenti, organizzati in quattro gruppi funzionali: 
 \begin{itemize}
     \item \textbf{Accesso e registrazione}: Entry-Hub, Security-Switch, Database-Vault.
@@ -14,13 +14,6 @@ componenti, organizzati in quattro gruppi funzionali:
     \item \textbf{Osservabilità}: Mosquitto, Metrics-Collector, Grafana.
     \item \textbf{Rete e certificati}: Network-Manager, Headscale, Certificate-Authority.
 \end{itemize}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.5\textwidth]{figures/01-architecture-container.pdf}
-    \caption{Diagramma dei container di RAM-USB.}
-    \label{fig:architecture-container}
-\end{figure}
 
 \subsection{Entry-Hub}
 
@@ -76,7 +69,7 @@ salvare, l'ER è piuttosto semplice.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.7\textwidth]{figures/06-data-er-database-vault.pdf}
+    \includegraphics[width=0.35\textwidth]{figures/06-data-er-database-vault.pdf}
     \caption{Diagramma Entità-Relazioni del record utente in Database-Vault.}
     \label{fig:er-database-vault}
 \end{figure}
@@ -199,6 +192,18 @@ Legge da TimescaleDB direttamente, senza passare per Metrics-Collector.
 La dashboard di Grafana mostra tempi di risposta, throughput e connessioni attive. 
 Il \autoref{chap:osservabilita} tratta questa pipeline di osservabilità nel dettaglio.
 
+\clearpage
+
+La \autoref{fig:architecture-container} riassume l'architettura appena descritta insieme ai protocolli di 
+comunicazione utilizzati. 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/01-architecture-container.pdf}
+    \caption{Diagramma dei container di RAM-USB.}
+    \label{fig:architecture-container}
+\end{figure}
+
 \section{Modello di comunicazione inter-servizio}
 
 Ogni servizio espone la propria API HTTPS sulla libreria standard di Go, \texttt{net/http}.
@@ -250,15 +255,9 @@ pubblica. La \autoref{sec:paradosso-coordinatore} ne spiega il motivo nel dettag
 chiamate di Network-Manager verso Headscale sono comunque protette dall'autenticazione mTLS o dal token di 
 bootstrap.
 
-%% TODO: la legenda del diagramma sorgente (docs/design/diagrams/09-security-trust-zones.puml,
-%% dentro il blocco "legend") cita ancora NM-F-04 nella sua direzione superata ("Certificate-
-%% Authority can reach, and be reached by, every internal component") - va aggiornata per
-%% riflettere che la CA raggiunge solo il broker MQTT (vedi il paragrafo appena sopra, corretto
-%% il 2026-08-31). Le frecce disegnate non sono coinvolte, solo il testo della legenda. Da
-%% affidare a diagram-agent per la modifica e il re-render del PDF.
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.55\textwidth]{figures/09-security-trust-zones.pdf}
+    \includegraphics[width=0.8\textwidth]{figures/09-security-trust-zones.pdf}
     \caption{Zone di fiducia e raggiungibilità sulla rete mesh.}
     \label{fig:trust-zones}
 \end{figure}
@@ -286,9 +285,10 @@ Un certificato X.509 valido dimostra solo che la Certificate-Authority ha approv
 il client atteso per quella connessione. Per questo ogni servizio verifica anche il campo 
 \texttt{organization} del certificato.
 
-\begin{figure}[H]
+\begin{figure}[h]
     \centering
     \includegraphics[width=\textwidth]{figures/08-security-pki-hierarchy.pdf}
     \caption{Gerarchia delle Certificate Authority e relazioni di firma.}
     \label{fig:pki-hierarchy}
 \end{figure}
+
