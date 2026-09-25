@@ -5,6 +5,7 @@ RAM-USB/
 .claude/
 CLAUDE.md
 graphify-out/
+Thesis/
 
 # Generated dev-only TLS key material (third-party/entry-hub/generate-dev-cert.sh,
 # third-party/headscale/dev-tls/README.txt's openssl command) -
