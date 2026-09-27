@@ -4,7 +4,7 @@
 \section{Risultati raggiunti}
 
 Il \autoref{chap:introduzione} pone l'obiettivo di progettare, implementare e validare RAM-USB come
-servizio di backup remoto multi-utente conforme ai requisiti della SRS \cite{ramusb-srs}, affidandosi ai
+servizio di backup remoto multi-utente conforme ai requisiti dell'SRS \cite{ramusb-srs}, affidandosi ai
 principi zero-trust e defense-in-depth per difendere il sistema da attacchi esterni. 
 
 I dieci requisiti utente elencati nel \autoref{chap:requisiti} sono, con due sole eccezioni, completamente 
@@ -19,10 +19,10 @@ utenti (RU-10).
 
 RU-06 (Avere la garanzia che nessuno, amministratori inclusi, possa leggere le proprie credenziali di
 accesso) non è pienamente supportato a causa delle limitazioni teoriche imposte dalla scelta di un sistema 
-di autenticazione con username e password e vale pertanto solo sulla password e solo quando questa si trovi già 
+di autenticazione con email e password e vale pertanto solo sulla password e solo quando questa si trovi già 
 persistita nel database in forma di hash. L'unico modo per evitare che un amministratore possa intercettare 
 le credenziali in transito, infatti, è non inviarle affatto al server, ad esempio utilizzando un protocollo 
-zero-trust, non oggetto di questa tesi.
+zero-knowledge, non oggetto di questa tesi.
 
 RU-09, la garanzia che nessuno possa modificare o cancellare un backup, è stata
 dichiarata fuori perimetro fin dalle prime versioni dell'SRS, a causa dei tempi stretti del progetto ed è 
@@ -42,8 +42,7 @@ RISK-01 è RU-09 stesso. Resta un miglioramento desiderabile, non ancora progett
 
 RISK-02 riguarda la master key e il pepper: risiedono in una variabile d'ambiente, senza una procedura di backup
 (DV-F-18) né di rotazione (DV-F-19). La loro perdita
-comporterebbe la perdita irreversibile dell'accesso a tutti i dati cifrati; la loro compromissione
-romperebbe la garanzia zero-knowledge per ogni utente.
+comporterebbe la perdita irreversibile dell'accesso a tutte le credenziali cifrate.
 
 RISK-03 riguarda il client: al momento non containerizzato con Docker. Il codice Go del servizio esiste ed è 
 stato testato, ma la containerizzazione necessita di ulteriori ragionamenti e decisioni di design.
@@ -63,7 +62,7 @@ di una persona, e lì il suo valore non è misurabile senza la distribuzione rea
 dagli utenti. 
 Questa scelta di design è quindi al momento ancora aperta, in attesa di analisi più approfondite.
 
-Oltre a DV-F-18 e DV-F-19, già discussi come RISK-02, restano non ancora progettati, il limite
+Oltre a DV-F-18 e DV-F-19, già discussi come RISK-02, restano da progettare, il limite
 di spazio di archiviazione dedicato ad ogni utente e la replica automatica dei backup su CephFS, entrambi 
 rimandati nella SRS come miglioramenti desiderabili piuttosto che vincoli del progetto.
 

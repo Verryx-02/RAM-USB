@@ -2,7 +2,7 @@
 \label{app:elenco-requisiti}
 
 Le tabelle seguenti raccolgono i requisiti di sistema funzionali, non funzionali e di dominio, organizzati 
-secondo la stessa struttura dell'SRS originale. \cite{ramusb-srs}  
+secondo la stessa struttura dell'SRS originale \cite{ramusb-srs}.
 
 Il capitolo 3 discute per intero i requisiti utente, i quali sono gli unici a non essere inclusi nelle 
 tabelle sottostanti.
@@ -27,13 +27,13 @@ tabelle sottostanti.
 \endlastfoot
 CL-F-01 & Deve generare autonomamente una coppia di chiavi SSH (pubblica/privata) prima della registrazione, senza mai trasmettere la chiave privata ad alcun componente del sistema. \\
 CL-F-02 & Su comando dell'utente, deve inviare a Entry-Hub, durante la registrazione (\texttt{POST /api/users}), solo la chiave pubblica SSH, insieme a email e password. \\
-CL-F-03 & Su comando dell'utente, deve ripetere il login (\texttt{POST /api/login}) prima della scadenza del permesso ACL di 12 ore, per mantenere la continuità di accesso a Storage-Service. \\
+CL-F-03 & Su comando dell'utente, deve ripetere il login (\texttt{POST /api/login}) prima della scadenza del permesso ACL di dodici ore, per mantenere la continuità di accesso a Storage-Service. \\
 CL-F-04 & Deve configurare e avviare Tailscale usando la pre-auth key ricevuta nella risposta di registrazione, per unirsi alla rete mesh privata. \\
 CL-F-05 & Deve risolvere Storage-Service tramite MagicDNS sulla rete mesh, senza fare affidamento su indirizzi IP statici. \\
 CL-F-06 & Su comando dell'utente, deve invocare \texttt{restic backup} verso Storage-Service via SFTP sulla porta TCP 2222 (ST-F-03), autenticandosi con la chiave privata SSH generata in CL-F-01. \\
 CL-F-07 & Su comando dell'utente, deve invocare \texttt{restic restore} verso Storage-Service via SFTP sulla porta TCP 2222 (ST-F-03), usando lo stesso metodo di autenticazione di CL-F-06. \\
 CL-F-08 & Deve gestire i codici di errore HTTP restituiti da Entry-Hub (400/401/403/500/502/503/504) senza esporre dettagli interni del sistema all'utente finale. \\
-CL-F-09 & Su comando dell'utente, deve validare localmente email, password e — solo in fase di registrazione — la chiave pubblica SSH, usando le stesse regole imposte da Entry-Hub (EH-F-04 per la registrazione, EH-F-05 per il login), prima di inviare \texttt{POST /api/users} o \texttt{POST /api/login}; in caso di fallimento della validazione locale, non deve trasmettere la richiesta. \\
+CL-F-09 & Su comando dell'utente, deve validare localmente email, password e, solo in fase di registrazione, la chiave pubblica SSH, usando le stesse regole imposte da Entry-Hub (EH-F-04 per la registrazione, EH-F-05 per il login), prima di inviare \texttt{POST /api/users} o \texttt{POST /api/login}; in caso di fallimento della validazione locale, non deve trasmettere la richiesta. \\
 CL-F-10 & Deve ricavare l'endpoint di login di Entry-Hub da un valore di configurazione distinto da quello di registrazione, e deve usare per il login un nome coperto dal certificato che Entry-Hub presenta. \\
 CL-F-11 & Deve fissare la chiave host SSH di Storage-Service: registra la chiave ricevuta nella risposta alla registrazione (ST-F-16) prima del primo backup, la presenta a \texttt{ssh} come host noto e interrompe la connessione se la chiave presentata differisce. \\
 \end{longtable}
@@ -56,7 +56,7 @@ CL-F-11 & Deve fissare la chiave host SSH di Storage-Service: registra la chiave
 \endlastfoot
 EH-F-01 & Deve esporre un endpoint HTTPS pubblico di health-check (\texttt{GET /api/health}), con certificati firmati dalla CA pubblica Let's Encrypt. \\
 EH-F-02 & Deve esporre un endpoint HTTPS pubblico per la registrazione degli utenti (\texttt{POST /api/users}), con certificati firmati dalla CA pubblica Let's Encrypt. \\
-EH-F-03 & Deve esporre un endpoint HTTPS (\texttt{POST /api/login}) per l'autenticazione degli utenti registrati, servito su un listener separato raggiungibile solo dalla rete mesh privata (non da internet, a differenza del listener di EH-F-01/EH-F-02), con lo stesso certificato firmato dalla CA pubblica Let's Encrypt presentato da EH-F-01/EH-F-02 — non mTLS; cambia solo la raggiungibilità di rete. \\
+EH-F-03 & Deve esporre un endpoint HTTPS (\texttt{POST /api/login}) per l'autenticazione degli utenti registrati, servito su un listener separato raggiungibile solo dalla rete mesh privata (non da internet, a differenza del listener di EH-F-01/EH-F-02), con lo stesso certificato firmato dalla CA pubblica Let's Encrypt presentato da EH-F-01/EH-F-02, non mTLS; cambia solo la raggiungibilità di rete. \\
 EH-F-04 & \texttt{/api/users} deve accettare JSON e validare: presenza dei campi email, password e chiave pubblica SSH; dimensione del payload entro un limite definito; assenza di campi aggiuntivi inattesi; formato dell'email (RFC 5322); lunghezza della password tra 8 e 128 caratteri; complessità della password (almeno 3 categorie di caratteri tra minuscole, maiuscole, cifre, simboli); correttezza formale della chiave pubblica SSH. \\
 EH-F-05 & \texttt{/api/login} deve accettare JSON e validare: presenza dei campi email e password; dimensione del payload entro un limite definito; assenza di campi aggiuntivi inattesi; formato dell'email (RFC 5322); lunghezza della password tra 8 e 128 caratteri; complessità della password (almeno 3 categorie di caratteri). \\
 EH-F-06 & In caso di fallimento della validazione deve: rispondere con HTTP 400 (Bad Request) senza specificare quale problema sia stato riscontrato; registrare nel log il problema trovato senza identificare l'utente; non inoltrare la richiesta ad alcun altro servizio interno. \\
@@ -87,7 +87,7 @@ SS-F-01 & Deve accettare solo connessioni mTLS da client che soddisfino: campo \
 SS-F-02 & Deve ri-validare l'input ricevuto, indipendentemente dalla validazione già effettuata da Entry-Hub. \\
 SS-F-03 & In caso di fallimento della validazione deve: rispondere con HTTP 400 (Bad Request) senza specificare quale problema sia stato riscontrato; registrare nel log il problema trovato senza identificare l'utente; non inoltrare la richiesta ad alcun altro servizio interno. \\
 SS-F-04 & In caso di validazione riuscita deve: registrare nel log l'esito della validazione senza identificare l'utente; inoltrare la richiesta a Database-Vault via mTLS, verificando che: il certificato provenga da un Database-Vault; il certificato X.509 sia valido. \\
-SS-F-05 & Dopo la conferma di autenticazione riuscita da Database-Vault, deve richiedere a Network-Manager (via mTLS) di concedere a quell'utente l'accesso a Storage-Service per 12 ore. \\
+SS-F-05 & Dopo la conferma di autenticazione riuscita da Database-Vault, deve richiedere a Network-Manager (via mTLS) di concedere a quell'utente l'accesso a Storage-Service per dodici ore. \\
 SS-F-06 & Deve mappare gli errori sui codici HTTP 400/401/403/500/502/504. \\
 SS-F-07 & Deve pubblicare le metriche ogni minuto, e solo allora, sul proprio topic MQTT dedicato (\texttt{metrics/Security-Switch}), via mTLS, verificando che: il certificato provenga da un MQTT-Broker; il certificato X.509 sia valido. \\
 SS-F-08 & Le metriche non devono mai contenere dati personali degli utenti, solo statistiche aggregate. \\
@@ -190,7 +190,7 @@ NM-F-05 & Deve garantire che solo gli utenti autenticati possano vedere e contat
 NM-F-06 & Deve garantire che gli utenti registrati ma non autenticati possano vedere e contattare solo Entry-Hub. \\
 NM-F-07 & Deve garantire che gli utenti registrati e autenticati possano vedere e contattare solo Entry-Hub e Storage-Service. \\
 NM-F-08 & Su richiesta di Security-Switch, a seguito di una registrazione riuscita, deve creare un utente Headscale dedicato e generare una pre-auth key a breve durata per il nuovo account. \\
-NM-F-09 & Dopo un login riuscito, su richiesta di Security-Switch, deve assegnare al nodo dell'utente il tag ACL che abilita la raggiungibilità verso Storage-Service, registrando una scadenza a 12 ore da quel momento. \\
+NM-F-09 & Dopo un login riuscito, su richiesta di Security-Switch, deve assegnare al nodo dell'utente il tag ACL che abilita la raggiungibilità verso Storage-Service, registrando una scadenza a dodici ore da quel momento. \\
 NM-F-10 & Deve verificare periodicamente le scadenze registrate e rimuovere il tag ACL dai nodi scaduti, automaticamente e senza intervento manuale. \\
 NM-F-11 & La scadenza di ogni permesso deve essere persistita, non mantenuta solo in memoria, per non perdere lo stato in caso di riavvio di Network-Manager. \\
 NM-F-12 & La creazione di pre-auth key e la gestione dei tag ACL devono essere ristrette specificamente a Network-Manager, verificato via mutual TLS (campo \texttt{organization} uguale a \texttt{NetworkManager}). \\
@@ -245,7 +245,7 @@ CA-F-04 & Deve accettare un bootstrap token monouso, distribuito fuori banda a c
 \endlastfoot
 MT-F-01 & Metrics-Collector può leggere solo \texttt{metrics/*}. \\
 MT-F-02 & Metrics-Collector deve scartare le metriche il cui campo \texttt{service} non corrisponde al topic da cui provengono. \\
-MT-F-03 & Le metriche devono essere memorizzate come hypertable TimescaleDB, con retention automatica di 30 giorni e compressione dopo 7 giorni. \\
+MT-F-03 & Le metriche devono essere memorizzate come hypertable TimescaleDB, con ritenzione automatica di 30 giorni e compressione dopo 7 giorni. \\
 MT-F-04 & Devono esistere dashboard Grafana per tempo di risposta, throughput e connessioni attive. \\
 \end{longtable}
 

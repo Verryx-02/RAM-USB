@@ -17,7 +17,7 @@ componenti, organizzati in quattro gruppi funzionali:
 
 \subsection{Entry-Hub}
 
-Entry-Hub è il gateway pubblico del sistema, ovvero l'unico esposto a chiunque su internet. Per questo 
+Entry-Hub è il gateway pubblico del sistema, ovvero il componente esposto a chiunque su internet. Per questo 
 il sistema non gli concede fiducia implicita. Il suo processo gira quindi in un container distroless 
 \cite{distroless-github}, seguendo il principio di riduzione dell'attack surface raccomandato da 
 NIST SP 800-190 \cite{nist-sp-800-190}. 
@@ -46,14 +46,14 @@ autenticato via mTLS, le rivalida in modo indipendente e contatta i servizi inte
 La logica di validazione, gestione degli errori e logging viene riutilizzata da tutti i servizi principali 
 e vive in librerie interne condivise \cite{ramusb-pkg}.
 
-Lo scopo della rivalidazione è l'applicazione del principio di defence in depth \cite{nist-sp-800-53r5}.
+Lo scopo della rivalidazione è l'applicazione del principio di defense-in-depth \cite{nist-sp-800-53r5}.
 
 Se la validazione riesce, inoltra la richiesta a Database-Vault via mTLS. 
 
 Nel caso di una richiesta di registrazione, chiede al Network-Manager di creare l'identità del nuovo utente 
 sulla rete mesh e la credenziale (pre-auth key) con cui il suo dispositivo potrà unirvisi. 
 
-Nel caso di una richiesta di login, chiede al Network-Manager di concedere un accesso temporaneo di 12 ore 
+Nel caso di una richiesta di login, chiede al Network-Manager di concedere un accesso temporaneo di dodici ore 
 per quell'utente verso Storage-Service. Solo quando l'utente avrà ottenuto l'accesso allo Storage-Service, 
 potrà contattarlo e gestire i propri backup.
 
@@ -98,7 +98,7 @@ credenziali di accesso di un utente.
 \subsection{Storage-Service}
 
 Storage-Service ospita i file di backup degli utenti.
-Non elabora mai contenuto in chiaro poiché per design, non è in grado di farlo. Riceve infatti soltanto
+Non elabora mai contenuto in chiaro poiché, per design, non è in grado di farlo. Riceve infatti soltanto
 file deduplicati, compressi e cifrati lato client con Restic \cite{restic-github}.
 
 Su richiesta di Database-Vault, crea un utente POSIX dedicato, senza shell interattiva né home directory
@@ -125,7 +125,7 @@ l'autenticazione con username e password, né altre forme di accesso Secure Shel
 
 Ad ogni connessione, un binario \texttt{AuthorizedKeysCommand} dedicato interroga Database-Vault per 
 ottenere la chiave pubblica corrente dell'utente.
-Qualunque errore in quella chiamata, nega la connessione secondo il principio fail-secure \cite{owasp-fail-securely}.
+Qualunque errore, in quella chiamata, nega la connessione secondo il principio fail-secure \cite{owasp-fail-securely}.
 
 \subsection{Network-Manager}
 
@@ -136,7 +136,7 @@ In fase di registrazione, crea un utente Headscale dedicato e la pre-auth key co
 dell'utente si unirà alla rete.
 
 Durante il login, assegna al nodo dell'utente il tag Access Control List (ACL) che abilita l'accesso 
-temporaneo di 12 ore allo Storage-Service.
+temporaneo di dodici ore allo Storage-Service.
 Un processo periodico controlla le scadenze e rimuove il tag dai nodi scaduti.
 
 \subsection{Certificate-Authority}
@@ -146,7 +146,7 @@ Certificate-Authority è la CA privata del sistema, basata su \texttt{smallstep/
 
 Emette, rinnova e revoca i certificati mTLS di ogni servizio interno, il che lo rende un componente 
 particolarmente critico del sistema, nonché l'unico raggiungibile da tutti i servizi interni: 
-un malintenzionato che riuscisse a comprometterla, infatti, potrebbe emettere certificati falsificati 
+un malintenzionato che riuscisse a comprometterlo, infatti, potrebbe emettere certificati falsificati 
 per qualunque organizzazione.
 
 Ogni servizio ottiene il suo primo certificato contattando la CA sfruttando un token di bootstrap distribuito 
@@ -172,7 +172,7 @@ rete privata, ma è raggiungibile da chiunque su internet. La \autoref{sec:parad
 Mosquitto è il broker MQTT su cui ogni servizio, una volta al minuto, pubblica le proprie metriche operative. 
 
 Applica una ACL secondo la quale ogni servizio può scrivere sul proprio topic, senza mai potervi leggere, 
-mentre Metrics-Collector può solo leggere l'intero spazio \texttt{metrics/*}, senza mai scrivervi.
+mentre Metrics-Collector può solo leggere l'intero spazio \texttt{metrics/\#}, senza mai scrivervi.
 
 \subsection{Metrics-Collector}
 
@@ -220,10 +220,10 @@ Gli endpoint qui elencati seguono le convenzioni REST \cite{fielding2000rest}.
 
 \texttt{POST /api/login} è l'unica eccezione, perché un login riuscito restituisce solo la conferma che 
 un'azione è avvenuta ma manca l'identificativo che una vera risorsa \texttt{sessions} richiederebbe per 
-essere letta con GET o cancellata con DELETE. Il token ACL di 12 ore che il login concede, infatti, resta 
+essere letta con GET o cancellata con DELETE. Il token ACL di dodici ore che il login concede, infatti, resta 
 interno a Network-Manager e scade autonomamente.
 
-La pubblicazione delle metriche inoltre, è asincrona: ogni servizio, infatti, pubblica i propri messaggi su
+La pubblicazione delle metriche, inoltre, è asincrona: ogni servizio pubblica i propri messaggi su
 un topic Message Queuing Telemetry Transport (MQTT) dedicato senza alcun bisogno di attendere una risposta.
 
 La struttura del sistema ha un costo non indifferente: ogni registrazione e login attraversa
@@ -243,7 +243,7 @@ all'architettura; la disponibilità è invece un problema di distribuzione, e il
 La \autoref{fig:trust-zones} mostra le regole di raggiungibilità che Network-Manager applica alla rete mesh.
 
 Le due zone più esterne appartengono all'utente, prima e dopo l'autenticazione. Un utente registrato ma
-non ancora autenticato, che appartiene quindi alla \emph{Unauthenticated User Zone} vede e può contattare 
+non ancora autenticato, che appartiene quindi alla \emph{Unauthenticated User Zone}, vede e può contattare 
 solo Entry-Hub. Dopo il login, lo stesso nodo entra nella \emph{Authenticated User Zone} e ottiene la 
 raggiungibilità temporanea verso lo Storage-Service.
 
@@ -252,8 +252,8 @@ componente interno, per permettergli di rinnovare il proprio certificato X.509.
 
 La quarta zona, \emph{Public Zone}, contiene soltanto Headscale, raggiungibile dalla rete 
 pubblica. La \autoref{sec:paradosso-coordinatore} ne spiega il motivo nel dettaglio. Tuttavia, le 
-chiamate di Network-Manager verso Headscale sono comunque protette dall'autenticazione mTLS o dal token di 
-bootstrap.
+chiamate di Network-Manager verso Headscale sono comunque protette dall'autenticazione mTLS e 
+dalla chiave API di Headscale
 
 \begin{figure}[H]
     \centering

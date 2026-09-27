@@ -71,8 +71,8 @@ kernel \cite{docker-overview}. Garantisce così portabilità su ogni sistema ope
 per-servizio, identici in sviluppo e in produzione.
 
 Proxmox aggiunge invece, sopra ciascun container Docker, il confine di isolamento di una macchina virtuale 
-KVM, con il proprio kernel emulato, o quello di un container di sistema LXC, più leggero ma ancora 
-condiviso con il kernel host. Ogni servizio gira quindi dentro il proprio container Docker, ma quel 
+KVM, con il proprio kernel, o, in alternativa, quello di un container di sistema LXC, più leggero ma che condivide il kernel 
+con l'host. Ogni servizio gira quindi dentro il proprio container Docker, ma quel 
 container Docker gira a sua volta dentro la sua macchina virtuale KVM o dentro il suo container LXC.
 La scelta di Proxmox porta anche un altro vantaggio: apre la strada alla migrazione a caldo delle KVM
 e, con più nodi, all'alta disponibilità.
@@ -136,7 +136,7 @@ in grado di offrire anche il recupero automatico dopo la caduta di un nodo fisic
 pianificato di uno sano. 
 
 I nodi, però, per poter cooperare devono trovarsi sulla stessa rete a bassa latenza poiché lo stack del cluster 
-Proxmox richiede una latenza inferiore ai 5ms tra tutti i nodi \cite{proxmox-cluster-manager} per operare 
+Proxmox richiede una latenza inferiore ai 5 ms tra tutti i nodi \cite{proxmox-cluster-manager} per operare 
 in modo stabile.
 
 Anche con la migliore fibra disponibile, due nodi lontani tra loro non possono raggiungere una latenza così 

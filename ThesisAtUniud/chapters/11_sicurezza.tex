@@ -11,13 +11,14 @@ Questa sezione le rilegge dal punto di vista di chi tenta di comprometterle.
 
 \texttt{POST /api/users} è un endpoint pubblico che risponde 201 se l'email inviata è disponibile
 e 409 se è già registrata, senza specificare se il conflitto viene dall'email o dalla 
-chiave SSH. Chi invia però una chiave SSH generata al momento, quindi certamente unica, ha già escluso 
-che il conflitto sia sulla chiave SSH. 
+chiave SSH. Chi invia però una password validata dal client e una chiave SSH generata al momento, 
+quindi certamente unica, ha già escluso che il conflitto sia sulla chiave SSH. 
 
 Lo \autoref{sch:enumerazione} riassume il procedimento, con i simboli seguenti:
 
 \begin{itemize}
     \item $e$: l'indirizzo email candidato;
+    \item $p$: una password validata dal client;
     \item $k$: una chiave pubblica SSH generata dall'attaccante;
     \item $r$: il codice di stato HTTP restituito da \texttt{POST /api/users}.
 \end{itemize}
@@ -33,7 +34,7 @@ $\begin{array}{rl}
 \label{sch:enumerazione}
 \end{schema}
 
-Il login invece, nasconde molto meglio questa informazione restituendo lo stesso 401 sia per un'email
+Il login, invece, nasconde molto meglio questa informazione, restituendo lo stesso 401 sia per un'email
 inesistente sia per una password sbagliata, con lo stesso log e con lo stesso tempo di risposta
 (\autoref{sec:login}). Quella protezione non è mai stata estesa alla registrazione.
 
@@ -57,10 +58,10 @@ risposta 201 della registrazione.
 Email e password attraversano, cifrate in transito, Entry-Hub, Security-Switch e Database-Vault.
 Chi controlla anche uno solo di questi processi può leggerle nel punto in cui sono in chiaro in memoria. 
 
-A riposo però, la password non è mai recuperabile, nemmeno da un amministratore con pieno
+A riposo, però, la password non è mai recuperabile, nemmeno da un amministratore con pieno
 accesso al database. L'email invece è recuperabile da un amministratore che possiede la master key.
 
-Il problema delle credenziali catturate in transito si potrebbe mitigare cifrando end to end le credenziali 
+Il problema delle credenziali catturate in transito si potrebbe mitigare cifrando end-to-end le credenziali 
 tra il client e il Database-Vault, ma in questo caso, il problema non verrebbe comunque completamente 
 risolto e si introdurrebbe aggiuntiva complessità al sistema. L'unica vera soluzione è l'utilizzo di un sistema
 di autenticazione zero-knowledge.
@@ -159,7 +160,7 @@ Un attaccante che ottenga il controllo della Certificate-Authority potrebbe firm
 valido per qualunque \texttt{organization} (\autoref{sec:pki}) e impersonare così qualsiasi servizio
 interno, oppure rifiutarsi di rilasciare i certificati aggiornati per i servizi che richiedono un rinnovo.
 
-Realisticamente però, non può contattare nessuno a parte il broker MQTT, perché secondo le regole ACL di Headscale, può soltanto
+Realisticamente, però, non può contattare nessuno a parte il broker MQTT, perché secondo le regole ACL di Headscale, può soltanto
 rispondere alle chiamate dei servizi interni, senza poter iniziare nuove comunicazioni (\autoref{sec:trust-zones}).
 
 Non intacca RU-05 o RU-06, visto che la CA non ha alcun ruolo nella cifratura dei backup
@@ -183,7 +184,7 @@ quest'ultima decifra ogni email salvata nel database.
 Tuttavia non ottiene la password con la stessa facilità. Per quello, l'attaccante ha due possibili strade:  
 la prima è rubare il database e attaccarlo offline, al costo del tempo di calcolo di Argon2id (\autoref{tab:phc}).
 Questo approccio normalmente richiede molto tempo e risorse computazionali considerevoli, diventando 
-praticamente inpraticabile. 
+praticamente impraticabile. 
 Senza il pepper a proteggerle però, le password deboli e molto comuni possono facilmente essere bucate con 
 un attacco a dizionario, anche se protette da un algoritmo di hashing lento e costoso come Argon2id.
 
@@ -204,16 +205,16 @@ In questo caso, anche se l'attacco attivo venisse rilevato, ormai non ci sarebbe
 per scontato che il database sia già stato rubato.
 Se invece fosse stato l'attacco passivo ad essere rilevato, mentre si indaga sulla compromissione, 
 si possono interrompere completamente i servizi di registrazione e login e concedere agli 
-utenti già autenticati un tag di raggiungibilità verso Storage-Service, più duraturo di quello da 12 ore che
+utenti già autenticati un tag di raggiungibilità verso Storage-Service, più duraturo di quello da dodici ore che
 già possiedono (\autoref{chap:rete}). In questo modo, gli utenti loggati possono continuare a gestire i 
 backup senza doversi riautenticare. 
 
-In entrambi i casi però, sarebbe più sensato interrompere il servizio e dichiarare l'incidente.
+In entrambi i casi, però, sarebbe più sensato interrompere il servizio e dichiarare l'incidente.
 
 \subsection{Network-Manager}
 
 Un attaccante che ottenga il controllo di Network-Manager può assegnarsi raggiungibilità verso ogni altro
-servizio e verso gli utenti (\autoref{chap:rete}). Può anche annullare o prolungare i grant di accesso verso
+servizio e verso gli utenti (\autoref{chap:rete}). Può anche annullare o prolungare i permessi di accesso verso
 Storage-Service (\autoref{lst:grants-schema}).
 Può quindi bloccare e controllare l'intero traffico del sistema, senza però poterlo leggere e decifrare.
 RU-04 è quindi compromesso.

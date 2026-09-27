@@ -11,7 +11,7 @@ ed è quindi pronto per gestire i suoi backup.
 Prima di trasmetterli però, il client dell'utente, tramite Restic \cite{restic-github}, deduplica, comprime e 
 cifra i backup dell'utente. Storage-Service riceve quindi una sequenza di blocchi cifrati che non è 
 in grado di decifrare.
-Il client, all'inizializzazione della repository Restic, estrae 32 byte da \texttt{crypto/rand}, li
+Il client, all'inizializzazione del repository Restic, estrae 32 byte da \texttt{crypto/rand}, li
 codifica in base64 e li usa come password del repository \cite{ramusb-code-reposecret}. 
 Da quella password Restic ricava la chiave che apre il file in cui custodisce la chiave di cifratura vera, 
 generata a caso alla creazione del repository \cite{restic-design}: è quest'ultima a proteggere i blocchi.

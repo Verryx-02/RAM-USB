@@ -114,7 +114,7 @@ perché tutti gli altri sono membri della mesh.
 La seconda è che il traffico con cui Network-Manager crea le chiavi e assegna i tag non può essere
 protetto dalla collocazione in rete, come invece accade per ogni altra chiamata interna. È l'unica
 chiamata tra componenti del sistema che attraversa la rete pubblica, e l'unica la cui protezione dipende
-interamente da mTLS.
+interamente da mTLS e dalla chiave API di Headscale.
 
 La terza è che il coordinatore deve essere raggiungibile pubblicamente, perché un dispositivo che non è
 ancora entrato nella rete deve poterlo contattare la prima volta per poter entrare nella rete.
@@ -134,10 +134,14 @@ Il certificato presentato dal proxy è invece emesso da una CA pubblica, per la 
 
 \section{CG-NAT e la necessità di un endpoint pubblico dedicato}
 
-Visto che gli indirizzi IPv4 sono ormai terminati, gli Internet Service Providers tendono ad assegnare ai router 
-domestici dei clienti un IPv4 condiviso tra più clienti nel range \texttt{100.64.0.0/10} 
-rendendo impossibile ai clienti esporre un proprio server su internet. Questo tipo di natting prende il nome
-di Carrier-Grade NAT \cite{rfc6598}.
-Visto che RAM-USB è progettato per essere hostato anche da utenti consumer, che potrebbero quindi non possedere
-un IPv4 pubblico o un IPv6, Headscale ed Entry-Hub risiedono su un Virtual Private Server, separato dal 
-resto del sistema. Il \autoref{chap:deployment} descrive la collocazione effettiva di ciascun componente.
+Il pool centrale degli indirizzi IPv4 non ancora assegnati si è esaurito nel 2011 \cite{icann-ipv4-2011}, e
+per continuare a collegare nuovi clienti molti Internet Service Provider fanno condividere un unico
+indirizzo IPv4 pubblico a più abbonati. Il router domestico non riceve più un indirizzo pubblico, ma uno
+del blocco \texttt{100.64.0.0/10}, valido soltanto all'interno della rete dell'operatore e non
+instradabile su internet \cite{rfc6598}; è un NAT gestito dall'operatore a tradurlo nell'indirizzo
+pubblico comune. Questo tipo di NAT prende il nome di Carrier-Grade NAT \cite{rfc6888}.
+Poiché quel NAT non è sotto il controllo del cliente, il cliente non può aprirvi da solo le porte in
+ingresso, e in generale un server ospitato in casa non è raggiungibile da internet \cite{rfc6269}.
+RAM-USB è progettato per poter essere ospitato anche da utenti domestici, che potrebbero quindi non
+disporre di un indirizzo IPv4 pubblico né di IPv6. Per questo Headscale ed Entry-Hub risiedono ciascuno su
+un proprio Virtual Private Server, separato dal resto del sistema. Il \autoref{chap:deployment} descrive la collocazione effettiva di ciascun componente.

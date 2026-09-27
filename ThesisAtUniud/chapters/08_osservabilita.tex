@@ -34,16 +34,16 @@ type Payload struct {
 }
 \end{lstlisting}
 
-Le pubblicazioni usano tutte \emph{QoS 1}, (at least once) nella classificazione MQTT \cite{oasis-mqtt-311}: il
+Le pubblicazioni usano tutte \emph{QoS 1} (at least once), nella classificazione MQTT \cite{oasis-mqtt-311}: il
 broker garantisce che il messaggio arrivi almeno una volta, al costo di un possibile duplicato. \emph{QoS 0},
-(at most once), è escluso perché RAM-USB non può permettersi di perdere metriche in silenzio; \emph{QoS 2},
+(at most once), è escluso perché RAM-USB non può permettersi di perdere metriche in silenzio; \emph{QoS 2}
 (exactly once), è escluso perché la garanzia in più che offre (l'assenza di duplicati) qui non serve
 visto che un duplicato si traduce solo in due punti sovrapposti nello stesso istante, invisibili sul
 grafico.
 
 \section{Ricezione e controllo di coerenza}
 
-Il messaggio pubblicato deve arrivare a un solo destinatario, e a nessun altro. Questa proprietà è garantita 
+Il messaggio pubblicato deve arrivare a un solo destinatario. Questa proprietà è garantita 
 dall'ACL di Mosquitto che garantisce che ogni servizio possa solo scrivere sul proprio topic, mentre 
 Metrics-Collector può leggere dai topic \texttt{metrics/\#} senza potervi scrivere.
 
@@ -59,8 +59,8 @@ Su qualunque discrepanza scarta il messaggio e lo registra nei log.
 Metrics-Collector persiste le metriche in TimescaleDB \cite{timescaledb-github}, un'estensione di 
 PostgreSQL pensata per un carico fatto quasi solo di scritture ordinate nel tempo. 
 
-La tabella \texttt{metrics} non ha una chiave primaria dato che una riga di metriche non ha un'identità 
-naturale, inoltre, TimescaleDB \cite{timescaledb-github} non ne richiede una. È organizzata in chunk per
+La tabella \texttt{metrics} non ha una chiave primaria, dato che una riga di metriche non ha un'identità 
+naturale. Inoltre, TimescaleDB \cite{timescaledb-github} non ne richiede una. È organizzata in chunk per
 intervalli di tempo sulla colonna \texttt{time}: le due politiche in background del
 \autoref{lst:metrics-policies} agiscono chunk per chunk, in base alla loro età. La prima elimina ogni chunk
 più vecchio di trenta giorni; la seconda, dopo sette giorni, sposta i chunk in un formato compresso a

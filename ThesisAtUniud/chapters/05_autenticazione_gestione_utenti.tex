@@ -124,8 +124,8 @@ scambiano memoria e numero di passaggi. RAM-USB parte da quella con più memoria
 passaggi, pagando quindi a ogni verifica il doppio del lavoro che OWASP considera sufficiente. È un
 costo che rende impraticabile recuperare le password da un database rubato. Il pepper complica
 ulteriormente un attacco offline: a differenza del salt, che è salvato nel record e impedisce
-soltanto che un tentativo valga per più utenti insieme, il pepper nel database non compare: in sua
-assenza nessun tentativo è computazionalmente praticabile, e una copia del database non è quindi 
+soltanto che un tentativo valga per più utenti insieme, il pepper nel database non compare. In assenza del pepper, 
+nessun tentativo è computazionalmente praticabile, e una copia del database non è quindi 
 sufficiente a condurre l'attacco.
 
 Il risultato viene salvato come stringa autodescrittiva in formato PHC, la convenzione di codifica
@@ -238,7 +238,7 @@ Per la lunghezza minima ammessa, $L = 8$, si ottiene $V(8) = 6{,}27 \cdot 10^{15
 $\log_2 V(8) \approx 52{,}48$ bit.
 
 Il confronto con lo spazio non vincolato mostra quanto pesi ciascuna delle due regole. Senza il
-vincolo sulle categorie sarebbero ammesse tutte le stringhe di otto caratteri sull'alfabeto, cioè
+vincolo sulle categorie sarebbero ammesse tutte le stringhe di otto caratteri sull'alfabeto, ovvero
 $N^8 = 95^8 = 6{,}63 \cdot 10^{15}$, cioè 52,56 bit. La suddetta regola quindi riduce i bit di 0,08. 
 Aggiungere un carattere in più, invece, aumenta i bit di entropia di $\log_2 95 \approx 6{,}57$ bit per ogni
 carattere aggiunto.
@@ -365,7 +365,7 @@ Dopo una registrazione riuscita chiede la creazione dell'identità dell'utente s
 una pre-auth key, che risale la catena fino al client dentro la risposta 201 e che permette al suo
 dispositivo di entrare nella rete privata.
 
-Dopo un login riuscito chiede invece un accesso temporaneo di 12 ore verso Storage-Service.
+Dopo un login riuscito chiede invece un accesso temporaneo di dodici ore verso Storage-Service.
 
 Entrambi i passaggi concedono però raggiungibilità, non lettura: la registrazione mette il
 dispositivo nella rete, il login gli permette di raggiungere Storage-Service, ma ad aprire i backup è

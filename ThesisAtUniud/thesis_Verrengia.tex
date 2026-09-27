@@ -133,22 +133,21 @@
 %% big: Come "sfbig", solo serif.
 %% plain: Apertura delle parti e dei capitoli tradizionali di LaTeX; intestazioni di pagina come "big".
 
-%% Se il file no-dedica.flag esiste in questa cartella, la dedica viene omessa dalla compilazione.
-%% Creato/rimosso dai target 'thesis'/'thesis-no-dedica' del Makefile in radice — non va creato/rimosso
-%% a mano, e non deve restare presente dopo una compilazione manuale con pdflatex/latexmk.
-\newif\ifNoDedica
-\IfFileExists{no-dedica.flag}{\NoDedicatrue}{\NoDedicafalse}
+%% Se il file no-ringraziamenti.flag esiste in questa cartella, i ringraziamenti vengono omessi
+%% dalla compilazione (la dedica resta). Creato/rimosso dai target 'thesis'/'thesis-no-ringraziamenti'
+%% del Makefile in radice — non va creato/rimosso a mano, e non deve restare presente dopo una
+%% compilazione manuale con pdflatex/latexmk.
+\newif\ifNoRingraziamenti
+\IfFileExists{no-ringraziamenti.flag}{\NoRingraziamentitrue}{\NoRingraziamentifalse}
 
 \begin{document}
 \maketitle
 
-%% Dedica (opzionale) — omessa se no-dedica.flag esiste (vedi sopra)
-\ifNoDedica\else
+%% Dedica (opzionale)
 \input{chapters/00_dedica}
-\fi
 
-%% Ringraziamenti (opzionali) — omessi se no-dedica.flag esiste (vedi sopra)
-\ifNoDedica\else
+%% Ringraziamenti (opzionali) — omessi se no-ringraziamenti.flag esiste (vedi sopra)
+\ifNoRingraziamenti\else
 \input{chapters/00_ringraziamenti}
 \fi
 

@@ -9,7 +9,7 @@ che costituisce l'unica fonte di verità su cosa il sistema debba fare.
 La scrittura di tale documento segue un modello a spirale dell'ingegneria del software \cite{Boehm88},
 guidato dalla progressiva risoluzione del rischio, inteso come le fonti di incertezza più significative
 del progetto.  
-Il livello di dettaglio della SRS aumenta di conseguenza ad ogni iterazione, perché, nonostante 
+Il livello di dettaglio dell'SRS aumenta di conseguenza ad ogni iterazione, perché, nonostante 
 gli obiettivi e i requisiti di alto livello fossero chiari fin dalle fasi iniziali, la conoscenza degli 
 strumenti e delle tecnologie di terze parti non era sufficiente a prevedere con certezza il comportamento 
 a basso livello di questi strumenti. La scelta del modello a spirale nasce da questo squilibrio.
@@ -18,7 +18,7 @@ diretta con questi strumenti ha rivelato dettagli che una fase di analisi purame
 in grado di anticipare.
 Un caso concreto di questa dinamica è il requisito \texttt{NM-F-12}, rivisitato in tre round successivi:  
 
-nella versione 1.0 della SRS \cite{ramusb-commit-nm-f-12-v1} assumeva che Network-Manager (il
+nella versione 1.0 dell'SRS \cite{ramusb-commit-nm-f-12-v1} assumeva che Network-Manager (il
 componente responsabile della rete privata del sistema) dovesse costruire da zero un proprio meccanismo
 per autorizzare l'accesso di nuovi dispositivi;
 
@@ -38,7 +38,7 @@ Questo approccio privilegia la semplicità di un audit di sicurezza a scapito de
 gestione dell'implementazione.
 
 \begin{itemize}
-    \item \textbf{Dal requisito alla sua implementazione}: ogni requisito della SRS che ha già un'implementazione è collegato 
+    \item \textbf{Dal requisito alla sua implementazione}: ogni requisito dell'SRS che ha già un'implementazione è collegato 
     a un permalink GitHub che punta a un commit specifico e ad un intervallo di righe preciso. 
     
     \item \textbf{Dal test al requisito e viceversa}: ogni funzione di test porta, come commento di documentazione
@@ -107,4 +107,4 @@ I requisiti utente si traducono nei seguenti casi d'uso, illustrati anche nella 
 
 I capitoli successivi descrivono come l'architettura del sistema realizzi questi casi d'uso: il
 \autoref{chap:architettura} introduce la struttura generale dei componenti e i confini di sicurezza tra
-di essi, mentre i capitoli 5-8 approfondiscono ciascun dominio funzionale nel dettaglio.
+di essi, mentre i capitoli 5--8 approfondiscono ciascun dominio funzionale nel dettaglio.
