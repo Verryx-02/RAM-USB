@@ -2,9 +2,12 @@
 
 A multi-user, distributed, remotely accessible backup service, designed around **zero-trust**, and **defense-in-depth** principles.
 
-This is my Bachelor's degree thesis project in Computer Science at the **University of Udine**, supervised by [**Prof. Ivan Scagnetto**](https://users.dimi.uniud.it/~ivan.scagnetto/).
+This is my Bachelor's degree thesis project in Computer Science at the **University of Udine**, supervised by [**Prof. Ivan Scagnetto**](https://users.dimi.uniud.it/~ivan.scagnetto/). Read the [full thesis (PDF)](https://github.com/Verryx-02/RAM-USB/blob/main/ThesisAtUniud/build/no-ringraziamenti/thesis_Verrengia_no-ringraziamenti.pdf).
 
 This project is designed by [Francesco Verrengia](https://github.com/Verryx-02) and [Riccardo Gottardi](https://github.com/Riccardo-Gottardi)
+
+> [!WARNING]
+> RAM-USB is a proof of concept and a design exercise for this thesis, not production-ready software. It has not undergone independent security review, and it is not intended for storing real backups or any other serious use.
 
 ---
 ## About
@@ -23,7 +26,7 @@ The [Software Requirements Specification](https://github.com/Verryx-02/RAM-USB/b
 
 ## Architecture
 
-RAM-USB is an [n-tier client-server microservices architecture](https://en.wikipedia.org/wiki/Multitier_architecture) made up of 10 Docker containers, connected over a private [Headscale](https://github.com/juanfont/headscale) mesh VPN with [mTLS](https://en.wikipedia.org/wiki/Mutual_authentication) between every internal service.
+RAM-USB is an [n-tier client-server microservices architecture](https://en.wikipedia.org/wiki/Multitier_architecture) made up of 11 Docker containers, connected over a private [Headscale](https://github.com/juanfont/headscale) mesh VPN with [mTLS](https://en.wikipedia.org/wiki/Mutual_authentication) between every internal service.
 
 | Component                                                                                                 | Role                                                                                                       | Status      |
 | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------- |
@@ -33,10 +36,11 @@ RAM-USB is an [n-tier client-server microservices architecture](https://en.wikip
 | [Database-Vault](https://github.com/Verryx-02/RAM-USB/tree/main/services/database-vault)                  | User data persistence (PostgreSQL), credential hashing/encryption                                          | Done |
 | [Storage-Service](https://github.com/Verryx-02/RAM-USB/tree/main/services/storage-service)                | Per-user isolated, chrooted SFTP storage for encrypted backups                                             | Done |
 | [Network-Manager](https://github.com/Verryx-02/RAM-USB/tree/main/services/network-manager)                | Headscale ACL and mesh access control                                                                      | Done |
+| [Headscale](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/headscale)                         | Self-hosted Tailscale coordination server for the private mesh VPN                                         | Done |
 | [Mosquitto (MQTT broker)](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/mosquitto)           | Metrics transport between services and the collector                                                       | Done |
 | [Metrics-Collector](https://github.com/Verryx-02/RAM-USB/tree/main/services/metrics-collector)            | Ingests and stores metrics (TimescaleDB)                                                                   | Done |
 | [Metrics-Visualizer (Grafana)](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/grafana)        | Operational dashboards                                                                                     | Done |
-| [Certificate-Authority](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/certificate-authority) | Issues and rotates mTLS certificates ([smallstep/certificates](https://github.com/smallstep/certificates)) | In progress |
+| [Certificate-Authority](https://github.com/Verryx-02/RAM-USB/tree/main/third-party/certificate-authority) | Issues and rotates mTLS certificates ([smallstep/certificates](https://github.com/smallstep/certificates)) | Done |
 
 ---
 
@@ -55,8 +59,7 @@ RAM-USB is an [n-tier client-server microservices architecture](https://en.wikip
 
 ## Getting started (development)
 
-> [!WARNING] The project is under active implementation.
-
+Each component ships its own Docker Compose file under `deployments/compose/`, one per service. See [MANUAL-DISTRIBUTED-RUN.md](https://github.com/Verryx-02/RAM-USB/blob/main/MANUAL-DISTRIBUTED-RUN.md) for the full startup procedure (one terminal per container, correct boot order, and known sharp edges).
 
 ---
 
@@ -80,6 +83,7 @@ Parts of the implementation are carried out with the help of [Claude Sonnet 5](h
 
 ## Documentation
 
+- [Thesis (PDF)](https://github.com/Verryx-02/RAM-USB/blob/main/ThesisAtUniud/build/no-ringraziamenti/thesis_Verrengia_no-ringraziamenti.pdf): full write-up of the design and rationale behind this project
 - [Software Requirements Specification](https://github.com/Verryx-02/RAM-USB/blob/main/docs/Software_Requirements_Specification.md): full requirements, use cases, and known risks
 - [Contributing guidelines](https://github.com/Verryx-02/RAM-USB/blob/main/CONTRIBUTING.md): commit conventions, branching model, workflow
 
