@@ -45,22 +45,13 @@ deployments/.env.local
 
 # ThesisAtUniud/: LaTeX build artifacts from pdflatex/bibtex/latexmk -
 # regenerated on every compile, never committed. Same convention as the
-# THUD template's own original .gitignore. The Makefile's thesis/thesis-no-ringraziamenti
-# targets put these under ThesisAtUniud/build/with-dedica/ and
-# ThesisAtUniud/build/no-ringraziamenti/ respectively; the patterns below also still catch
-# stray output from a manual, non-Makefile pdflatex/latexmk run in ThesisAtUniud/
-# itself. build/with-dedica/ is ignored wholesale — it never holds anything meant
-# to be shared. Inside build/no-ringraziamenti/, everything is ignored except
-# thesis_Verrengia_no-ringraziamenti.pdf itself, tracked deliberately so it can be shared
-# (e.g. with the thesis supervisor) without exposing the ringraziamenti.
-# Each directory on the path to that one exception must be explicitly un-ignored
-# ("!dir/") for git to even look inside it — a "dir/*" (not "dir/") ignore alone
-# stops git from descending into it at all, which is why this cascades one level
-# at a time instead of a single top-level pattern.
+# THUD template's own original .gitignore. 'make thesis' and .latexmkrc put
+# them under ThesisAtUniud/build/; the root-level patterns below still catch
+# stray output from a manual, non-latexmk run in ThesisAtUniud/ itself. The
+# one exception is the compiled thesis_Verrengia.pdf, tracked so the README
+# can link it.
 ThesisAtUniud/build/*
-!ThesisAtUniud/build/no-ringraziamenti/
-ThesisAtUniud/build/no-ringraziamenti/*
-!ThesisAtUniud/build/no-ringraziamenti/thesis_Verrengia_no-ringraziamenti.pdf
+!ThesisAtUniud/build/thesis_Verrengia.pdf
 ThesisAtUniud/*.aux
 ThesisAtUniud/*.bbl
 ThesisAtUniud/*.blg
@@ -74,7 +65,6 @@ ThesisAtUniud/*.lot
 ThesisAtUniud/*.fls
 ThesisAtUniud/*.fdb_latexmk
 ThesisAtUniud/pdfa.xmpi
-ThesisAtUniud/no-ringraziamenti.flag
 
 # ThesisAtUniud/chapters/Bozze.tex: scratch/draft notes, not thesis content.
 ThesisAtUniud/chapters/Bozze.tex

@@ -2,7 +2,7 @@
 
 A multi-user, distributed, remotely accessible backup service, designed around **zero-trust**, and **defense-in-depth** principles.
 
-This is my Bachelor's degree thesis project in Computer Science at the **University of Udine**, supervised by [**Prof. Ivan Scagnetto**](https://users.dimi.uniud.it/~ivan.scagnetto/). Read the [full thesis (PDF)](https://github.com/Verryx-02/RAM-USB/blob/main/ThesisAtUniud/build/no-ringraziamenti/thesis_Verrengia_no-ringraziamenti.pdf).
+This is my Bachelor's degree thesis project in Computer Science at the **University of Udine**, supervised by [**Prof. Ivan Scagnetto**](https://users.dimi.uniud.it/~ivan.scagnetto/). Read the [full thesis (PDF)](https://github.com/Verryx-02/RAM-USB/blob/main/ThesisAtUniud/build/thesis_Verrengia.pdf).
 
 This project is designed by [Francesco Verrengia](https://github.com/Verryx-02) and [Riccardo Gottardi](https://github.com/Riccardo-Gottardi)
 
@@ -83,7 +83,7 @@ Parts of the implementation are carried out with the help of [Claude Sonnet 5](h
 
 ## Documentation
 
-- [Thesis (PDF)](https://github.com/Verryx-02/RAM-USB/blob/main/ThesisAtUniud/build/no-ringraziamenti/thesis_Verrengia_no-ringraziamenti.pdf): full write-up of the design and rationale behind this project
+- [Thesis (PDF)](https://github.com/Verryx-02/RAM-USB/blob/main/ThesisAtUniud/build/thesis_Verrengia.pdf): full write-up of the design and rationale behind this project
 - [Software Requirements Specification](https://github.com/Verryx-02/RAM-USB/blob/main/docs/Software_Requirements_Specification.md): full requirements, use cases, and known risks
 - [Contributing guidelines](https://github.com/Verryx-02/RAM-USB/blob/main/CONTRIBUTING.md): commit conventions, branching model, workflow
 
