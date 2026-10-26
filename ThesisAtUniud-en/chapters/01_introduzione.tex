@@ -1,0 +1,129 @@
+\chapter{Introduction}
+\label{chap:introduzione}
+
+\section{Background}
+
+A backup, in the field of cybersecurity, is a disaster recovery process: a procedure
+that makes it possible to recover lost data, for example following an attack, a hardware or
+software failure, or a human error. One of the first technical responses to data loss is the redundancy of the disks
+on which the data is stored: in 1988 Patterson, Gibson and Katz formalized RAID (Redundant Array of
+Inexpensive Disks) \cite{patterson-gibson-katz-raid-1988}, which distributes the same data across multiple
+inexpensive disks to obtain a reliability comparable to that of a single, more expensive disk.
+
+This redundancy, however, remains local and does not protect against an event that destroys the entire installation. From
+this arises the need for a remote backup: a copy of the data kept in a place other than that
+of the originals. The simplest way is to entrust it to third parties, an acquaintance who owns the hardware or
+a business that offers this kind of service, but this requires trusting that the data
+will not be read, modified, or sold by whoever keeps it.
+
+Whoever offers the service, for their part, finds it convenient to serve multiple users at the same time. This,
+however, requires distinguishing between users, and guaranteeing that each one accesses only their own data: in
+practice, it requires an authentication and access control system.
+
+Among the various existing authentication systems, the one adopted and discussed in this thesis is based on
+email and password which, being sensitive data, require a high level of protection.
+The principle on which this kind of authentication rests is simple:
+the user registers by sending their credentials to the server; during login they send them again, and the
+server compares them with those saved at registration. If they match, the user is authenticated.
+
+The fact that the server holds the credentials, however, exposes all users to the risk of their being
+stolen. Numerous systems exist to prevent this; one of these, examined in depth in this thesis, is the use of
+a hash function.
+The server, instead of saving the credentials in plaintext, saves them
+in the form of a hash. During login, it recomputes the hashes of the credentials provided by the user and
+checks whether they match the saved ones.
+
+\subsection{Hash functions}
+
+Hash functions are non-invertible functions that transform an input of arbitrary
+length into an output of fixed length, strictly correlated with the input data, called a hash.
+Denoting a hash function by $H$, it enjoys the following fundamental properties:
+
+\begin{itemize}
+    \item \textbf{preimage resistance:} given $h$, it is computationally intractable to find $x$
+    such that $H(x) = h$;
+    \item \textbf{second-preimage resistance:} given $x$, it is computationally intractable to
+    find $y \neq x$ such that $H(x) = H(y)$;
+    \item \textbf{collision resistance:} it is computationally intractable to find any pair
+    $(x, y)$ with $x \neq y$ such that $H(x) = H(y)$.
+\end{itemize}
+
+
+\section{Problem statement}
+
+Among the various causes of data loss, the project focuses on the one arising from an attack by a
+malicious actor, adopting the principles of zero-trust and defense-in-depth to guarantee the
+security of the data even if any component of the system is compromised.
+
+\section{Objectives}
+
+RAM-USB, Remotely Accessible Multi-User Secure Backup, is an in-depth case study on the design,
+implementation and deployment of a backup service that satisfies the requirements
+described in \autoref{chap:requisiti}. It is not meant to compete with existing commercial
+solutions, but to discuss its own design choices, illustrating their pros and cons
+transparently, with a security-first approach focused on defending the system against external attacks.
+
+
+\section{Methodology}
+Some of the components of RAM-USB originate from the brainstorming phase carried out together with Riccardo
+Gottardi \cite{gottardi-github}.
+
+The adopted methodology combines the spiral model for the definition and evolution of the
+requirements \cite{Boehm88} with the Test-Driven Development approach for the implementation and the V-model for
+their verification \cite{ramusb-contributing}.
+
+The language used for the entire stack is Go, a compiled language explicitly designed to handle
+many simultaneous network connections efficiently.
+
+Bash was used to orchestrate the infrastructure around the Go code (starting the services, supervising the processes in the
+containers, sequencing at startup).
+
+The code is versioned with Git and published free of charge, in its entirety, on GitHub, distributed under
+the MIT license.
+
+The implementation was carried out entirely with the assistance of the Large Language Models Claude
+Sonnet 4.5 and Sonnet 5, in multi-agent form through the Claude Code harness running in a virtual
+machine on Proxmox, for security and privacy reasons.
+
+Generative artificial intelligence was employed exclusively as a tool under close
+human supervision.
+The design, the structure of the code, the module boundaries, the signatures, the behavior of the individual
+functions, and the corresponding tests remain a human decision; the assistant implemented only what was
+specified, in small, incremental, and verifiable steps, exercising latitude only over low-level
+implementation details.
+Every change was reviewed and explicitly approved before being introduced into the codebase.
+The numerous strategies for mitigating implementation errors and hallucinations of the two models, as well as the
+management of the multiple agents used, are not the subject of this thesis.
+
+\section{Thesis structure}
+
+\autoref{chap:principi-fondanti} examines in depth the two security principles on which RAM-USB is built,
+zero-trust and defense-in-depth.
+
+\autoref{chap:requisiti} describes the methodology by which the requirements were gathered and traced,
+and the use cases that derive from them.
+
+\autoref{chap:architettura} presents the components that take part in registration and login.
+
+\autoref{chap:autenticazione} follows the credentials along that path, from the public boundary to the
+saved record, and describes the rules that each layer applies.
+
+\autoref{chap:storage} follows the backup to its own isolated space on Storage-Service.
+
+\autoref{chap:rete} describes how the mesh network enforces the reachability boundaries between the
+components.
+
+\autoref{chap:osservabilita} closes the lifecycle of a request with the
+observability pipeline that makes it measurable.
+
+\autoref{chap:testing} verifies the system thus built through the four levels of the
+V-model, from unit testing to the acceptance checklist, and reports what running it on real hardware revealed.
+
+\autoref{chap:deployment} describes how these components are actually deployed, across
+Docker containers, Proxmox machines, and a public VPS.
+
+\autoref{chap:sicurezza} rereads the entire system from the point of view of whoever attempts to compromise it,
+verifying which guarantees hold even against its full compromise.
+
+\autoref{chap:conclusioni} closes the thesis by weighing the results obtained against the limitations encountered,
+and indicating the most relevant future work.

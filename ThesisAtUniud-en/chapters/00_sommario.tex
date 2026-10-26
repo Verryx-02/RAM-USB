@@ -1,0 +1,35 @@
+\abstract
+This thesis presents the design, implementation, and deployment of RAM-USB,
+a remotely accessible multi-user backup service, designed according to the zero-trust and
+defense-in-depth principles.
+
+The adopted methodology combines the spiral model for the definition and evolution of the requirements, 
+the Test-Driven Development approach for the implementation, and the V-model for their verification. 
+It also guarantees unidirectional traceability from requirement to code and bidirectional traceability from requirement
+to commit and from requirement to test.
+
+The work focuses in particular on the design of the authentication and dynamic access control
+services, as well as on the solutions adopted to protect user credentials, critically analyzing
+their advantages, disadvantages, and security implications. The system that implements them is
+an n-tier client-server microservice architecture, organized into components dedicated to access,
+registration, backup management, and metrics observability, deployed in Docker containers
+which are in turn isolated in Kernel-based Virtual Machines and Linux Containers on one or more Proxmox hosts.
+
+Internal communications take place via REST APIs for registration and login operations, and via 
+MQTT for the publication of operational metrics; all of them remain confined to the mesh network coordinated by 
+Headscale, mutually authenticated via mTLS with X.509 certificates issued by an internal 
+Certificate-Authority.
+
+In accordance with the zero-trust principle, every component revalidates the format and content
+of every request, without assuming that the previous component has already done so. Following
+authentication and authorization, the system dynamically modifies the access rules of the mesh
+network, allowing the user to reach their own backup space via SFTP, isolated from that
+of the other users by means of chroot. Backup files are deduplicated, compressed, and encrypted by
+Restic before leaving the user's device, and their confidentiality therefore remains guaranteed by
+client-side encryption.
+
+The thesis concludes with a critical assessment of the security, confidentiality, and functionality properties
+of the system in the scenario of full compromise of a single service. The analysis makes it possible to assess
+the effectiveness of the isolation measures and of the defense-in-depth strategies adopted, while highlighting
+their limitations and the properties that would be preserved even in the presence of a severe compromise
+of the service.

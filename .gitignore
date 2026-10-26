@@ -66,6 +66,25 @@ ThesisAtUniud/*.fls
 ThesisAtUniud/*.fdb_latexmk
 ThesisAtUniud/pdfa.xmpi
 
+# ThesisAtUniud-en/: the English translation of the thesis, same build
+# conventions as ThesisAtUniud/ above (its own .latexmkrc writes to build/).
+# The compiled thesis_Verrengia.pdf is tracked so the README can link it.
+ThesisAtUniud-en/build/*
+!ThesisAtUniud-en/build/thesis_Verrengia.pdf
+ThesisAtUniud-en/*.aux
+ThesisAtUniud-en/*.bbl
+ThesisAtUniud-en/*.blg
+ThesisAtUniud-en/*.log
+ThesisAtUniud-en/*.out
+ThesisAtUniud-en/*.pdf
+ThesisAtUniud-en/*.synctex.gz
+ThesisAtUniud-en/*.toc
+ThesisAtUniud-en/*.lof
+ThesisAtUniud-en/*.lot
+ThesisAtUniud-en/*.fls
+ThesisAtUniud-en/*.fdb_latexmk
+ThesisAtUniud-en/pdfa.xmpi
+
 # ThesisAtUniud/chapters/Bozze.tex: scratch/draft notes, not thesis content.
 ThesisAtUniud/chapters/Bozze.tex
 

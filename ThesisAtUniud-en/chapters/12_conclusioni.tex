@@ -1,0 +1,72 @@
+\chapter{Conclusions}
+\label{chap:conclusioni}
+
+\section{Achieved results}
+
+\autoref{chap:introduzione} sets the objective of designing, implementing, and validating RAM-USB as a
+multi-user remote backup service compliant with the requirements of the SRS \cite{ramusb-srs}, relying on the
+zero-trust and defense-in-depth principles to defend the system from external attacks.
+
+The ten user requirements listed in \autoref{chap:requisiti} are, with only two exceptions, fully
+covered by
+system requirements implemented and traced all the way to the code and the tests. A user can register by providing
+only an email, a password, and an SSH public key (RU-01), authenticate in subsequent sessions (RU-02),
+upload and retrieve client-side encrypted backups from anywhere (RU-03, RU-07), do so only after having
+authenticated (RU-04), with the guarantee that the content of the backups is unreadable even by
+an administrator (RU-05), in a space isolated from that of other users (RU-08).
+An administrator can observe the health and performance of the system without ever touching individual
+users' data (RU-10).
+
+RU-06 (Have the guarantee that no one, administrators included, can read one's own
+access credentials) is not fully supported because of the theoretical limitations imposed by the choice of an email and password
+authentication system, and therefore holds only for the password and only once it is already
+persisted in the database in hashed form. The only way to prevent an administrator from intercepting
+credentials in transit, in fact, is not to send them to the server at all, for example by using a
+zero-knowledge protocol, which is not the subject of this thesis.
+
+RU-09, the guarantee that no one can modify or delete a backup, was
+declared out of scope from the earliest versions of the SRS, because of the project's tight schedule, and is
+taken up again in the next section.
+
+The five use cases that run through the system (registration, login, backup, restore, and
+consulting the metrics) were executed end-to-end on the real Proxmox deployment, with the
+same results reported in \autoref{chap:testing}.
+
+\section{Known limitations}
+
+The SRS explicitly accepts four risks as the cost of releasing on schedule \cite{ramusb-srs}.
+Normally these risks would not be acceptable in a real backup system, and their resolution is
+planned as future work.
+
+RISK-01 is RU-09 itself. It remains a desirable improvement, not yet designed, implemented, or tested.
+
+RISK-02 concerns the master key and the pepper: they reside in an environment variable, with no backup procedure
+(DV-F-18) or rotation procedure (DV-F-19). Their loss
+would entail the irreversible loss of access to all encrypted credentials.
+
+RISK-03 concerns the client: it is currently not containerized with Docker. The service's Go code exists and has
+been tested, but containerization requires further reasoning and design decisions.
+
+RISK-04 is the circular dependency of Network-Manager's DNS resolution on its own MagicDNS: if
+Network-Manager published a non-working ACL policy, it could also lose the ability to
+resolve the Headscale hostname it would need to correct it. In that case, it is up to an
+administrator to resolve the problem manually.
+
+\section{Future work}
+
+\autoref{sec:entropia} shows that, under uniform choice, the constraint of at least three character
+categories is worth less than a tenth of a bit of entropy, while one additional character is worth 6.57 bits: under
+that assumption the composition rule is redundant, because a truly random password
+already uses several categories by itself. Its real purpose, however, is not to increase entropy but to constrain a human's
+choice, and in that respect its value cannot be measured without the real distribution of the passwords chosen
+by users.
+This design choice therefore currently remains open, pending more in-depth analysis.
+
+Besides DV-F-18 and DV-F-19, already discussed as RISK-02, two items remain to be designed: the per-user
+storage space limit and the automatic replication of backups on CephFS, both
+deferred in the SRS as desirable improvements rather than project constraints.
+
+Other future work, not yet designed or included in the SRS, comprises automatic load
+balancing, protection of Entry-Hub's public endpoint from availability attacks,
+perhaps by imposing rate limiting on that endpoint, and improved system scalability, perhaps
+by unlocking geo-distribution of the server.

@@ -1,0 +1,181 @@
+\chapter{Testing and validation}
+\label{chap:testing}
+
+\section{The V-model and the four test levels}
+For the testing of RAM-USB the V-model was adopted, an extension of the waterfall model in which
+each specification phase is paired with a corresponding verification phase, written hand in hand with
+the specification.
+
+This approach was adopted because RAM-USB was deliberately treated as a
+safety-critical system, in which a defect in production has serious consequences for the users of the system.
+It was therefore essential that an error in the specification be detected well before implementation and
+that testing be applied at several specification levels.
+
+\autoref{tab:livelli-test} shows the correspondence between the requirement category and the test
+level that verifies it, along with the technique used at that level.
+
+\begin{table}[H]
+\centering
+\caption{Verification level associated with each specification level.}
+\label{tab:livelli-test}
+\begin{tabular}{@{}l p{\dimexpr0.55\linewidth\relax}@{}}
+\hline
+\textbf{Specification level} & \textbf{Verification level} \\
+\hline
+Component requirement & Unit testing with Go's \texttt{testing} package \\
+Use case & Integration testing, bottom-up with drivers and stubs \\
+Non-functional requirement & System testing, on the whole stack \\
+User requirement & Acceptance checklist, walked through by hand on the corresponding use case \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Bottom-up integration strategy}
+
+Integration starts from the innermost component and proceeds outward, in the order Database-Vault,
+Storage-Service, Security-Switch, Network-Manager, Entry-Hub.
+
+The choice to start from Database-Vault is dictated by the fact that it is at the same time the component
+with the fewest outgoing dependencies and the one on which the largest number of functional requirements is concentrated.
+Building it first, with drivers standing in for the components that invoke it and a stub standing in for
+Storage-Service, the only component it invokes, ensures that the most sensitive component is also the one verified the longest.
+
+
+\section{TDD: entry and exit criteria}
+
+The entry criterion is that a test exists for every requirement, and that any failure of that test
+occurs before the implementation of the requirement under test.
+
+An example: requirement DV-F-15 requires that a nonexistent email and a wrong password produce the
+same login outcome, indistinguishable from the outside.
+
+The test that verifies it, \texttt{TestLogin\_NonexistentEmailAndWrongPassword\_AreIndistinguishable}
+\cite{ramusb-code-login-test-dv-f-15}, calls \texttt{Login} with the two different credentials and requires
+that the outcomes match exactly.
+
+A test that has never been seen to fail, perhaps written after the code and passing on the first try, offers no
+guarantee that it verifies anything: it might compare two values that are equal by construction, or not call the
+function it is supposed to test at all.
+For this reason, the test is written before the body of the \texttt{Login} function actually exists, and
+it fails, providing proof that the test can recognize a wrong outcome.
+
+Only after the test has failed does it make sense to write the complete body of \texttt{Login}, and only then does the
+transition from failed test to passed test become useful information.
+
+Writing tests first also helps to disambiguate and clarify requirements. Indeed, if a test cannot be written for a
+requirement, the requirement is unclear or ambiguous and
+consequently must be reworded more precisely.
+
+There are three exit criteria, and they depend on the code under test. The first concerns only the validation
+library, which requires more thorough tests because it is considered particularly sensitive.
+
+\begin{itemize}
+    \item in the validation library shared by Entry-Hub, Security-Switch, and Database-Vault
+    (\autoref{sec:ciclo-richiesta}), every branch of every \texttt{if} or \texttt{switch} that decides whether to
+    accept or reject a field must be traversed by at least one test case;
+    \item no test that has already passed on the already integrated chain of components may fail;
+    \item a change reruns not only the test written specifically for it but the entire test suite.
+\end{itemize}
+
+\section{Coverage and gaps in the test plan}
+
+\texttt{go test -cover} measures, for each package of the codebase, the percentage of statements executed
+at least once: \texttt{pkg/validation}, for example, reaches 98\%, because that is where the application logic lives,
+while the \texttt{cmd} packages, which start each service, stay at 10--20\%, because verifying them is
+the job of integration and system testing.
+
+The exit criterion mentioned above for \texttt{pkg/validation} is a stricter measure that adds to
+this one: it is not enough to execute almost all statements, every single branch of every \texttt{if} or
+\texttt{switch} must have been taken by at least one test.
+
+The test plan, however, is not free of limitations:
+No test is planned for either protecting backups from tampering or rotating the
+master key, currently out of scope, but essential in a project of this kind.
+Load and stress testing, moreover, are planned but not yet designed. There are therefore no
+reliable benchmarks of the system's behavior.
+Every end-to-end test on the host involved a single user with a single small file in the backup, so neither
+concurrency nor mutual isolation between two users has been put to the test.
+
+\section{Automated pre-commit checks}
+
+In addition to the entry and exit criteria, an automated verification chain runs before every
+commit \cite{ramusb-contributing}. \texttt{golangci-lint} \cite{golangci-lint} is a runner that aggregates
+multiple linters in a single pass; the RAM-USB configuration enables fifteen of them in total.
+
+Among these, \texttt{gosec} \cite{gosec} looks for known security patterns in the code, and has been present since the
+early stages of implementation.
+
+A second extension introduced four linters targeting unreleased resources and mishandled errors:
+
+\begin{itemize}
+    \item \texttt{bodyclose} \cite{bodyclose} flags an HTTP response whose body is never
+    closed, which therefore leads to a resource leak;
+    \item \texttt{sqlclosecheck} \cite{sqlclosecheck} does the same for SQL rows and statements left
+    open;
+    \item \texttt{contextcheck} \cite{contextcheck} detects a function that does not propagate the
+    \texttt{context.Context} received from the caller;
+    \item \texttt{errorlint} \cite{errorlint} checks that errors are compared in the
+    correct way.
+\end{itemize}
+
+These are complemented by Go's race-condition detector, invoked with \texttt{go test -race}.
+
+The chain is completed by \texttt{govulncheck} \cite{govulncheck}, which compares the dependencies against a database
+of known vulnerabilities but reports a problem only if the code actually reaches the vulnerable function,
+and by two scanners designed to overlap with each other:
+\texttt{gitleaks} \cite{gitleaks}, which looks for secrets already committed to the repository history, and
+\texttt{trivy} \cite{trivy}, invoked in filesystem scan mode (\texttt{trivy fs .}), which
+checks both dependencies and secrets independently of the two previous tools.
+
+The redundancy of the last two is the application of the defense-in-depth concept to testing.
+
+\section{Results: completed verifications}
+
+The most significant campaign was run on real hardware, a Proxmox host with the components
+deployed according to the placement described in \autoref{chap:deployment}.
+
+The four use cases passed: registration and login succeeded, the backup completed and the
+restore returned a file identical to the original.
+
+\autoref{tab:verifiche} shows the properties checked on the running system.
+
+\begin{table}[H]
+\centering
+\caption{Properties verified on the running system.}
+\label{tab:verifiche}
+\begin{tabular}{@{}p{\dimexpr0.34\linewidth\relax} p{\dimexpr0.56\linewidth\relax}@{}}
+\hline
+\textbf{Property} & \textbf{Observed result} \\
+\hline
+Hashing parameters & The string stored in the record shows \texttt{argon2id}, version 19,
+memory 47104 KiB, two passes, parallelism one \\
+Filesystem isolation & Confinement root owned by root with permissions 711,
+user subdirectory 700 \\
+Identity on the mesh & Every node is owned by the synthetic user
+\texttt{tagged-devices}, never by the account created for the person \\
+Grant duration & Expiry recorded at exactly twelve hours from the moment of login \\
+Reachability boundaries & No node lists among its peers a component that the
+policy forbids it from contacting \\
+Restart survival & A service that is stopped and restarted comes back into service reusing
+the identity on disk, without presenting the already consumed single-use token again \\
+\hline
+\end{tabular}
+\end{table}
+
+During the execution of the complete test plan, several defects emerged that had not been
+caught by the earlier unit tests \cite{ramusb-known-issues}.
+
+Two concerned the client and prevented backup entirely. The first was the SSH port: the client
+connected to the default one, while the server listens on another. The second was the absence of
+any host key policy: \texttt{ssh}, invoked by Restic without a terminal, had no
+\texttt{known\_hosts} to check and no way to ask for confirmation, and refused the connection instead of
+asking, so the first backup on every new machine always failed. A third concerned the configuration,
+because the client has a single address for a service that exposes two on different listeners. A
+fourth was a usage string documenting a syntax that the argument parsing cannot accept.
+
+A fifth was more serious: the mTLS identity was not preserved from one startup to the next, so
+no service survived the restart of its own container, because it retried the bootstrap with a
+single-use token already spent.
+
+Other small logic and implementation errors, too numerous to be reported in this thesis,
+were detected and fixed thanks to the tests.

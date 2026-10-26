@@ -1,0 +1,256 @@
+%% The languages used, which will be passed as options to the babel package. As always, the last one listed will be the primary one.
+%% If one or more languages other than "italian" or "english" are used, read the instructions at the end.
+\def\thudbabelopt{italian,english}
+%% Allowed values for target: bach (bachelor's thesis), mst (master's thesis), phd (doctoral thesis).
+%% Allowed values for aauheader: '' (empty -> no Alpen Adria Univeristat header), aics (Department of Artificial Intelligence and Cybersecurity), informatics (Department of Informatics Systems). The department name is aligned with the English version of the UniUD logo.
+%% Allowed values for style: '' (empty -> modern style), old (traditional style).
+\documentclass[target=bach,aauheader=,style=]{thud}
+
+%% --- Thesis information ---
+%% For all thesis types
+% Uncomment the one that applies, or put whatever you like
+\course{Computer Science}
+%\course{Internet of Things, Big Data e Web}
+%\course{Matematica}
+%\course{Comunicazione Multimediale e Tecnologie dell'Informazione}
+
+\title{RAM-USB: Design, implementation and deployment of a multi-user backup service following the zero-trust and defense-in-depth principles \\ }
+\author{Francesco Verrengia}
+\supervisor{Prof.\ Ivan Scagnetto}
+\cosupervisor{}
+\tutor{}
+%% Required fields: \title, \author and \course.
+%% Other available fields: \reviewer, \tutor, \chair, \date (academic year, computed automatically), \rights
+%% With \supervisor, \cosupervisor, \reviewer and \tutor several names can be given, separated by \and.
+%% --- Recommended packages ---
+%% pdfx: to generate the PDF/A for archiving. Needed only for the final version
+\usepackage[a-1b]{pdfx}
+%% hyperref: Adjusts the PDF creation settings... plus many other things. Remember to use the pdfa option.
+\usepackage[pdfa]{hyperref}
+%% xurl: long URLs in the bibliography (GitHub permalinks in particular) only wrap after
+%% "/", leaving very short lines followed by a very long one. xurl allows breaking them at any
+%% character, spreading the text more evenly.
+\usepackage{xurl}
+%% By default \UrlFont is just \ttfamily, without a size of its own, so it inherits the one of the
+%% context: I leave it that way (I do not force a size here) so that the sizes chosen within
+%% each individual .bib entry (\small for external sources, \footnotesize for self-citations,
+%% so that they stay less intrusive) remain effective instead of being overridden here.
+\usepackage{float}
+%% float: the cryptographic flow schemes are neither figures nor tables, so they have their own
+%% float type, numbered per chapter like the others. \floatname sets the word that appears
+%% in the caption, \schemaautorefname the one that \autoref prints in the text.
+\newfloat{schema}{H}{los}[chapter]
+\floatname{schema}{Scheme}
+\providecommand{\schemaautorefname}{Scheme}
+\usepackage{longtable}
+%% enumitem: the thud class applies setstretch{1.3} to the whole body, which also inflates the
+%% default spacing of itemize/enumerate. These values bring it back to something readable.
+\usepackage{enumitem}
+\setlist{itemsep=2pt, topsep=4pt, parsep=0pt, partopsep=0pt}
+%% The book class, in twoside mode (used by thud.cls), uses flushbottom by default: LaTeX
+%% stretches the elastic spaces (after \section, between paragraphs, before lists) to make
+%% the text reach exactly the bottom margin, even when the page has little content;
+%% this is the real cause of the large "random" gaps observed. raggedbottom disables it.
+\raggedbottom
+%% Safety margin for lines that would otherwise be overfull (e.g. a bold \item
+%% followed by a long list of proper names, without many natural break points).
+\setlength{\emergencystretch}{2em}
+\hypersetup{hidelinks}
+%% Under English babel, hyperref names chapters and sections in lowercase ("chapter 4"): capitalize
+%% them, since many \autoref calls open a sentence.
+\addto\extrasenglish{\def\chapterautorefname{Chapter}\def\sectionautorefname{Section}\def\subsectionautorefname{Section}}
+%% listings: Go code fragments copied verbatim from the project sources. The Go language
+%% is not among the package's predefined ones, so it has to be declared here.
+\usepackage{listings}
+\lstdefinelanguage{Go}{
+  morekeywords={break,case,chan,const,continue,default,defer,else,fallthrough,for,func,go,goto,%
+    if,import,interface,map,package,range,return,select,struct,switch,type,var,nil,true,false,%
+    make,new,len,cap,append,copy,error,string,byte,rune,bool,int,int64,uint8,uint32},
+  sensitive=true,
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+}
+%% The sshd_config directives are not a predefined listings language: declaring them here causes
+%% the configuration fragments to be highlighted like code instead of remaining
+%% flat monospace.
+\lstdefinelanguage{sshdconfig}{
+  morekeywords={AllowAgentForwarding,AllowTcpForwarding,AllowUsers,AuthorizedKeysCommand,%
+    AuthorizedKeysCommandUser,AuthorizedKeysFile,ChrootDirectory,Ciphers,ForceCommand,HostKey,%
+    HostKeyAlgorithms,KbdInteractiveAuthentication,KexAlgorithms,ListenAddress,LoginGraceTime,%
+    MACs,Match,MaxAuthTries,MaxSessions,MaxStartups,PasswordAuthentication,PermitEmptyPasswords,%
+    PermitRootLogin,PermitTunnel,PermitUserRC,Port,PubkeyAuthentication,Subsystem,User,UsePAM,%
+    X11Forwarding},
+  %% Without this, listings splits identifiers on digits and X11Forwarding would remain
+  %% the only non-highlighted directive in the listing.
+  alsoletter=0123456789,
+  morecomment=[l]{\#},
+  sensitive=true,
+}
+%% The SQL schema of the grant table (ch. 7) is not a predefined listings language either:
+%% same reason as the sshdconfig block above.
+\lstdefinelanguage{sql}{
+  morekeywords={CREATE,TABLE,IF,NOT,EXISTS,PRIMARY,KEY,NULL,DEFAULT,UNIQUE,REFERENCES,%
+    INTEGER,TEXT,REAL,BLOB,SELECT,INSERT,INTO,VALUES,WHERE,UPDATE,DELETE,FROM,AND,OR,%
+    ALTER,SET,CALL},
+  sensitive=false,
+  morecomment=[l]{--},
+  morestring=[b]',
+}
+%% Listings palette: color complements bold and italics, it does not replace them, so the
+%% code stays readable even when printed in black and white.
+\definecolor{lstkeyword}{RGB}{0,70,140}
+\definecolor{lstcomment}{RGB}{100,100,100}
+\definecolor{lststring}{RGB}{0,110,70}
+\definecolor{lstrule}{RGB}{120,120,120}
+\lstset{
+  language=Go,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\bfseries\color{lstkeyword},
+  commentstyle=\itshape\color{lstcomment},
+  stringstyle=\color{lststring},
+  columns=fullflexible,
+  breaklines=true,
+  breakatwhitespace=true,
+  showstringspaces=false,
+  tabsize=4,
+  captionpos=b,
+  xleftmargin=1em,
+  rulecolor=\color{lstrule},
+  frame=tb,
+  framerule=0.5pt,
+  framesep=6pt,
+  aboveskip=1.2em,
+  belowskip=0.8em,
+}
+\renewcommand{\lstlistingname}{Code}
+\providecommand{\lstlistingautorefname}{Code}
+%% needspace: prevents a code fragment from being split across two pages.
+\usepackage{needspace}
+%% dirtree: draws a directory structure as a tree, with right-aligned comments.
+\usepackage{dirtree}
+%% tocbibind: Also adds the list of figures, the bibliography, etc. to the table of contents.
+
+%% --- Available page styles (\pagestyle command) ---
+%% sfbig (default): Part and chapter openings with the large number; part and chapter titles and page headers in sans serif.
+%% big: Like "sfbig", serif only.
+%% plain: Traditional LaTeX part and chapter openings; page headers like "big".
+
+\begin{document}
+\maketitle
+
+%% Dedication (optional)
+\input{chapters/00_dedica}
+
+%% Acknowledgements (optional)
+\input{chapters/00_ringraziamenti}
+
+%% Abstract (optional), separate chapter
+\input{chapters/00_sommario}
+
+%% Table of contents
+\tableofcontents
+
+%% List of tables (if any)
+%% No \cleardoublepage here: \listoftables already opens a \chapter* on an odd page by itself
+%% (same automatic mechanism as Acknowledgements/Abstract/Table of contents above); adding an
+%% explicit one would double the page break and shift the table of contents entry by one page.
+\phantomsection
+\addcontentsline{toc}{chapter}{\listtablename}
+\listoftables
+
+%% List of figures (if any)
+\phantomsection
+\addcontentsline{toc}{chapter}{\listfigurename}
+\listoffigures
+
+%% List of acronyms: it stays here, before \mainmatter, so it has roman numbering like the
+%% other lists above and does not steal page 1 (arabic) from the first chapter.
+\input{chapters/00_acronimi}
+
+%% Main body of the document
+\mainmatter
+
+%% Part
+%% The division into parts is optional; chapters are usually enough.
+%\part{Part}
+
+%% Chapters: one file per chapter under chapters/, included with \input.
+%% To add a new chapter: create chapters/NN_name.tex and add an \input below.
+\input{chapters/01_introduzione}
+\input{chapters/02_principi_fondanti}
+\input{chapters/03_analisi_requisiti}
+\input{chapters/04_architettura}
+\input{chapters/05_autenticazione_gestione_utenti}
+\input{chapters/06_storage_backup}
+\input{chapters/07_rete}
+\input{chapters/08_osservabilita}
+\input{chapters/09_testing_validazione}
+\input{chapters/10_deployment}
+\input{chapters/11_sicurezza}
+\input{chapters/12_conclusioni}
+
+%% End of the regular chapters, start of the appendix chapters (optional)
+\appendix
+
+%\part{Appendices}
+
+%% Appendices: one file per appendix under appendices/, included with \input.
+\input{appendices/a_appendice}
+
+%% Closing part of the document; typically for summary, bibliography and/or analytical index.
+\backmatter
+
+%% Summary (optional)
+%\summary
+%Maecenas tempor elit sed arcu commodo, dapibus sagittis leo egestas. Praesent at ultrices urna. Integer et nibh in augue mollis facilisis sit amet eget magna. Fusce at porttitor sapien. Phasellus imperdiet, felis et molestie vulputate, mauris sapien tincidunt justo, in lacinia velit nisi nec ipsum. Duis elementum pharetra lorem, ut pellentesque nulla congue et. Sed eu venenatis tellus, pharetra cursus felis. Sed et luctus nunc. Aenean commodo, neque a aliquam bibendum, mauris augue fringilla justo, et scelerisque odio mi sit amet diam. Nulla at placerat nibh, nec rutrum urna. Donec ut egestas magna. Aliquam erat volutpat. Phasellus vestibulum justo sed purus mattis, vitae lacinia magna viverra. Nulla rutrum diam dui, vel semper mi mattis ac. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Donec id vestibulum lectus, eget tristique est.
+
+%% Bibliography (practically mandatory)
+%% \bibliography alone is not added to the table of contents (unlike \chapter, which does it automatically):
+%% an explicit \addcontentsline is needed; \phantomsection ensures that hyperref points to the right anchor.
+%% \cleardoublepage goes BEFORE \addcontentsline, not after: \bibliography inserts the page break
+%% internally, so calling addcontentsline first would still record the old page.
+%% openright (book default, twoside, no openany in thud.cls) wants an odd page, like every
+%% other \chapter of the thesis.
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{chapter}{\bibname}
+\bibliographystyle{plain_\languagename}%% Loads the .bst file of the same name, where \languagename is the active language.
+%% When using a .bib file (recommended)
+\bibliography{thud}
+%% For a manual bibliography, use the thebibliography environment.
+
+%% For the analytical index, use the makeidx package (or similar).
+
+\end{document}
+
+--- Istruzioni per l'aggiunta di nuove lingue ---
+Per ogni nuova lingua utilizzata aggiungere nel preambolo il seguente spezzone:
+    \addto\captionsitalian{%
+        \def\abstractname{Sommario}%
+        \def\acknowledgementsname{Ringraziamenti}%
+        \def\authorcontactsname{Contatti dell'autore}%
+        \def\candidatename{Candidato}%
+        \def\chairname{Direttore}%
+        \def\conclusionsname{Conclusioni}%
+        \def\cosupervisorname{Co-relatore}%
+        \def\cosupervisorsname{Co-relatori}%
+        \def\cyclename{Ciclo}%
+        \def\datename{Anno accademico}%
+        \def\indexname{Indice analitico}%
+        \def\institutecontactsname{Contatti dell'Istituto}%
+        \def\introductionname{Introduzione}%
+        \def\prefacename{Prefazione}%
+        \def\reviewername{Controrelatore}%
+        \def\reviewersname{Controrelatori}%
+        %% Anno accademico
+        \def\shortdatename{A.A.}%
+        \def\summaryname{Riassunto}%
+        \def\supervisorname{Relatore}%
+        \def\supervisorsname{Relatori}%
+        \def\thesisname{Tesi di \expandafter\ifcase\csname thud@target\endcsname Laurea\or Laurea Magistrale\or Dottorato\fi}%
+        \def\tutorname{Tutor aziendale}%
+        \def\tutorsname{Tutor aziendali}%
+    }
+sostituendo a "italian" (nella 1a riga) il nome della lingua e traducendo le varie voci.
+

@@ -1,0 +1,364 @@
+\chapter{Complete list of requirements}
+\label{app:elenco-requisiti}
+
+The following tables collect the functional, non-functional, and domain system requirements, organized 
+according to the same structure as the original SRS \cite{ramusb-srs}.
+
+Chapter 3 discusses the user requirements in full; they are the only ones not included in the 
+tables below.
+
+\section{Functional system requirements}
+
+\subsection{Client}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Functional requirements of the client.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+CL-F-01 & Must autonomously generate an SSH key pair (public/private) before registration, without ever transmitting the private key to any component of the system. \\
+CL-F-02 & On user command, must send to Entry-Hub, during registration (\texttt{POST /api/users}), only the SSH public key, together with email and password. \\
+CL-F-03 & On user command, must repeat the login (\texttt{POST /api/login}) before the expiry of the twelve-hour ACL grant, to maintain continuity of access to Storage-Service. \\
+CL-F-04 & Must configure and start Tailscale using the pre-auth key received in the registration response, to join the private mesh network. \\
+CL-F-05 & Must resolve Storage-Service through MagicDNS on the mesh network, without relying on static IP addresses. \\
+CL-F-06 & On user command, must invoke \texttt{restic backup} toward Storage-Service via SFTP on TCP port 2222 (ST-F-03), authenticating with the SSH private key generated in CL-F-01. \\
+CL-F-07 & On user command, must invoke \texttt{restic restore} toward Storage-Service via SFTP on TCP port 2222 (ST-F-03), using the same authentication method as CL-F-06. \\
+CL-F-08 & Must handle the HTTP status codes returned by Entry-Hub (400/401/403/500/502/503/504) without exposing internal system details to the end user. \\
+CL-F-09 & On user command, must locally validate email, password and, only during registration, the SSH public key, using the same rules enforced by Entry-Hub (EH-F-04 for registration, EH-F-05 for login), before sending \texttt{POST /api/users} or \texttt{POST /api/login}; if local validation fails, it must not transmit the request. \\
+CL-F-10 & Must derive the Entry-Hub login endpoint from a configuration value distinct from the registration one, and must use for login a name covered by the certificate that Entry-Hub presents. \\
+CL-F-11 & Must pin the Storage-Service SSH host key: it records the key received in the registration response (ST-F-16) before the first backup, presents it to \texttt{ssh} as a known host, and aborts the connection if the presented key differs. \\
+\end{longtable}
+
+\subsection{Entry-Hub}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Functional requirements of Entry-Hub.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+EH-F-01 & Must expose a public HTTPS health-check endpoint (\texttt{GET /api/health}), with certificates signed by the Let's Encrypt public CA. \\
+EH-F-02 & Must expose a public HTTPS endpoint for user registration (\texttt{POST /api/users}), with certificates signed by the Let's Encrypt public CA. \\
+EH-F-03 & Must expose an HTTPS endpoint (\texttt{POST /api/login}) for the authentication of registered users, served on a separate listener reachable only from the private mesh network (not from the internet, unlike the listener of EH-F-01/EH-F-02), with the same certificate signed by the Let's Encrypt public CA presented by EH-F-01/EH-F-02, not mTLS; only the network reachability changes. \\
+EH-F-04 & \texttt{/api/users} must accept JSON and validate: presence of the email, password, and SSH public key fields; payload size within a defined limit; absence of unexpected additional fields; email format (RFC 5322); password length between 8 and 128 characters; password complexity (at least 3 character categories among lowercase, uppercase, digits, symbols); formal correctness of the SSH public key. \\
+EH-F-05 & \texttt{/api/login} must accept JSON and validate: presence of the email and password fields; payload size within a defined limit; absence of unexpected additional fields; email format (RFC 5322); password length between 8 and 128 characters; password complexity (at least 3 character categories). \\
+EH-F-06 & If validation fails, it must: respond with HTTP 400 (Bad Request) without specifying which problem was found; log the problem found without identifying the user; not forward the request to any other internal service. \\
+EH-F-07 & If validation succeeds, it must: log the validation outcome without identifying the user; forward the request to Security-Switch via mTLS; verify that the certificate comes from a Security-Switch; verify the validity of the X.509 certificate. \\
+EH-F-08 & Must forward to the user the response received from Security-Switch. \\
+EH-F-09 & Must map internal errors to HTTP status codes 400/401/500/502/503, returning sanitized messages to the client and keeping detailed logs only internally. \\
+EH-F-10 & Must publish metrics every minute, and only then, on its own dedicated MQTT topic (\texttt{metrics/Entry-Hub}), via mTLS, verifying that: the certificate comes from an MQTT-Broker; the X.509 certificate is valid. \\
+EH-F-11 & Metrics must never contain users' personal data, only aggregate statistics. \\
+\end{longtable}
+
+\subsection{Security-Switch}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Functional requirements of Security-Switch.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+SS-F-01 & Must accept only mTLS connections from clients that satisfy: \texttt{organization} field equal to \texttt{EntryHub}; valid X.509 certificate; access to the private mesh network. \\
+SS-F-02 & Must revalidate the received input, independently of the validation already performed by Entry-Hub. \\
+SS-F-03 & If validation fails, it must: respond with HTTP 400 (Bad Request) without specifying which problem was found; log the problem found without identifying the user; not forward the request to any other internal service. \\
+SS-F-04 & If validation succeeds, it must: log the validation outcome without identifying the user; forward the request to Database-Vault via mTLS, verifying that: the certificate comes from a Database-Vault; the X.509 certificate is valid. \\
+SS-F-05 & After Database-Vault confirms successful authentication, it must request Network-Manager (via mTLS) to grant that user access to Storage-Service for twelve hours. \\
+SS-F-06 & Must map errors to HTTP status codes 400/401/403/500/502/504. \\
+SS-F-07 & Must publish metrics every minute, and only then, on its own dedicated MQTT topic (\texttt{metrics/Security-Switch}), via mTLS, verifying that: the certificate comes from an MQTT-Broker; the X.509 certificate is valid. \\
+SS-F-08 & Metrics must never contain users' personal data, only aggregate statistics. \\
+SS-F-09 & After Database-Vault confirms successful registration, it must request Network-Manager (via mTLS) to create a dedicated Headscale user and generate a pre-auth key for the new account, and then include that key in the response to Entry-Hub. \\
+\end{longtable}
+
+\subsection{Database-Vault}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Functional requirements of Database-Vault.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+DV-F-01 & Must accept only mTLS connections from clients that satisfy: \texttt{organization} field equal to \texttt{SecuritySwitch}; valid certificate; access to the private mesh network. \\
+DV-F-02 & Must revalidate the received input, independently of the validation already performed by Security-Switch. \\
+DV-F-03 & Must compute the SHA-256 hash of the email for indexing and as primary key, without ever logging the email in plaintext. \\
+DV-F-04 & Must encrypt the user's email: derive a per-record encryption key from the master key with HKDF-SHA256 and a 16-byte random salt, then encrypt the email with AES-256-GCM using that derived key and a 12-byte random nonce. \\
+DV-F-05 & The master key should come from a configurable source, with length validation (32 bytes). \\
+DV-F-06 & Must keep a pepper as an environment variable. \\
+DV-F-07 & Must compute the password hash with Argon2id: memory 47104 KiB (46 MiB), 2 iterations, parallelism 1, 32-byte output, using a per-record random salt and the pepper (DV-F-06). \\
+DV-F-08 & Must save the user record in an atomic transaction. \\
+DV-F-09 & Must request Storage-Service to create the unique POSIX user on the server, with username \texttt{user<xxxxxx>} (\texttt{xxxxxx}: 6 random characters from a base-36 alphabet), and wait for its response. \\
+DV-F-10 & If the creation of the POSIX user fails, it must delete the user from the database and inform Security-Switch that the registration failed. \\
+DV-F-11 & After creating the user record and the POSIX user, it must inform Security-Switch that the user has been registered. \\
+DV-F-12 & Must reject (HTTP 409) registrations with an email or an SSH key that already exist, without providing details about the error. \\
+DV-F-13 & During login, it must retrieve the salt associated with the email through the SHA-256 hash of the email (DV-F-03). \\
+DV-F-14 & Must recompute Argon2id on the received password using the retrieved salt and the pepper, comparing the result with the stored hash. \\
+DV-F-15 & Must respond with the same HTTP 401 code both for a nonexistent email and for a wrong password, without distinguishing the two cases either in the response or in the log. \\
+DV-F-16 & Must publish metrics every minute, and only then, on its own dedicated MQTT topic (\texttt{metrics/Database-Vault}), via mTLS, verifying that: the certificate comes from an MQTT-Broker; the X.509 certificate is valid. \\
+DV-F-17 & Metrics must never contain users' personal data, only aggregate statistics. \\
+DV-F-18 & A backup procedure for the master key should exist. \\
+DV-F-19 & A rotation procedure for the master key should exist. \\
+DV-F-20 & If validation fails, it must: respond with HTTP 400 (Bad Request) without specifying which problem was found; log the problem found without identifying the user; not forward the request to any other internal service. \\
+\end{longtable}
+
+\subsection{Storage-Service}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Functional requirements of Storage-Service.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+ST-F-01 & Must accept mTLS connections only from clients that satisfy: \texttt{organization} field equal to \texttt{DatabaseVault}; valid certificate; access to the private mesh network. \\
+ST-F-02 & Must provide upload/download of files already encrypted client-side, without ever processing plaintext content. \\
+ST-F-03 & Access must occur exclusively via SFTP on TCP port 2222, authenticated with the SSH public key registered by the user. \\
+ST-F-04 & Must explicitly forbid any form of SSH connection other than SFTP. \\
+ST-F-05 & Each user must have an isolated storage space, not accessible by other users. \\
+ST-F-06 & On request from Database-Vault via mTLS, it must create on the system a POSIX user with username \texttt{user<xxxxxx>} (\texttt{xxxxxx}: 6 random characters from a base-36 alphabet). \\
+ST-F-07 & Must guarantee that the POSIX user can never leave its own directory. \\
+ST-F-08 & The created POSIX account must have neither a traditional home directory nor an interactive shell; the only writable space is the dedicated subdirectory inside the chroot. \\
+ST-F-09 & The Storage-Service sshd configuration must have \texttt{PasswordAuthentication no} and \texttt{PermitRootLogin no}, regardless of the fact that the created accounts have no password set. \\
+ST-F-10 & Following the creation, successful or failed, of the POSIX user, it must report the outcome to Database-Vault. \\
+ST-F-11 & At every SFTP connection attempt by the user, it must retrieve the user's current public key from Database-Vault through \texttt{AuthorizedKeysCommand}. \\
+ST-F-12 & Must publish metrics every minute, and only then, on its own dedicated MQTT topic (\texttt{metrics/Storage-Service}), via mTLS, verifying that: the certificate comes from an MQTT-Broker; the X.509 certificate is valid. \\
+ST-F-13 & Metrics must never contain users' personal data, only aggregate statistics. \\
+ST-F-14 & Should enforce per-user quota limits. \\
+ST-F-15 & Should guarantee: automatic data replication; fault tolerance for at least one node; data consistency; the possibility of expansion by adding new nodes without interrupting the service. \\
+ST-F-16 & Must return its own SSH host public key in the response to the POSIX user creation request coming from Database-Vault (ST-F-10), so that it can be forwarded to the client and pinned by it (CL-F-11). \\
+\end{longtable}
+
+\subsection{Network-Manager}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Functional requirements of Network-Manager.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+NM-F-01 & Must guarantee that only Entry-Hub can contact Security-Switch. \\
+NM-F-02 & Must guarantee that only Security-Switch and Storage-Service can contact Database-Vault. \\
+NM-F-03 & Must guarantee that only Security-Switch can contact Network-Manager. \\
+NM-F-04 & Must guarantee that all internal components of the network, except users, can contact Certificate-Authority on the mesh network. \\
+NM-F-05 & Must guarantee that only authenticated users can see and contact Storage-Service. \\
+NM-F-06 & Must guarantee that registered but unauthenticated users can see and contact only Entry-Hub. \\
+NM-F-07 & Must guarantee that registered and authenticated users can see and contact only Entry-Hub and Storage-Service. \\
+NM-F-08 & On request from Security-Switch, following a successful registration, it must create a dedicated Headscale user and generate a short-lived pre-auth key for the new account. \\
+NM-F-09 & After a successful login, on request from Security-Switch, it must assign to the user's node the ACL tag that enables reachability toward Storage-Service, recording an expiry twelve hours from that moment. \\
+NM-F-10 & Must periodically check the recorded expiries and remove the ACL tag from expired nodes, automatically and without manual intervention. \\
+NM-F-11 & The expiry of each grant must be persisted, not kept only in memory, so as not to lose state if Network-Manager restarts. \\
+NM-F-12 & Pre-auth key creation and ACL tag management must be restricted specifically to Network-Manager, verified via mutual TLS (\texttt{organization} field equal to \texttt{NetworkManager}). \\
+NM-F-13 & The pre-auth key serves solely to register the node as a member of the mesh; on its own, it does not grant reachability toward Storage-Service. \\
+NM-F-14 & The Headscale coordination endpoint is deliberately reachable from the public network (ideally hosted on its own VPS with a public address). \\
+NM-F-15 & Must configure MagicDNS with a dedicated base domain, so that Storage-Service is resolvable by all mesh nodes through a stable name rather than an IP. \\
+NM-F-16 & The Network-Manager mesh node must accept the DNS configuration distributed by Headscale (MagicDNS), so that its own outbound calls toward Certificate-Authority and MQTT-Broker resolve those hostnames on the mesh, rather than falling back to a network path with no equivalent in production. \\
+NM-F-17 & Must publish metrics every minute, and only then, on its own dedicated MQTT topic (\texttt{metrics/Network-Manager}), via mTLS, verifying that: the certificate comes from an MQTT-Broker; the X.509 certificate is valid. \\
+NM-F-18 & Metrics must never contain users' personal data, only aggregate statistics. \\
+NM-F-19 & Must configure MagicDNS with a record that resolves the public name of Entry-Hub to its mesh address, so that a network member contacting the login listener (EH-F-03) uses the name covered by the Entry-Hub certificate. \\
+NM-F-20 & Must guarantee that only the services that publish metrics (Entry-Hub, Security-Switch, Database-Vault, Storage-Service, Network-Manager, Certificate-Authority) and Metrics-Collector can contact MQTT-Broker. \\
+NM-F-21 & Must guarantee that only Grafana can contact Metrics-Collector. \\
+\end{longtable}
+
+\subsection{Certificate-Authority}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Functional requirements of Certificate-Authority.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+CA-F-01 & Must guarantee that the components presenting certificates for mTLS really are who they claim to be. \\
+CA-F-02 & Must guarantee the issuance, rotation, revocation, and verification of mTLS certificates. \\
+CA-F-03 & Must publish metrics every minute, and only then, on its own dedicated MQTT topic (\texttt{metrics/Certificate-Authority}), via mTLS, verifying that: the certificate comes from an MQTT-Broker; the X.509 certificate is valid. \\
+CA-F-04 & Must accept a single-use bootstrap token, distributed out-of-band to each service, for issuing the initial certificate; subsequent renewals must occur through the current mTLS certificate, not through the token. \\
+\end{longtable}
+
+\subsection{Monitoring system}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Functional requirements of the monitoring system (MQTT-Broker / Metrics-Collector / TimescaleDB / Grafana).} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+MT-F-01 & Metrics-Collector can read only \texttt{metrics/*}. \\
+MT-F-02 & Metrics-Collector must discard metrics whose \texttt{service} field does not match the topic they come from. \\
+MT-F-03 & Metrics must be stored as a TimescaleDB hypertable, with automatic retention of 30 days and compression after 7 days. \\
+MT-F-04 & Grafana dashboards must exist for response time, throughput, and active connections. \\
+\end{longtable}
+
+\subsection{Network infrastructure and PKI}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Functional requirements of network and PKI.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+PKI-F-01 & Every service must mutually authenticate with X.509 certificates issued by a valid CA. \\
+PKI-F-02 & Every service must verify the \texttt{organization} field of the certificate, not only its validity. \\
+PKI-F-03 & A certificate rotation and revocation procedure should exist. \\
+NET-F-01 & Communication between services must occur on the private network; the public endpoints of Entry-Hub and the Headscale coordination endpoint of Network-Manager (NM-F-14) are the only surfaces deliberately exposed publicly by the system. \\
+NET-F-02 & The TLS used must be version 1.3. \\
+\end{longtable}
+
+\section{Non-functional requirements}
+
+\subsection{Product}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Product non-functional requirements.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+RNF-SEC-01 & No server-side component ever accesses the content of backup files in plaintext, since encryption happens client-side before transmission. This does not extend to access credentials: email and password transit, encrypted (TLS/mTLS), through Entry-Hub, Security-Switch, and Database-Vault for validation and hashing, while never being persisted or logged in plaintext (cf. DV-F-03, RD-01). \\
+RNF-SEC-02 & Zero-trust: no service must implicitly trust the data received from another, even if authenticated via mTLS. \\
+RNF-SEC-03 & Defense-in-depth: every layer revalidates input independently. \\
+RNF-SEC-04 & All communication between services must use mTLS, without exceptions. \\
+RNF-REL-01 & The system must tolerate the isolated compromise of a single component, without it propagating to the others. \\
+RNF-PERF-01 & The latency of HTTP requests must be tracked (p50/p95/p99). \\
+RNF-USA-01 & Error messages must be understandable and correctly categorized by HTTP status code. \\
+RNF-MAINT-01 & Every service must be able to be isolated, re-certified, and restarted individually without impacting the others. \\
+\end{longtable}
+
+\subsection{Organizational}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Organizational non-functional requirements.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+RNF-ORG-01 & Implementation language: Go. \\
+RNF-ORG-03 & MIT open-source license. \\
+RNF-ORG-04 & Deployment platform: Proxmox VE (KVM for Storage-Service, Database-Vault, Network-Manager; LXC for the other services). \\
+RNF-ORG-05 & Development and operation guaranteed on macOS and Linux (with Docker). \\
+\end{longtable}
+
+\subsection{External}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{External non-functional requirements.} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+RNF-EXT-01 & Since the system processes personal data (the email), it should comply with the applicable privacy regulations (e.g., GDPR). Currently out of scope. \\
+\end{longtable}
+
+\section{Domain requirements}
+
+\begin{longtable}{p{2.6cm} p{\dimexpr\linewidth-2.6cm-4\tabcolsep\relax}}
+\caption{Domain requirements (RD).} \\
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\textbf{ID} & \textbf{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+RD-01 & Any new component introduced in the future must not create a path along which sensitive data in plaintext traverses or is logged by a component other than the client or the component strictly necessary for its encryption/decryption. \\
+RD-02 & Derived keys (via HKDF) must never be persisted: any new key storage requirement must be evaluated against this constraint before being accepted. \\
+RD-03 & Argon2id and AES-256-GCM are non-negotiable technological constraints. \\
+RD-04 & The \emph{fail-secure} principle applies to every component: in case of uncertainty about the validity of a request, the default behavior is to deny access. \\
+\end{longtable}

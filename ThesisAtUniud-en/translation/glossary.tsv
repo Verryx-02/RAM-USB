@@ -1,0 +1,238 @@
+it	en	note
+A pagamento	Paywalled	bib note fields; pairs with "Liberamente accessibile"
+Accesso amministrativo alle credenziali	Administrative access to credentials	subsection title, ch. 11
+Accesso e registrazione	Access and registration	component group label, ch. 4
+accesso temporaneo	temporary access	
+Acronimo	Acronym	acronym table header
+alta disponibilità	high availability	
+Alta disponibilità e resilienza: stato attuale e limiti	High availability and resilience: current state and limitations	section title, ch. 10
+Amministratore	Administrator	RU-10 prefix label; lowercase "amministratore" -> "administrator"
+Analisi critica delle proprietà di sicurezza	Critical analysis of security properties	chapter title, ch. 11
+Architettura generale e zone di fiducia	Overall architecture and trust zones	chapter title, ch. 4
+Argon2id	Argon2id	do not translate
+attaccante	attacker	
+attacco a dizionario	dictionary attack	
+attack surface	attack surface	already English, keep
+Autenticazione e gestione delle identità	Authentication and identity management	chapter title, ch. 5
+Authenticated User Zone	Authenticated User Zone	already English, keep (zone name, keep \emph)
+autorità di certificazione	certificate authorities	generic plural; the component name Certificate-Authority stays hyphenated
+Backup di un file	Backing up a file	UC-03 title, wording from SRS §7
+Backup e ripristino	Backup and restore	section title ch. 6 and component group label ch. 4
+caso d'uso	use case	plural "casi d'uso" -> "use cases"; UC-xx IDs unchanged
+Ceph	Ceph	do not translate
+Certificate-Authority	Certificate-Authority	do not translate (component name, hyphenated); generic "CA" stays CA
+CG-NAT e la necessità di un endpoint pubblico dedicato	CG-NAT and the need for a dedicated public endpoint	section title, ch. 7
+chiave API	API key	
+chiave derivata	derived key	
+chiave di cifratura	encryption key	
+chiave di ricerca	lookup key	
+chiave host	host key	"chiave host SSH" -> "SSH host key"
+chiave primaria	primary key	
+chiave privata	private key	"chiave privata SSH" -> "SSH private key"
+chiave pubblica	public key	"chiave pubblica SSH" -> "SSH public key"
+ciclo di vita	lifecycle	one word
+Ciclo di vita dei permessi di accesso	Access grant lifecycle	section title, ch. 7
+Ciclo di vita della richiesta	Request lifecycle	section title, ch. 5
+cifratura	encryption	verbs: cifrare -> encrypt, decifrare -> decrypt
+Cifratura e hashing delle credenziali	Credential encryption and hashing	section title, ch. 5
+cifratura lato client	client-side encryption	
+Codice	Code	float name (\lstlistingname) and the plain noun "code"; text refs "nel Codice" -> "in Code"
+codici HTTP	HTTP status codes	
+compromissione	compromise	noun; "compromissione totale" -> "full compromise"
+compromissione totale	full compromise	
+Comunicato stampa	Press release	bib note field
+Conclusioni	Conclusions	chapter title, ch. 12
+Condivide il container con	Shares the container with	table header, ch. 10
+confini di raggiungibilità	reachability boundaries	
+connessioni attive	active connections	dashboard panel name
+Consultazione delle metriche operative	Consulting operational metrics	UC-05 title, wording from SRS §7
+Containerizzazione e supervisione s6-overlay	Containerization and s6-overlay supervision	section title, ch. 10
+Contesto	Background	section title, ch. 1
+Copertura e lacune del piano di test	Coverage and gaps in the test plan	section title, ch. 9
+criteri di uscita	exit criteria	singular "criterio di uscita" -> "exit criterion"
+criterio di ingresso	entry criterion	plural "criteri di ingresso" -> "entry criteria"
+Database-Vault	Database-Vault	do not translate
+dati personali	personal data	
+Dedica	Dedication	front-matter name (dedication text is already English, keep verbatim)
+defense-in-depth	defense-in-depth	already English, keep (hyphenated, US spelling)
+Di prodotto	Product	subsection title, appendix (non-functional requirements)
+Diagramma dei casi d'uso	Use case diagram	figure caption, ch. 3
+Diagramma Entità-Relazioni	Entity-Relationship diagram	
+difesa in profondità	defense-in-depth	render as the same hyphenated term the author uses in English
+diritto all'oblio	right to be forgotten	
+Distribuzione	Deployment	chapter title, ch. 10; label chap:deployment
+distribuzione	deployment	only when it means deploying the system; "distribuzione reale delle password" -> "distribution", "distribuzioni" (Linux) -> "distributions"
+Docker locale vs Proxmox VE: due livelli di isolamento	Local Docker vs Proxmox VE: two levels of isolation	section title, ch. 10
+Elenco completo dei requisiti	Complete list of requirements	appendix title
+Elenco degli acronimi	List of acronyms	front-matter chapter*, also in \addcontentsline
+Emesso da	Issued by	table header, ch. 5
+Entry-Hub	Entry-Hub	do not translate
+Enumerazione degli indirizzi email in registrazione	Email address enumeration at registration	subsection title, ch. 11
+Esterni	External	subsection title, appendix (non-functional requirements)
+fail-secure	fail-secure	already English, keep
+Figura	Figure	float/autoref name, generated by babel (not literal in source)
+forza bruta	brute force	author also writes "brute force" in English
+funzione di hash	hash function	
+Funzioni di hash	Hash functions	subsection title, ch. 1
+fuori banda	out-of-band	
+Fuori perimetro	Out of scope	RU-09 label; lowercase "fuori perimetro"/"fuori scope" -> "out of scope" (SRS wording)
+fuori perimetro	out of scope	
+generatore pseudo-casuale	pseudorandom generator	
+geo-distribuzione	geo-distribution	
+gestore di pacchetti	package manager	
+Grafana	Grafana	do not translate
+hash fittizio	dummy hash	
+Headscale	Headscale	do not translate
+home directory	home directory	already English, keep
+hypertable	hypertable	already English, keep
+Il modello V e i quattro livelli di test	The V-model and the four test levels	section title, ch. 9
+Il paradosso del coordinatore: Headscale come servizio a sé	The coordinator paradox: Headscale as a standalone service	section title, ch. 7
+Immagine di base	Base image	table header, ch. 10
+immagine di base	base image	
+in chiaro	in plaintext	
+Informatica	Computer Science	\course{} value (degree course name)
+Infrastruttura di rete e PKI	Network infrastructure and PKI	subsection title, appendix (SRS §4.9 wording)
+Introduzione	Introduction	chapter title, ch. 1
+iperconvergente	hyperconverged	
+Isolamento dei fallimenti	Failure isolation	section title, ch. 11
+Isolamento e chroot dinamico	Isolation and dynamic chroot	section title, ch. 6
+Let's Encrypt	Let's Encrypt	do not translate
+Liberamente accessibile	Freely accessible	bib note fields
+libreria di validazione	validation library	
+Limiti noti	Known limitations	section title, ch. 12
+lista di accettazione	acceptance checklist	
+Livello di specifica	Specification level	table header, ch. 9
+Livello di verifica	Verification level	table header, ch. 9
+macchina virtuale	virtual machine	
+MagicDNS	MagicDNS	do not translate
+malintenzionato	malicious actor	
+manomissione	tampering	
+master key	master key	already English, keep
+Metodologia	Methodology	section title, ch. 1
+Metodologia dei requisiti	Requirements methodology	section title, ch. 3
+metriche operative	operational metrics	
+Metrics-Collector	Metrics-Collector	do not translate
+migrazione a caldo	live migration	
+modello a cascata	waterfall model	
+modello a spirale	spiral model	
+modello a V	V-model	
+Modello di accesso SFTP-only	SFTP-only access model	section title, ch. 6
+Modello di comunicazione inter-servizio	Inter-service communication model	section title, ch. 4
+monouso	single-use	
+Mosquitto	Mosquitto	do not translate
+MQTT-Broker	MQTT-Broker	do not translate
+multi-utente	multi-user	
+Network-Manager	Network-Manager	do not translate
+nodo fisico	physical node	
+non privilegiati	unprivileged	"container LXC non privilegiati" -> "unprivileged LXC containers"
+Obiettivi	Objectives	section title, ch. 1
+Orchestrazione post-autenticazione	Post-authentication orchestration	section title, ch. 5
+Organizzativi	Organizational	subsection title, appendix (non-functional requirements)
+Osservabilità	Observability	component group label, ch. 4
+osservabilità	observability	
+Osservabilità e metriche	Observability and metrics	chapter title, ch. 8
+Panoramica dell'architettura	Architecture overview	section title, ch. 4
+parametri di costo	cost parameters	
+pepper	pepper	already English, keep
+Perché non tutti i container sono distroless	Why not all containers are distroless	section title, ch. 10
+permesso di accesso	access grant	SRS term is "grant"; bare "permesso" in this sense -> "grant"
+Persistenza delle serie temporali	Time-series persistence	section title, ch. 8
+piano di test	test plan	
+PKI e gestione dei certificati	PKI and certificate management	section title, ch. 4
+politica di rete	network policy	
+Politiche di rete e confini di raggiungibilità	Network policies and reachability boundaries	section title, ch. 7
+pre-auth key	pre-auth key	already English, keep
+Principi fondanti	Foundational principles	chapter title, ch. 2
+principio di inclusione-esclusione	inclusion-exclusion principle	
+Problema affrontato	Problem statement	section title, ch. 1
+Progettazione, implementazione e distribuzione	Design, implementation and deployment	thesis title fragment
+Proprietà	Property	table header, ch. 9
+Proxmox VE	Proxmox VE	do not translate
+Public Zone	Public Zone	already English, keep (zone name)
+punto di ingresso	entry point	
+raggiungibilità	reachability	
+RAM-USB	RAM-USB	do not translate
+Registrazione	Registration	section title ch. 5 and UC-01 title
+Requisiti di dominio	Domain requirements	section title, appendix (SRS §6 wording)
+requisiti di sistema	system requirements	
+Requisiti di sistema funzionali	Functional system requirements	section title, appendix
+requisiti funzionali	functional requirements	
+Requisiti non funzionali	Non-functional requirements	section title, appendix
+Requisiti Utente	User Requirements	capitalized form, ch. 11
+requisiti utente	user requirements	keep the IDs RU-01..RU-10, RD-, RNF- unchanged (SRS IDs)
+Requisiti utente e casi d'uso	User requirements and use cases	section title, ch. 3
+Requisiti: metodologia e casi d'uso	Requirements: methodology and use cases	chapter title, ch. 3
+Requisito di componente	Component requirement	table cell, ch. 9
+Requisito non funzionale	Non-functional requirement	table cell, ch. 9
+Requisito utente	User requirement	table cell, ch. 9
+resistenza alla preimmagine	preimage resistance	
+resistenza alla seconda preimmagine	second-preimage resistance	
+resistenza alle collisioni	collision resistance	
+Restic	Restic	do not translate
+Restore di un file	Restoring a file	UC-04 title, wording from SRS §7
+Rete e certificati	Network and certificates	component group label, ch. 4
+Rete e coordinamento della mesh	Networking and mesh coordination	chapter title, ch. 7
+rete mesh	mesh network	"rete privata mesh" -> "private mesh network"
+rete privata	private network	
+rete pubblica	public network	
+revoca	revocation	verb "revocare" -> "revoke"
+Ricezione e controllo di coerenza	Reception and consistency check	section title, ch. 8
+Ringraziamenti	Acknowledgements	front matter; British spelling kept because thud.cls \acknowledgementsname uses it
+ripristino	restore	noun; author also uses "restore"
+Riscontro	Observed result	table header, ch. 9
+Risultati raggiunti	Achieved results	section title, ch. 12
+Risultati: verifiche completate	Results: completed verifications	section title, ch. 9
+ritenzione	retention	
+rivalidazione	revalidation	verb "rivalida" -> "revalidates"
+Robustezza della password	Password strength	subsection title, ch. 5
+rollback compensativo	compensating rollback	
+s6-overlay	s6-overlay	do not translate
+scadenza	expiry	
+Scenari di attacco e mitigazioni	Attack scenarios and mitigations	section title, ch. 11
+Schema	Scheme	float name (\floatname{schema}, \schemaautorefname); text refs "Lo Schema" -> "Scheme"
+Security-Switch	Security-Switch	do not translate
+sentinella	sentinel	"errore sentinella" -> "sentinel error"
+serie temporali	time series	
+servizi interni	internal services	
+servizio di backup multi-utente	multi-user backup service	thesis title / abstract
+sicurezza informatica	cybersecurity	
+Significato	Meaning	table header (acronyms, ch. 5)
+Sistema di monitoraggio	Monitoring system	subsection title, appendix (SRS §4.8 wording)
+Sommario	Abstract	front matter (\abstract)
+sottodirectory	subdirectory	
+spazio di archiviazione	storage space	
+Storage e backup dei file	File storage and backup	chapter title, ch. 6
+Storage-Service	Storage-Service	do not translate
+Strategia di integrazione bottom-up	Bottom-up integration strategy	section title, ch. 9
+Struttura della tesi	Thesis structure	section title, ch. 1
+Sviluppi futuri	Future work	section title, ch. 12; lowercase "sviluppi futuri" -> "future work"
+Tabella	Table	float/autoref name, generated by babel (not literal in source)
+Tailscale	Tailscale	do not translate
+TDD: criteri di ingresso e uscita	TDD: entry and exit criteria	section title, ch. 9
+tempo costante	constant-time	"confronto a tempo costante" -> "constant-time comparison"
+tempo di risposta	response time	
+test di carico	load testing	"test di carico e di stress" -> "load and stress testing"
+test di integrazione	integration testing	"Test di integrazione" in table -> "Integration testing"
+Test di sistema	System testing	table cell, ch. 9; lowercase in prose -> "system testing"
+test di unità	unit testing	"un test di unità" may be "a unit test" (still contains "unit test")
+Testing e validazione	Testing and validation	chapter title, ch. 9
+testo cifrato	ciphertext	
+TimescaleDB	TimescaleDB	do not translate
+token di bootstrap	bootstrap token	
+tolleranza ai guasti	fault tolerance	
+Topologia distribuita	Distributed topology	section title, ch. 10
+tracciabilità	traceability	
+Tracciabilità dei requisiti	Requirements traceability	section title, ch. 3
+transazione atomica	atomic transaction	
+Unauthenticated User Zone	Unauthenticated User Zone	already English, keep (zone name)
+utente POSIX	POSIX user	
+variabile d'ambiente	environment variable	
+Verifica automatica pre-commit	Automated pre-commit checks	section title, ch. 9
+verifica fittizia	dummy verification	
+Verifica offline di un indirizzo a partire da una copia del database	Offline address verification from a database copy	subsection title, ch. 11
+vincoli di unicità	uniqueness constraints	
+Visualizzazione delle metriche	Metrics visualization	section title, ch. 8
+Zero-trust	Zero-trust	already English, keep (section title ch. 2; lowercase "zero-trust" in prose)
+zone di fiducia	trust zones	singular "zona di fiducia" -> "trust zone"
+Zone di fiducia e confini di sicurezza	Trust zones and security boundaries	section title, ch. 4
+#spelling	US	US spelling throughout (defense, organization, behavior, analyze, containerization); sole exception "Acknowledgements", fixed by thud.cls \acknowledgementsname
